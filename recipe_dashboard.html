@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BoxKitchen — Recipe Database</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,700&family=Playfair+Display:wght@700;900&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'DM Sans', sans-serif; background: #0f1115; color: #e8e6e3; min-height: 100vh; }
+  .header { padding: 40px 40px 20px; border-bottom: 1px solid #2a2d35; background: linear-gradient(180deg, rgba(232,93,58,0.06) 0%, transparent 100%); }
+  .header h1 { font-family: 'Playfair Display', serif; font-size: 2.4rem; font-weight: 900; }
+  .header h1 span { color: #e85d3a; }
+  .header p { color: #8a8a8a; font-size: 0.95rem; }
+  .status-bar { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #8a8a8a; animation: pulse 2s infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+  .status-text { color: #8a8a8a; font-size: 0.85rem; }
+  .controls { display: flex; gap: 12px; padding: 20px 40px; flex-wrap: wrap; align-items: center; }
+  .search-box { flex: 1; min-width: 200px; padding: 10px 16px; background: #1a1d24; border: 1px solid #2a2d35; border-radius: 8px; color: #e8e6e3; font-family: 'DM Sans', sans-serif; font-size: 0.95rem; outline: none; }
+  .search-box:focus { border-color: #e85d3a; }
+  .search-box::placeholder { color: #8a8a8a; }
+  .filter-btn { padding: 8px 18px; background: #1a1d24; border: 1px solid #2a2d35; border-radius: 8px; color: #8a8a8a; font-family: 'DM Sans', sans-serif; font-size: 0.85rem; cursor: pointer; }
+  .filter-btn:hover { border-color: #e85d3a; color: #e8e6e3; }
+  .filter-btn.active { background: #e85d3a; border-color: #e85d3a; color: #fff; }
+  .count { font-size: 0.85rem; color: #8a8a8a; padding: 0 10px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 20px; padding: 10px 40px 60px; }
+  .card { background: #1a1d24; border: 1px solid #2a2d35; border-radius: 12px; padding: 24px; cursor: pointer; transition: all 0.25s ease; }
+  .card:hover { background: #22262f; border-color: #e85d3a; transform: translateY(-2px); box-shadow: 0 8px 30px rgba(0,0,0,0.3); }
+  .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+  .card-title { font-family: 'Playfair Display', serif; font-size: 1.3rem; font-weight: 700; line-height: 1.2; }
+  .location-tag { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; padding: 4px 10px; border-radius: 4px; white-space: nowrap; }
+  .location-tag.tempest { background: rgba(59,130,246,0.15); color: #3b82f6; }
+  .location-tag.showdown { background: rgba(245,158,11,0.15); color: #f59e0b; }
+  .card-category { display: inline-block; font-size: 0.8rem; color: #8a8a8a; background: #2a2d35; padding: 3px 10px; border-radius: 4px; margin-bottom: 14px; }
+  .section-label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: #e85d3a; margin-bottom: 6px; margin-top: 14px; }
+  .ingredients-preview { font-size: 0.88rem; color: #8a8a8a; line-height: 1.5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ingredients-full { font-size: 0.88rem; color: #8a8a8a; line-height: 1.6; display: none; }
+  .method-full { font-size: 0.88rem; color: #8a8a8a; line-height: 1.8; display: none; }
+  .method-full .step { margin-bottom: 4px; }
+  .expand-hint { font-size: 0.75rem; color: #555; margin-top: 12px; text-align: center; }
+  .card.open .ingredients-preview { display: none; }
+  .card.open .ingredients-full { display: block; }
+  .card.open .method-full { display: block; }
+  .card.open .expand-hint span { display: none; }
+  .card.open .expand-hint::after { content: '▲ tap to collapse'; }
+  .empty-state { grid-column: 1 / -1; text-align: center; padding: 80px 20px; color: #8a8a8a; }
+  .empty-state h3 { font-family: 'Playfair Display', serif; font-size: 1.5rem; color: #e8e6e3; margin-bottom: 8px; }
+  .loading { grid-column: 1 / -1; text-align: center; padding: 80px 20px; color: #8a8a8a; }
+  .spinner { width: 32px; height: 32px; border: 3px solid #2a2d35; border-top-color: #e85d3a; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 16px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (max-width: 600px) { .header { padding: 24px 20px 16px; } .header h1 { font-size: 1.6rem; } .controls { padding: 16px 20px; } .grid { padding: 10px 20px 40px; grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>Box<span>Kitchen</span></h1>
+  <p>Recipe Database — powered by Supabase</p>
+  <div class="status-bar">
+    <div class="status-dot" id="statusDot"></div>
+    <span class="status-text" id="statusText">Connecting to database...</span>
+  </div>
+</div>
+<div class="controls">
+  <input type="text" class="search-box" id="searchBox" placeholder="Search recipes...">
+  <button class="filter-btn active" onclick="setFilter('all', this)">All</button>
+  <button class="filter-btn" onclick="setFilter('Tempest', this)">Tempest</button>
+  <button class="filter-btn" onclick="setFilter('Showdown', this)">Showdown</button>
+  <span class="count" id="recipeCount"></span>
+</div>
+<div class="grid" id="recipeGrid">
+  <div class="loading"><div class="spinner"></div><p>Loading recipes from database...</p></div>
+</div>
+<script>
+var SUPABASE_URL = 'https://sxppuyarecqkgkrsrefc.supabase.co';
+var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN4cHB1eWFyZWNxa2drcnNyZWZjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczOTA4MzAsImV4cCI6MjA5Mjk2NjgzMH0.GM8OfcR68_JjdPeQ3k7j6L3ulJFaeS1xnSLBcdtYXtU';
+var allRecipes = [];
+var activeFilter = 'all';
+
+function fetchRecipes() {
+  var xhr = new XMLHttpRequest();
+  xhr.open('GET', SUPABASE_URL + '/rest/v1/Recipes?select=*&order=name.asc');
+  xhr.setRequestHeader('apikey', SUPABASE_KEY);
+  xhr.setRequestHeader('Authorization', 'Bearer ' + SUPABASE_KEY);
+  xhr.onload = function() {
+    if (xhr.status === 200) {
+      allRecipes = JSON.parse(xhr.responseText);
+      document.getElementById('statusDot').style.background = '#22c55e';
+      document.getElementById('statusText').textContent = 'Connected — ' + allRecipes.length + ' recipes loaded';
+      renderRecipes();
+    } else {
+      showError('HTTP ' + xhr.status);
+    }
+  };
+  xhr.onerror = function() { showError('Network error'); };
+  xhr.send();
+}
+
+function showError(msg) {
+  document.getElementById('statusDot').style.background = '#ef4444';
+  document.getElementById('statusText').textContent = 'Connection failed';
+  document.getElementById('recipeGrid').innerHTML = '<div class="empty-state"><h3>Could not connect</h3><p>' + msg + '</p></div>';
+}
+
+function formatIngredients(ing) {
+  if (!ing) return '';
+  // Split on newlines, commas, or both
+  var items = ing.split(/[\n\r,]+/);
+  var html = '';
+  for (var i = 0; i < items.length; i++) {
+    var item = items[i].trim();
+    if (item) html += '<div style="padding:2px 0;">' + item + '</div>';
+  }
+  return html;
+}
+
+function formatMethod(method) {
+  if (!method) return '';
+  var parts = method.split(/(\d+\.\s)/);
+  var html = '';
+  var currentStep = '';
+  for (var i = 0; i < parts.length; i++) {
+    var p = parts[i].trim();
+    if (!p) continue;
+    if (/^\d+\.\s?$/.test(p)) {
+      if (currentStep) html += '<div class="step">' + currentStep + '</div>';
+      currentStep = p;
+    } else {
+      currentStep += p;
+    }
+  }
+  if (currentStep) html += '<div class="step">' + currentStep + '</div>';
+  return html;
+}
+
+function renderRecipes() {
+  var grid = document.getElementById('recipeGrid');
+  var search = document.getElementById('searchBox').value.toLowerCase();
+  var filtered = [];
+  for (var i = 0; i < allRecipes.length; i++) {
+    var r = allRecipes[i];
+    var matchFilter = activeFilter === 'all' || (r.location && r.location.toLowerCase() === activeFilter.toLowerCase());
+    var matchSearch = !search ||
+      (r.name && r.name.toLowerCase().indexOf(search) > -1) ||
+      (r.category && r.category.toLowerCase().indexOf(search) > -1) ||
+      (r.ingredients && r.ingredients.toLowerCase().indexOf(search) > -1);
+    if (matchFilter && matchSearch) filtered.push(r);
+  }
+  document.getElementById('recipeCount').textContent = filtered.length + ' recipe' + (filtered.length !== 1 ? 's' : '');
+  if (filtered.length === 0) {
+    grid.innerHTML = '<div class="empty-state"><h3>No recipes found</h3><p>Try a different search or add more recipes in Supabase.</p></div>';
+    return;
+  }
+  var html = '';
+  for (var i = 0; i < filtered.length; i++) {
+    var r = filtered[i];
+    var loc = (r.location || 'unknown').toLowerCase().replace(/\s+/g, '-');
+    html += '<div class="card" onclick="toggleCard(this)">';
+    html += '<div class="card-header">';
+    html += '<div class="card-title">' + (r.name || 'Untitled') + '</div>';
+    html += '<span class="location-tag ' + loc + '">' + (r.location || '') + '</span>';
+    html += '</div>';
+    if (r.category) html += '<span class="card-category">' + r.category + '</span>';
+    if (r.ingredients) {
+      html += '<div class="section-label">Ingredients</div>';
+      html += '<div class="ingredients-preview">' + r.ingredients.replace(/[\n\r]+/g, ', ') + '</div>';
+      html += '<div class="ingredients-full">' + formatIngredients(r.ingredients) + '</div>';
+    }
+    if (r.method) {
+      html += '<div class="method-full">';
+      html += '<div class="section-label">Method</div>';
+      html += formatMethod(r.method);
+      html += '</div>';
+    }
+    html += '<div class="expand-hint"><span>▼ tap to expand</span></div>';
+    html += '</div>';
+  }
+  grid.innerHTML = html;
+}
+
+function toggleCard(card) {
+  if (card.classList.contains('open')) {
+    card.classList.remove('open');
+  } else {
+    card.classList.add('open');
+  }
+}
+
+function setFilter(filter, btn) {
+  activeFilter = filter;
+  var btns = document.querySelectorAll('.filter-btn');
+  for (var i = 0; i < btns.length; i++) btns[i].classList.remove('active');
+  btn.classList.add('active');
+  renderRecipes();
+}
+
+document.getElementById('searchBox').addEventListener('input', renderRecipes);
+fetchRecipes();
+</script>
+</body>
+</html>
