@@ -66,6 +66,9 @@
   .qty-input{width:100%;padding:5px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:0.85rem;text-align:center;outline:none}
   .qty-input:focus{border-color:var(--accent)}
   .qty-input.filled{border-color:var(--green);background:var(--green-dim)}
+  .qty-input.locked{opacity:0.55;background:var(--bg);color:var(--muted);cursor:not-allowed;border-color:var(--border)}
+  .qty-input.locked.filled{border-color:var(--border);background:var(--bg)}
+  .lock-banner{margin:10px 20px;padding:10px 14px;background:var(--green-dim);border:1px solid var(--green);border-radius:8px;color:var(--green);font-size:0.85rem;font-weight:600;line-height:1.4}
 
   /* MANAGER */
   .mgr-controls{display:none;flex-direction:column;gap:1px;margin-right:6px;flex-shrink:0}
@@ -196,7 +199,7 @@
 <div id="appBody"><div class="loading"><div class="spinner"></div><p>Loading order guide...</p></div></div>
 <div class="submit-bar">
   <div class="submit-summary" id="submitSummary">0 items to order</div>
-  <button class="submit-btn" id="submitBtn" onclick="submitOrder()" disabled>Submit Order</button>
+  <button class="submit-btn" id="submitBtn" onclick="onSubmitClick()" disabled>Submit Order</button>
 </div>
 <div class="modal-bg" id="addModal">
   <div class="modal">
@@ -213,9 +216,16 @@
 <script>
 var SB='https://sxppuyarecqkgkrsrefc.supabase.co',SK='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN4cHB1eWFyZWNxa2drcnNyZWZjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczOTA4MzAsImV4cCI6MjA5Mjk2NjgzMH0.GM8OfcR68_JjdPeQ3k7j6L3ulJFaeS1xnSLBcdtYXtU';
 var guide='birite',items=[],logs={},mgr=false,todayStr='',st=null,quantities={};
+var submissions={birite:[],produce:[]},unlocked={birite:false,produce:false};
 var biriteVendors=['Birite','Dairy'];
 var produceVendors=['Schmitz Ranch','Asia Intl','Cooks Produce'];
 var vendorColors={'Birite':'birite','Dairy':'dairy','Schmitz Ranch':'schmitz','Asia Intl':'asia','Cooks Produce':'cooks'};
+
+function itemsInGuide(g){var vs=g==='birite'?biriteVendors:produceVendors;return items.filter(function(it){return vs.indexOf(it.vendor)!==-1;});}
+function guideLabel(g){return g==='birite'?'Birite & Dairy':'Produce & Protein';}
+function guideDbName(g){return g==='birite'?'birite_dairy':'produce_protein';}
+function fmtTime(iso){var d=new Date(iso),h=d.getHours(),m=d.getMinutes(),ap=h>=12?'pm':'am';h=h%12;if(h===0)h=12;return h+':'+String(m).padStart(2,'0')+ap;}
+function isLocked(g){return submissions[g]&&submissions[g].length>0&&!unlocked[g];}
 
 function init(){
   var d=new Date(),mn=['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -242,7 +252,11 @@ function loadData(){
     api('GET','order_logs','date=eq.'+todayStr,null,function(r2){
       logs={};quantities={};
       if(r2)for(var i=0;i<r2.length;i++){logs[r2[i].order_item_id]=r2[i];if(r2[i].quantity_needed)quantities[r2[i].order_item_id]=r2[i].quantity_needed;}
-      render();
+      api('GET','order_submissions','location=eq.Tempest&date=eq.'+todayStr+'&order=submitted_at.asc',null,function(r3){
+        submissions={birite:[],produce:[]};
+        if(r3&&r3.length)for(var i=0;i<r3.length;i++){var g=r3[i].guide_name==='birite_dairy'?'birite':'produce';submissions[g].push(r3[i]);}
+        render();
+      });
     });
   });
 }
@@ -250,7 +264,16 @@ function loadData(){
 function getVendors(){return guide==='birite'?biriteVendors:produceVendors;}
 
 function render(){
-  var vendors=getVendors(),cls=mgr?'manager-mode':'',h='<div class="'+cls+'">';
+  var vendors=getVendors(),cls=mgr?'manager-mode':'',h='';
+  var subs=submissions[guide]||[];
+  for(var si=0;si<subs.length;si++){
+    var s=subs[si];
+    var line=si===0
+      ? '✓ '+guideLabel(guide)+' ordered at '+fmtTime(s.submitted_at)+' by '+esc(s.submitted_by)+' — '+s.item_count+' items'
+      : '✓ Additional '+guideLabel(guide)+' order submitted at '+fmtTime(s.submitted_at)+' by '+esc(s.submitted_by)+' — '+s.item_count+' items';
+    h+='<div class="lock-banner">'+line+'</div>';
+  }
+  h+='<div class="'+cls+'">';
   for(var vi=0;vi<vendors.length;vi++){
     var v=vendors[vi];
     var vItems=items.filter(function(it){return it.vendor===v;});
@@ -292,12 +315,15 @@ function render(){
 
 function buildItem(it){
   var q=quantities[it.id]||'',hasQ=q&&q!=='0'&&q!=='';
+  var locked=isLocked(guide);
+  var inpCls='qty-input'+(hasQ?' filled':'')+(locked?' locked':'');
+  var inpAttrs=locked?' readonly':'';
   var h='<div class="item-row '+(hasQ?'has-qty':'')+'" data-id="'+it.id+'">';
   h+='<div class="mgr-controls"><button class="move-btn" onclick="event.stopPropagation();moveItem('+it.id+',-1)">▲</button><button class="move-btn" onclick="event.stopPropagation();moveItem('+it.id+',1)">▼</button></div>';
   h+='<div class="item-name" onclick="editName('+it.id+',this)">'+esc(it.name)+'</div>';
   h+='<div class="item-par">'+(it.par_level||'-')+'</div>';
   h+='<div class="item-unit">'+(it.unit||'')+'</div>';
-  h+='<div class="item-qty"><input class="qty-input '+(hasQ?'filled':'')+'" value="'+esc(q)+'" placeholder="—" onchange="setQty('+it.id+',this.value)" onfocus="this.select()"></div>';
+  h+='<div class="item-qty"><input class="'+inpCls+'"'+inpAttrs+' value="'+esc(q)+'" placeholder="—" onchange="setQty('+it.id+',this.value)" onfocus="this.select()"></div>';
   h+='<button class="delete-btn" onclick="event.stopPropagation();delItem('+it.id+')">✕</button>';
   h+='</div>';
   return h;
@@ -319,31 +345,73 @@ function setQty(id,val){
 }
 
 function updateSummary(){
-  var c=0;for(var k in quantities)if(quantities[k])c++;
-  document.getElementById('submitSummary').innerHTML='<strong>'+c+'</strong> item'+(c!==1?'s':'')+' to order';
-  document.getElementById('submitBtn').disabled=c===0;
+  var gi=itemsInGuide(guide),c=0;
+  for(var i=0;i<gi.length;i++)if(quantities[gi[i].id])c++;
+  var sum=document.getElementById('submitSummary'),btn=document.getElementById('submitBtn');
+  if(isLocked(guide)){
+    sum.innerHTML='<strong>'+guideLabel(guide)+'</strong> is locked for today';
+    btn.textContent='🔓 Unlock to add or change order';
+    btn.disabled=false;
+  }else{
+    sum.innerHTML='<strong>'+c+'</strong> item'+(c!==1?'s':'')+' to order';
+    btn.textContent=submissions[guide]&&submissions[guide].length?'Submit Additional Order':'Submit Order';
+    btn.disabled=c===0;
+  }
+}
+
+function onSubmitClick(){if(isLocked(guide))unlockGuide();else submitOrder();}
+
+function unlockGuide(){
+  var subs=submissions[guide]||[];if(!subs.length)return;
+  var s=subs[0];
+  if(!confirm(guideLabel(guide)+' was already ordered at '+fmtTime(s.submitted_at)+' by '+s.submitted_by+'. Are you sure you want to add to or change this order?'))return;
+  unlocked[guide]=true;
+  var gi=itemsInGuide(guide);for(var i=0;i<gi.length;i++)delete quantities[gi[i].id];
+  render();
 }
 
 function submitOrder(){
   var name=document.getElementById('filledBy').value.trim();
   if(!name){showToast('Enter your name first','error');document.getElementById('filledBy').focus();return;}
-  var c=0;for(var k in quantities)if(quantities[k])c++;
-  if(!c)return;
-  if(!confirm('Submit order with '+c+' items?'))return;
-  var pending=0,done=0;
-  for(var id in quantities){
-    if(!quantities[id])continue;pending++;
-    var log=logs[id],data={quantity_needed:quantities[id],submitted_by:name,submitted:true,notes:''};
-    if(log&&log.id){
-      api('PATCH','order_logs','id=eq.'+log.id,data,function(r){done++;if(done===pending)showToast('Order submitted — '+pending+' items','success');});
-    }else{
-      (function(itemId){
-        api('POST','order_logs',null,{order_item_id:parseInt(itemId),date:todayStr,quantity_needed:quantities[itemId],submitted_by:name,submitted:true,notes:''},function(r){
-          if(r&&r.length)logs[r[0].order_item_id]=r[0];
-          done++;if(done===pending)showToast('Order submitted — '+pending+' items','success');
+  var gi=itemsInGuide(guide),gids={};
+  for(var i=0;i<gi.length;i++)gids[gi[i].id]=true;
+  var toSubmit=[];
+  for(var id in quantities){if(quantities[id]&&gids[id])toSubmit.push(id);}
+  if(!toSubmit.length)return;
+  var addl=!!unlocked[guide];
+  if(!confirm((addl?'Submit additional order with ':'Submit order with ')+toSubmit.length+' items?'))return;
+  var btn=document.getElementById('submitBtn');btn.disabled=true;
+  var pending=toSubmit.length,done=0,ok=0;
+  function finalize(){
+    if(ok<pending){showToast('Some items failed to save. Try again.','error');btn.disabled=false;return;}
+    api('POST','order_submissions',null,{guide_name:guideDbName(guide),location:'Tempest',date:todayStr,submitted_by:name,item_count:pending},function(sr){
+      if(Array.isArray(sr)&&sr.length){submissions[guide].push(sr[0]);}
+      unlocked[guide]=false;
+      for(var i=0;i<gi.length;i++)delete quantities[gi[i].id];
+      showToast((addl?'Additional order submitted — ':'Order submitted — ')+pending+' items','success');
+      render();
+    });
+  }
+  function onItemDone(success){done++;if(success)ok++;if(done===pending)finalize();}
+  for(var k=0;k<toSubmit.length;k++){
+    (function(itemId){
+      var qty=quantities[itemId];
+      var log=logs[itemId];
+      // Additional orders always POST so we never overwrite the original log row.
+      if(!addl&&log&&log.id){
+        api('PATCH','order_logs','id=eq.'+log.id,{quantity_needed:qty,submitted_by:name,submitted:true,notes:''},function(r){
+          var success=Array.isArray(r)&&r.length>0;
+          if(success)logs[r[0].order_item_id]=r[0];
+          onItemDone(success);
         });
-      })(id);
-    }
+      }else{
+        api('POST','order_logs',null,{order_item_id:parseInt(itemId),date:todayStr,quantity_needed:qty,submitted_by:name,submitted:true,notes:''},function(r){
+          var success=Array.isArray(r)&&r.length>0;
+          if(success&&!addl)logs[r[0].order_item_id]=r[0];
+          onItemDone(success);
+        });
+      }
+    })(toSubmit[k]);
   }
 }
 
