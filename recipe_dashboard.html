@@ -50,9 +50,75 @@
   .spinner { width: 32px; height: 32px; border: 3px solid #2a2d35; border-top-color: #e85d3a; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 16px; }
   @keyframes spin { to { transform: rotate(360deg); } }
   @media (max-width: 600px) { .header { padding: 24px 20px 16px; } .header h1 { font-size: 1.6rem; } .controls { padding: 16px 20px; } .grid { padding: 10px 20px 40px; grid-template-columns: 1fr; } }
+
+  .auth-gate { position: fixed; inset: 0; z-index: 99999; display: flex; align-items: center; justify-content: center; background: #0f1115; padding: 20px; font-family: 'DM Sans', sans-serif; }
+  .auth-gate.unlocked { display: none; }
+  .auth-card { width: 100%; max-width: 380px; background: #1a1d24; border: 1px solid #2a2d35; border-radius: 14px; padding: 32px 28px; display: flex; flex-direction: column; gap: 16px; box-shadow: 0 12px 40px rgba(0,0,0,0.5); }
+  .auth-title { font-family: 'Playfair Display', serif; font-size: 1.6rem; font-weight: 900; color: #e8e6e3; text-align: center; line-height: 1.2; }
+  .auth-title span { color: #e85d3a; }
+  .auth-input { width: 100%; min-height: 48px; padding: 12px 16px; background: #0f1115; border: 1px solid #2a2d35; border-radius: 8px; color: #e8e6e3; font-family: 'DM Sans', sans-serif; font-size: 1rem; outline: none; -webkit-appearance: none; }
+  .auth-input:focus { border-color: #e85d3a; }
+  .auth-input::placeholder { color: #8a8a8a; }
+  .auth-submit { width: 100%; min-height: 48px; padding: 12px 16px; background: #e85d3a; border: none; border-radius: 8px; color: #fff; font-family: 'DM Sans', sans-serif; font-size: 1rem; font-weight: 700; cursor: pointer; -webkit-appearance: none; }
+  .auth-submit:active { opacity: 0.85; }
+  .auth-error { display: none; color: #ef4444; font-size: 0.85rem; text-align: center; font-weight: 500; }
+  .auth-error.show { display: block; }
 </style>
 </head>
 <body>
+<div id="auth-gate" class="auth-gate">
+  <div class="auth-card">
+    <h2 class="auth-title">Box<span>Kitchen</span> — Recipe Database</h2>
+    <input type="password" id="auth-input" class="auth-input" autocomplete="off" placeholder="Password">
+    <button type="button" id="auth-submit" class="auth-submit">Enter</button>
+    <div class="auth-error" id="auth-error">Incorrect password</div>
+  </div>
+</div>
+<script>
+(function(){
+  var AUTH_PASSWORD = "CHANGEME";
+  var AUTH_KEY = "boxkitchen_auth";
+  var AUTH_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+  function isAuthed(){
+    try {
+      var v = parseInt(localStorage.getItem(AUTH_KEY), 10);
+      return !isNaN(v) && (Date.now() - v) < AUTH_TTL_MS;
+    } catch(e) { return false; }
+  }
+  function unlock(){
+    try { localStorage.setItem(AUTH_KEY, String(Date.now())); } catch(e) {}
+    var gate = document.getElementById('auth-gate');
+    if (gate) gate.classList.add('unlocked');
+  }
+  function init(){
+    var gate = document.getElementById('auth-gate');
+    if (!gate) return;
+    if (isAuthed()) { gate.classList.add('unlocked'); return; }
+    var input = document.getElementById('auth-input');
+    var btn = document.getElementById('auth-submit');
+    var err = document.getElementById('auth-error');
+    function submit(){
+      if (input.value === AUTH_PASSWORD) {
+        unlock();
+      } else {
+        err.classList.add('show');
+        input.value = '';
+        input.focus();
+      }
+    }
+    btn.addEventListener('click', submit);
+    input.addEventListener('keydown', function(e){
+      if (e.key === 'Enter') { e.preventDefault(); submit(); }
+    });
+    setTimeout(function(){ input.focus(); }, 50);
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
+</script>
 <div class="header">
   <h1>Box<span>Kitchen</span></h1>
   <p>Recipe Database — powered by Supabase</p>
