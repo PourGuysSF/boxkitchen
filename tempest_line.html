@@ -289,7 +289,7 @@ function getF(){
   var c=[],d=[],w=[];
   for(var i=0;i<items.length;i++){
     var it=items[i];if(it.shift!==shift)continue;
-    if(it.category==='cleaning')c.push(it);
+    if(it.category==='cleaning'&&(!it.day_specific||it.day_specific===dayAbbr))c.push(it);
     else if(it.category==='daily')d.push(it);
     else if(it.category==='weekly'&&(!it.day_specific||it.day_specific===dayAbbr))w.push(it);
   }
