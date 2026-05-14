@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>Tempest Prep List</title>
+<title>Tempest Line</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@700;900&display=swap');
   *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -129,7 +129,7 @@
 <body>
 <div id="auth-gate" class="auth-gate">
   <div class="auth-card">
-    <h2 class="auth-title">Tempest <span>Prep</span> List</h2>
+    <h2 class="auth-title">Tempest <span>Line</span> List</h2>
     <input type="password" id="auth-input" class="auth-input" autocomplete="off" placeholder="Password">
     <button type="button" id="auth-submit" class="auth-submit">Enter</button>
     <div class="auth-error" id="auth-error">Incorrect password</div>
@@ -182,7 +182,7 @@
 </script>
 <div class="header">
   <div class="header-row">
-    <h1>Tempest <span>Prep</span></h1>
+    <h1>Tempest <span>Line</span></h1>
     <div class="mgr-toggle"><span>Manager</span><div class="mgr-switch" id="mgrSwitch" onclick="toggleMgr()"><div class="knob"></div></div></div>
   </div>
   <div class="shift-toggle">
@@ -259,7 +259,7 @@ function goToday(){currentDate=new Date();updateDateDisplay();loadLogs();}
 function api(m,t,q,d,cb){var x=new XMLHttpRequest();x.open(m,SB+'/rest/v1/'+t+(q?'?'+q:''));x.setRequestHeader('apikey',SK);x.setRequestHeader('Authorization','Bearer '+SK);if(d){x.setRequestHeader('Content-Type','application/json');x.setRequestHeader('Prefer','return=representation');}x.onload=function(){var r=null;try{r=JSON.parse(x.responseText);}catch(e){}if(cb)cb(r);};x.onerror=function(){if(cb)cb(null);};x.send(d?JSON.stringify(d):null);}
 
 function loadData(){
-  api('GET','prep_items','location=eq.Tempest&team=eq.kitchen&order=sort_order.asc',null,function(r){
+  api('GET','prep_items','location=eq.Tempest&team=eq.line&order=sort_order.asc',null,function(r){
     items=r||[];
     api('GET','staff','location=eq.Tempest&active=eq.true&order=name.asc',null,function(r2){
       staff=r2||[];
@@ -410,7 +410,7 @@ function closeAddModal(){document.getElementById('addModal').classList.remove('s
 function saveNewItem(){
   var n=document.getElementById('addName').value.trim(),c=document.getElementById('addCat').value,d=document.getElementById('addDay').value.trim().toUpperCase()||null;
   if(!n)return;var mx=0;for(var i=0;i<items.length;i++)if(items[i].shift===shift&&items[i].category===c&&items[i].sort_order>mx)mx=items[i].sort_order;
-  api('POST','prep_items',null,{name:n,shift:shift,category:c,location:'Tempest',team:'kitchen',day_specific:d,sort_order:mx+1},function(r){if(r&&r.length){items.push(r[0]);toast();render();}closeAddModal();});
+  api('POST','prep_items',null,{name:n,shift:shift,category:c,location:'Tempest',team:'line',day_specific:d,sort_order:mx+1},function(r){if(r&&r.length){items.push(r[0]);toast();render();}closeAddModal();});
 }
 
 // ── STAFF MANAGEMENT ──
