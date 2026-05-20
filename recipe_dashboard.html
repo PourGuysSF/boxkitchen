@@ -12,6 +12,8 @@
   .header h1 { font-family: 'Playfair Display', serif; font-size: 2.4rem; font-weight: 900; }
   .header h1 span { color: #e85d3a; }
   .header p { color: #8a8a8a; font-size: 0.95rem; }
+  .home-link { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; min-width: 44px; padding: 0 10px; margin-left: -10px; margin-bottom: 8px; font-family: 'DM Sans', sans-serif; font-size: 0.85rem; font-weight: 500; color: rgba(232,230,227,0.75); text-decoration: none; transition: color 0.15s; }
+  .home-link:hover, .home-link:active { color: #e85d3a; }
   .status-bar { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
   .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #8a8a8a; animation: pulse 2s infinite; }
   @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
@@ -120,6 +122,7 @@
 })();
 </script>
 <div class="header">
+  <a class="home-link" href="index.html">← Home</a>
   <h1>Box<span>Kitchen</span></h1>
   <p>Recipe Database — powered by Supabase</p>
   <div class="status-bar">
