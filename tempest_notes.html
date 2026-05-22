@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<script>
+  (function(){
+    var raw = localStorage.getItem('boxkitchen_auth');
+    var ts = raw ? parseInt(raw, 10) : 0;
+    var TTL = 30 * 24 * 60 * 60 * 1000; // 30 days
+    if (!ts || isNaN(ts) || (Date.now() - ts) > TTL) {
+      window.location.replace('index.html');
+    }
+  })();
+</script>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Tempest Notes</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@700;900&display=swap');
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  :root{--bg:#0f1115;--surface:#1a1d24;--surface2:#22262f;--border:#2a2d35;--accent:#e85d3a;--accent-dim:rgba(232,93,58,0.15);--green:#22c55e;--green-dim:rgba(34,197,94,0.12);--yellow:#f59e0b;--blue:#3b82f6;--red:#ef4444;--text:#e8e6e3;--muted:#8a8a8a;--dim:#555}
+  body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding-bottom:90px}
+
+  .header{position:sticky;top:0;z-index:100;background:rgba(15,17,21,0.95);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-bottom:1px solid var(--border);padding:14px 20px 12px}
+  .header-row{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px}
+  .header h1{font-family:'Playfair Display',serif;font-size:1.4rem;font-weight:900;flex:1;text-align:center}
+  .header h1 span{color:var(--accent)}
+  .home-link{display:inline-flex;align-items:center;justify-content:center;min-height:44px;min-width:44px;padding:0 10px;margin-left:-10px;font-family:'DM Sans',sans-serif;font-size:0.85rem;font-weight:500;color:rgba(232,230,227,0.75);text-decoration:none;transition:color 0.15s;flex-shrink:0}
+  .home-link:hover,.home-link:active{color:var(--accent)}
+  .new-btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 16px;background:var(--accent);border:none;border-radius:10px;color:#fff;font-family:'DM Sans',sans-serif;font-size:0.88rem;font-weight:700;cursor:pointer;flex-shrink:0}
+  .new-btn:active{opacity:0.85}
+
+  .filter-toggle{display:flex;background:var(--surface);border-radius:10px;border:1px solid var(--border);overflow:hidden}
+  .filter-btn{flex:1;padding:9px;text-align:center;font-family:'DM Sans',sans-serif;font-size:0.85rem;font-weight:600;border:none;background:transparent;color:var(--muted);cursor:pointer}
+  .filter-btn.active{background:var(--accent);color:#fff}
+
+  .feed{padding:14px 16px;display:flex;flex-direction:column;gap:12px}
+  .note-card{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--border);border-radius:12px;padding:14px 16px}
+  .note-card.cat-urgent{border-left-color:var(--red)}
+  .note-card.cat-equipment{border-left-color:var(--yellow)}
+  .note-card.cat-supplies{border-left-color:var(--blue)}
+  .note-card.cat-recipe{border-left-color:var(--accent)}
+  .note-card.cat-other{border-left-color:var(--muted)}
+  .note-card.resolved{opacity:0.55}
+  .note-top{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px}
+  .note-cat{font-size:0.74rem;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted)}
+  .note-time{font-size:0.72rem;color:var(--dim);white-space:nowrap}
+  .note-body{font-size:0.95rem;line-height:1.45;white-space:pre-wrap;word-break:break-word}
+  .note-card.resolved .note-body{text-decoration:line-through;color:var(--muted)}
+  .note-meta{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:12px}
+  .note-by{font-size:0.78rem;color:var(--muted)}
+  .resolve-btn{padding:8px 14px;min-height:40px;background:transparent;border:1px solid var(--green);border-radius:8px;color:var(--green);font-family:'DM Sans',sans-serif;font-size:0.8rem;font-weight:600;cursor:pointer;flex-shrink:0}
+  .resolve-btn:active{background:var(--green);color:#fff}
+  .resolved-tag{text-align:right;font-size:0.76rem;font-weight:700;color:var(--green)}
+  .resolved-tag span{display:block;font-size:0.7rem;font-weight:400;color:var(--dim);margin-top:2px}
+
+  .empty{text-align:center;color:var(--muted);padding:60px 20px;font-size:0.9rem}
+
+  /* MODAL */
+  .modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:300;align-items:center;justify-content:center;padding:16px}
+  .modal-bg.show{display:flex}
+  .modal{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:22px;width:100%;max-width:380px;max-height:90vh;overflow-y:auto}
+  .modal h3{font-size:1.05rem;margin-bottom:14px}
+  .modal label{display:block;font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:7px}
+  .cat-picker{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+  .cat-opt{padding:9px 12px;min-height:44px;display:flex;align-items:center;gap:5px;background:var(--bg);border:1px solid var(--border);border-radius:9px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:0.82rem;font-weight:600;cursor:pointer}
+  .cat-opt.sel{border-color:var(--accent);background:var(--accent-dim);color:var(--accent)}
+  .modal textarea{width:100%;padding:11px;background:var(--bg);border:1px solid var(--border);border-radius:9px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:0.95rem;margin-bottom:16px;outline:none;resize:vertical;min-height:96px}
+  .modal textarea:focus{border-color:var(--accent)}
+  .modal select{width:100%;padding:11px;background:var(--bg);border:1px solid var(--border);border-radius:9px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:0.95rem;margin-bottom:16px;outline:none}
+  .modal select:focus{border-color:var(--accent)}
+  .modal-err{display:none;color:var(--red);font-size:0.83rem;font-weight:600;margin-bottom:12px}
+  .modal-err.show{display:block}
+  .modal-btns{display:flex;gap:10px}
+  .modal-btn{flex:1;padding:12px;min-height:48px;border:none;border-radius:9px;font-family:'DM Sans',sans-serif;font-size:0.92rem;font-weight:700;cursor:pointer}
+  .modal-btn.cancel{background:var(--border);color:var(--text)}
+  .modal-btn.save{background:var(--accent);color:#fff}
+  .modal-btn:disabled{opacity:0.6;cursor:default}
+
+  .toast{position:fixed;bottom:30px;left:50%;transform:translateX(-50%);background:var(--green);color:#fff;padding:10px 24px;border-radius:10px;font-size:0.85rem;font-weight:600;opacity:0;transition:opacity 0.3s;pointer-events:none;z-index:400;box-shadow:0 4px 20px rgba(0,0,0,0.4)}
+  .toast.show{opacity:1}
+  .loading{display:flex;flex-direction:column;align-items:center;padding:80px 20px;color:var(--muted)}
+  .spinner{width:30px;height:30px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;margin-bottom:14px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="header-row">
+    <a class="home-link" href="index.html">← Home</a>
+    <h1>Tempest <span>Notes</span></h1>
+    <button class="new-btn" onclick="openNote()">+ New Note</button>
+  </div>
+  <div class="filter-toggle">
+    <button class="filter-btn active" onclick="setFilter('open')">Open</button>
+    <button class="filter-btn" onclick="setFilter('resolved')">Resolved</button>
+    <button class="filter-btn" onclick="setFilter('all')">All</button>
+  </div>
+</div>
+
+<div id="appBody"><div class="loading"><div class="spinner"></div><p>Loading notes...</p></div></div>
+
+<!-- New Note Modal -->
+<div class="modal-bg" id="noteModal">
+  <div class="modal">
+    <h3>New Note</h3>
+    <label>Category</label>
+    <div class="cat-picker" id="catPicker"></div>
+    <label>Note</label>
+    <textarea id="noteBody" placeholder="What's going on? (e.g. Lowboy #2 is down, 86 the salmon...)"></textarea>
+    <label>Posted by</label>
+    <select id="noteBy"><option value="">— Select name —</option></select>
+    <div class="modal-err" id="noteErr"></div>
+    <div class="modal-btns">
+      <button class="modal-btn cancel" onclick="closeNote()">Cancel</button>
+      <button class="modal-btn save" id="noteSaveBtn" onclick="saveNote()">Save Note</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast">✓ Saved</div>
+
+<script>
+var SB='https://sxppuyarecqkgkrsrefc.supabase.co',SK='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN4cHB1eWFyZWNxa2drcnNyZWZjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczOTA4MzAsImV4cCI6MjA5Mjk2NjgzMH0.GM8OfcR68_JjdPeQ3k7j6L3ulJFaeS1xnSLBcdtYXtU';
+var CATS=[
+  {key:'urgent',emoji:'🚨',label:'Urgent'},
+  {key:'equipment',emoji:'🔧',label:'Equipment'},
+  {key:'supplies',emoji:'📋',label:"Supplies & 86'd"},
+  {key:'recipe',emoji:'🍳',label:'Recipe issue'},
+  {key:'other',emoji:'💬',label:'Other'}
+];
+var notes=[],staffNames=[],filter='open',selCat='other',st=null;
+
+function api(m,t,q,d,cb){var x=new XMLHttpRequest();x.open(m,SB+'/rest/v1/'+t+(q?'?'+q:''));x.setRequestHeader('apikey',SK);x.setRequestHeader('Authorization','Bearer '+SK);if(d){x.setRequestHeader('Content-Type','application/json');x.setRequestHeader('Prefer','return=representation');}x.onload=function(){var r=null;try{r=JSON.parse(x.responseText);}catch(e){}if(cb)cb(r);};x.onerror=function(){if(cb)cb(null);};x.send(d?JSON.stringify(d):null);}
+
+function esc(s){return s?String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'):''}
+
+function catInfo(k){for(var i=0;i<CATS.length;i++)if(CATS[i].key===k)return CATS[i];return CATS[CATS.length-1];}
+
+function timeAgo(iso){
+  if(!iso)return '';
+  var then=new Date(iso),now=new Date(),diff=(now-then)/1000;
+  if(diff<60)return 'just now';
+  if(diff<3600)return Math.floor(diff/60)+'m ago';
+  if(diff<86400)return Math.floor(diff/3600)+'h ago';
+  var d1=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  var d2=new Date(then.getFullYear(),then.getMonth(),then.getDate());
+  var days=Math.round((d1-d2)/86400000);
+  if(days===1)return 'yesterday';
+  if(days<7)return days+'d ago';
+  var mn=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return mn[then.getMonth()]+' '+then.getDate();
+}
+
+function init(){buildCatPicker();loadStaff();loadNotes();}
+
+function loadStaff(){
+  api('GET','staff','location=eq.Tempest&active=eq.true&order=name.asc',null,function(r){
+    var seen={};staffNames=[];
+    if(r&&r.length)for(var i=0;i<r.length;i++){var n=r[i].name;if(n&&!seen[n]){seen[n]=true;staffNames.push(n);}}
+    var sel=document.getElementById('noteBy');
+    for(var i=0;i<staffNames.length;i++){var o=document.createElement('option');o.value=staffNames[i];o.textContent=staffNames[i];sel.appendChild(o);}
+  });
+}
+
+function loadNotes(){
+  api('GET','notes','location=eq.Tempest&order=created_at.desc',null,function(r){
+    notes=r&&r.length?r:[];render();
+  });
+}
+
+function setFilter(f){
+  filter=f;
+  var b=document.querySelectorAll('.filter-btn'),idx={open:0,resolved:1,all:2}[f];
+  for(var i=0;i<b.length;i++)b[i].classList.toggle('active',i===idx);
+  render();
+}
+
+function render(){
+  var list=notes.filter(function(n){
+    if(filter==='open')return n.status!=='resolved';
+    if(filter==='resolved')return n.status==='resolved';
+    return true;
+  });
+  if(!list.length){
+    var word=filter==='all'?'':filter+' ';
+    document.getElementById('appBody').innerHTML='<div class="empty">No '+word+'notes yet.</div>';
+    return;
+  }
+  var h='<div class="feed">';
+  for(var i=0;i<list.length;i++)h+=card(list[i]);
+  h+='</div>';
+  document.getElementById('appBody').innerHTML=h;
+}
+
+function card(n){
+  var c=catInfo(n.category),resolved=n.status==='resolved';
+  var h='<div class="note-card cat-'+c.key+(resolved?' resolved':'')+'">';
+  h+='<div class="note-top"><span class="note-cat">'+c.emoji+' '+esc(c.label)+'</span><span class="note-time">'+esc(timeAgo(n.created_at))+'</span></div>';
+  h+='<div class="note-body">'+esc(n.body)+'</div>';
+  h+='<div class="note-meta">';
+  h+='<span class="note-by">'+(n.posted_by?('— '+esc(n.posted_by)):'— Anonymous')+'</span>';
+  if(resolved){
+    h+='<span class="resolved-tag">✓ Resolved'+(n.resolved_by?'<span>by '+esc(n.resolved_by)+'</span>':'')+'</span>';
+  }else{
+    h+='<button class="resolve-btn" onclick="resolveNote('+n.id+')">Mark resolved</button>';
+  }
+  h+='</div></div>';
+  return h;
+}
+
+function resolveNote(id){
+  var name=prompt("Who's resolving this note?","");
+  if(name===null)return;
+  name=name.trim();
+  api('PATCH','notes','id=eq.'+id,{status:'resolved',resolved_at:new Date().toISOString(),resolved_by:name||null},function(r){
+    if(r&&r.length){
+      for(var i=0;i<notes.length;i++)if(notes[i].id===id)notes[i]=r[0];
+      toast('Note resolved');render();
+    }else{
+      toast('Could not resolve — try again');
+    }
+  });
+}
+
+// ── NEW NOTE MODAL ──
+function buildCatPicker(){
+  var p=document.getElementById('catPicker'),h='';
+  for(var i=0;i<CATS.length;i++){
+    h+='<div class="cat-opt'+(CATS[i].key===selCat?' sel':'')+'" data-cat="'+CATS[i].key+'" onclick="pickCat(\''+CATS[i].key+'\')">'+CATS[i].emoji+' '+esc(CATS[i].label)+'</div>';
+  }
+  p.innerHTML=h;
+}
+function pickCat(k){
+  selCat=k;
+  var o=document.querySelectorAll('.cat-opt');
+  for(var i=0;i<o.length;i++)o[i].classList.toggle('sel',o[i].getAttribute('data-cat')===k);
+}
+function openNote(){
+  selCat='other';buildCatPicker();
+  document.getElementById('noteBody').value='';
+  document.getElementById('noteBy').value='';
+  hideErr();
+  document.getElementById('noteModal').classList.add('show');
+  setTimeout(function(){document.getElementById('noteBody').focus();},100);
+}
+function closeNote(){document.getElementById('noteModal').classList.remove('show');}
+function showErr(m){var e=document.getElementById('noteErr');e.textContent=m;e.classList.add('show');}
+function hideErr(){document.getElementById('noteErr').classList.remove('show');}
+
+function saveNote(){
+  var body=document.getElementById('noteBody').value.trim();
+  var by=document.getElementById('noteBy').value;
+  if(!body){showErr('Please enter a note.');document.getElementById('noteBody').focus();return;}
+  hideErr();
+  var btn=document.getElementById('noteSaveBtn');btn.disabled=true;
+  api('POST','notes',null,{location:'Tempest',category:selCat,body:body,posted_by:by||null,status:'open'},function(r){
+    btn.disabled=false;
+    if(r&&r.length){
+      notes.unshift(r[0]);
+      closeNote();
+      if(filter==='resolved')setFilter('open');else render();
+      toast('Note posted');
+    }else{
+      showErr('Could not save note. Please try again.');
+    }
+  });
+}
+
+function toast(msg){var t=document.getElementById('toast');t.textContent='✓ '+msg;t.classList.add('show');clearTimeout(st);st=setTimeout(function(){t.classList.remove('show');},1500);}
+
+document.getElementById('noteModal').addEventListener('click',function(e){if(e.target===this)closeNote();});
+init();
+</script>
+</body>
+</html>
