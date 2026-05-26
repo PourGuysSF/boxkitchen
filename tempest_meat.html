@@ -52,6 +52,16 @@
   .count-input:focus{border-color:var(--accent)}
   .count-input.filled{border-color:var(--green);background:var(--green-dim)}
   .count-input::placeholder{color:var(--dim)}
+  .count-value{width:118px;min-height:44px;padding:8px 10px;color:var(--text);opacity:0.85;font-family:'DM Sans',sans-serif;font-size:0.95rem;text-align:center;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+  .count-value.blank{color:var(--dim);opacity:0.6}
+  .count-by{font-size:0.7rem;color:var(--muted);margin-top:3px;font-weight:500}
+
+  .view-toggle{display:flex;gap:8px;padding:10px 20px;border-bottom:1px solid var(--border);background:var(--surface)}
+  .view-toggle button{flex:1;min-height:40px;padding:8px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--muted);font-family:'DM Sans',sans-serif;font-size:0.85rem;font-weight:600;cursor:pointer;transition:background 0.15s,border-color 0.15s,color 0.15s}
+  .view-toggle button.active{background:var(--accent);border-color:var(--accent);color:#fff}
+  .prev-date-label{display:none;padding:10px 20px;background:rgba(232,93,58,0.06);border-bottom:1px solid var(--border);font-size:0.82rem;color:var(--text)}
+  .prev-date-label.show{display:block}
+  .prev-date-label .by{color:var(--muted);font-size:0.75rem;margin-left:6px}
 
   .empty{padding:60px 20px;text-align:center;color:var(--muted)}
   .loading{display:flex;flex-direction:column;align-items:center;padding:80px 20px;color:var(--muted)}
@@ -83,11 +93,16 @@
   <div class="date-display" id="dateDisplay"></div>
   <div class="date-sub">Daily meat count</div>
 </div>
-<div class="name-bar">
+<div class="view-toggle">
+  <button type="button" id="viewTodayBtn" class="active" onclick="setView('today')">Today</button>
+  <button type="button" id="viewPrevBtn" onclick="setView('previous')">Previous</button>
+</div>
+<div class="name-bar" id="nameBar">
   <label>Counted by:</label>
   <select id="countedBy"><option value="">Select…</option></select>
 </div>
-<div class="intro">Count on-hand protein against par, then save. Today's saved counts are pre-filled.</div>
+<div class="prev-date-label" id="prevDateLabel"></div>
+<div class="intro" id="introBar">Count on-hand protein against par, then save. Today's saved counts are pre-filled.</div>
 <div id="appBody"><div class="loading"><div class="spinner"></div><p>Loading meat list...</p></div></div>
 <div class="submit-bar">
   <div class="submit-summary" id="submitSummary">Enter counts and save</div>
@@ -96,7 +111,7 @@
 <div class="toast" id="toast"></div>
 <script>
 var SB='https://sxppuyarecqkgkrsrefc.supabase.co',SK='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN4cHB1eWFyZWNxa2drcnNyZWZjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczOTA4MzAsImV4cCI6MjA5Mjk2NjgzMH0.GM8OfcR68_JjdPeQ3k7j6L3ulJFaeS1xnSLBcdtYXtU';
-var items=[],staff=[],byItem={},todayStr='',st=null;
+var items=[],staff=[],byItem={},prevByItem={},todayStr='',prevDate='',viewMode='today',itemsLoaded=false,st=null;
 
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 
@@ -113,17 +128,62 @@ function init(){
 function loadData(){
   api('GET','meat_items','location=eq.Tempest&active=eq.true&order=sort_order.asc',null,function(r){
     items=r||[];
+    itemsLoaded=true;
     api('GET','staff','location=eq.Tempest&active=eq.true&order=name.asc',null,function(r2){
       staff=r2||[];
       fillStaff();
-      api('GET','meat_counts','location=eq.Tempest&count_date=eq.'+todayStr,null,function(r3){
-        byItem={};
-        var rows=r3||[];
-        for(var i=0;i<rows.length;i++){byItem[rows[i].meat_item_id]={id:rows[i].id,on_hand_text:rows[i].on_hand_text||''};}
-        render();
-      });
+      loadToday();
     });
   });
+}
+
+function loadToday(){
+  document.getElementById('appBody').innerHTML='<div class="loading"><div class="spinner"></div><p>Loading…</p></div>';
+  api('GET','meat_counts','location=eq.Tempest&count_date=eq.'+todayStr,null,function(r){
+    byItem={};
+    var rows=r||[];
+    for(var i=0;i<rows.length;i++){byItem[rows[i].meat_item_id]={id:rows[i].id,on_hand_text:rows[i].on_hand_text||''};}
+    render();
+  });
+}
+
+function loadPrevious(){
+  document.getElementById('appBody').innerHTML='<div class="loading"><div class="spinner"></div><p>Loading…</p></div>';
+  api('GET','meat_counts','select=count_date&location=eq.Tempest&count_date=lt.'+todayStr+'&order=count_date.desc&limit=1',null,function(r){
+    var rows=r||[];
+    if(!rows.length){
+      prevDate='';prevByItem={};
+      document.getElementById('prevDateLabel').className='prev-date-label';
+      document.getElementById('appBody').innerHTML='<div class="empty">No previous counts recorded yet.</div>';
+      return;
+    }
+    prevDate=rows[0].count_date;
+    api('GET','meat_counts','location=eq.Tempest&count_date=eq.'+prevDate,null,function(r2){
+      prevByItem={};
+      var prows=r2||[];
+      for(var i=0;i<prows.length;i++){prevByItem[prows[i].meat_item_id]={on_hand_text:prows[i].on_hand_text||'',counted_by:prows[i].counted_by||''};}
+      render();
+    });
+  });
+}
+
+function fmtPrevDate(s){
+  var p=s.split('-');
+  var d=new Date(parseInt(p[0],10),parseInt(p[1],10)-1,parseInt(p[2],10));
+  return d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
+}
+
+function setView(mode){
+  if(mode===viewMode)return;
+  viewMode=mode;
+  document.getElementById('viewTodayBtn').className=(mode==='today'?'active':'');
+  document.getElementById('viewPrevBtn').className=(mode==='previous'?'active':'');
+  var isToday=(mode==='today');
+  document.getElementById('nameBar').style.display=isToday?'':'none';
+  document.querySelector('.submit-bar').style.display=isToday?'':'none';
+  document.getElementById('introBar').style.display=isToday?'':'none';
+  document.getElementById('prevDateLabel').className='prev-date-label';
+  if(isToday){loadToday();}else{loadPrevious();}
 }
 
 function fillStaff(){
@@ -135,6 +195,14 @@ function fillStaff(){
 function render(){
   var body=document.getElementById('appBody');
   if(!items.length){body.innerHTML='<div class="empty">No meat items found.</div>';return;}
+  var isPrev=(viewMode==='previous');
+  if(isPrev){
+    var lbl=document.getElementById('prevDateLabel');
+    var commonBy='';
+    for(var k in prevByItem){if(prevByItem[k].counted_by){commonBy=prevByItem[k].counted_by;break;}}
+    lbl.innerHTML='Showing: <strong>'+esc(fmtPrevDate(prevDate))+'</strong>'+(commonBy?'<span class="by">· Counted by '+esc(commonBy)+'</span>':'');
+    lbl.className='prev-date-label show';
+  }
   var groups=[],seen={};
   for(var i=0;i<items.length;i++){var s=items[i].category||'Other';if(!seen[s]){seen[s]=true;groups.push(s);}}
   var h='';
@@ -144,13 +212,22 @@ function render(){
     for(var i=0;i<items.length;i++){
       var it=items[i];
       if((it.category||'Other')!==grp)continue;
-      var saved=byItem[it.id]?byItem[it.id].on_hand_text:'';
       var hasPar=it.par_text!=null&&String(it.par_text).trim()!=='';
       var par=hasPar?'<div class="count-par">Par: '+esc(it.par_text)+'</div>':'';
-      h+='<div class="count-row">'
-        +'<div class="count-info"><div class="count-name">'+esc(it.name)+'</div>'+par+'</div>'
-        +'<input class="count-input'+(saved?' filled':'')+'" type="text" inputmode="text" autocomplete="off" data-item-id="'+it.id+'" data-orig="'+esc(saved)+'" value="'+esc(saved)+'" placeholder="count" oninput="onInput(this)">'
-        +'</div>';
+      if(isPrev){
+        var p=prevByItem[it.id],pv=p?(p.on_hand_text||'').trim():'';
+        var by=(p&&p.counted_by)?'<div class="count-by">Counted by '+esc(p.counted_by)+'</div>':'';
+        h+='<div class="count-row readonly">'
+          +'<div class="count-info"><div class="count-name">'+esc(it.name)+'</div>'+par+by+'</div>'
+          +'<div class="count-value'+(pv?'':' blank')+'">'+(pv?esc(pv):'—')+'</div>'
+          +'</div>';
+      }else{
+        var saved=byItem[it.id]?byItem[it.id].on_hand_text:'';
+        h+='<div class="count-row">'
+          +'<div class="count-info"><div class="count-name">'+esc(it.name)+'</div>'+par+'</div>'
+          +'<input class="count-input'+(saved?' filled':'')+'" type="text" inputmode="text" autocomplete="off" data-item-id="'+it.id+'" data-orig="'+esc(saved)+'" value="'+esc(saved)+'" placeholder="count" oninput="onInput(this)">'
+          +'</div>';
+      }
     }
   }
   body.innerHTML=h;
