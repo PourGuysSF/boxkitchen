@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<script>
+  (function(){
+    var raw = localStorage.getItem('boxkitchen_auth');
+    var ts = raw ? parseInt(raw, 10) : 0;
+    var TTL = 30 * 24 * 60 * 60 * 1000; // 30 days
+    if (!ts || isNaN(ts) || (Date.now() - ts) > TTL) {
+      window.location.replace('index.html');
+    }
+  })();
+</script>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Tempest Portion</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@700;900&display=swap');
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  :root{--bg:#0f1115;--surface:#1a1d24;--surface2:#22262f;--border:#2a2d35;--accent:#e85d3a;--accent-dim:rgba(232,93,58,0.15);--green:#22c55e;--green-dim:rgba(34,197,94,0.12);--yellow:#f59e0b;--blue:#3b82f6;--red:#ef4444;--text:#e8e6e3;--muted:#8a8a8a;--dim:#555}
+  body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding-bottom:100px}
+
+  .header{position:sticky;top:0;z-index:100;background:rgba(15,17,21,0.95);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-bottom:1px solid var(--border);padding:14px 20px 12px}
+  .header-row{display:flex;justify-content:space-between;align-items:center}
+  .header h1{font-family:'Playfair Display',serif;font-size:1.4rem;font-weight:900}
+  .header h1 span{color:var(--accent)}
+  .home-link{display:inline-flex;align-items:center;justify-content:center;min-height:44px;min-width:44px;padding:0 10px;margin-left:-10px;font-family:'DM Sans',sans-serif;font-size:0.85rem;font-weight:500;color:rgba(232,230,227,0.75);text-decoration:none;transition:color 0.15s}
+  .home-link:hover,.home-link:active{color:var(--accent)}
+  .home-spacer{min-width:44px;margin-right:-10px}
+
+  .date-bar{display:flex;justify-content:space-between;align-items:center;padding:10px 20px;border-bottom:1px solid var(--border)}
+  .date-display{font-size:0.9rem;font-weight:600}
+  .date-sub{font-size:0.75rem;color:var(--muted);font-weight:600}
+
+  .name-bar{display:flex;align-items:center;gap:10px;padding:10px 20px;border-bottom:1px solid var(--border);background:var(--surface)}
+  .name-bar label{font-size:0.8rem;color:var(--muted);font-weight:600;white-space:nowrap}
+  .name-bar select{flex:1;min-height:44px;padding:8px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:0.9rem;outline:none;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10'%3E%3Cpath d='M0 2l5 5 5-5' fill='%238a8a8a'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:28px}
+  .name-bar select:focus{border-color:var(--accent)}
+
+  .intro{padding:9px 20px;font-size:0.78rem;color:var(--muted);border-bottom:1px solid var(--border);line-height:1.4}
+
+  .cat-header{padding:10px 20px;background:rgba(232,93,58,0.08);border-bottom:1px solid var(--border);border-top:1px solid var(--border)}
+  .cat-label{font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--accent)}
+
+  .count-row{display:flex;align-items:center;gap:12px;padding:10px 20px;border-bottom:1px solid rgba(42,45,53,0.4);min-height:56px}
+  .count-info{flex:1;min-width:0}
+  .count-name{font-size:0.9rem;font-weight:500;line-height:1.25}
+  .count-par{font-size:0.74rem;color:var(--muted);margin-top:2px}
+  .count-input{width:118px;min-height:44px;padding:8px 10px;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:0.9rem;text-align:center;outline:none;flex-shrink:0}
+  .count-input:focus{border-color:var(--accent)}
+  .count-input.filled{border-color:var(--green);background:var(--green-dim)}
+  .count-input::placeholder{color:var(--dim)}
+  .count-value{width:118px;min-height:44px;padding:8px 10px;color:var(--text);opacity:0.85;font-family:'DM Sans',sans-serif;font-size:0.95rem;text-align:center;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+  .count-value.blank{color:var(--dim);opacity:0.6}
+  .count-by{font-size:0.7rem;color:var(--muted);margin-top:3px;font-weight:500}
+
+  .view-toggle{display:flex;gap:8px;padding:10px 20px;border-bottom:1px solid var(--border);background:var(--surface)}
+  .view-toggle button{flex:1;min-height:40px;padding:8px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--muted);font-family:'DM Sans',sans-serif;font-size:0.85rem;font-weight:600;cursor:pointer;transition:background 0.15s,border-color 0.15s,color 0.15s}
+  .view-toggle button.active{background:var(--accent);border-color:var(--accent);color:#fff}
+  .prev-date-label{display:none;padding:10px 20px;background:rgba(232,93,58,0.06);border-bottom:1px solid var(--border);font-size:0.82rem;color:var(--text)}
+  .prev-date-label.show{display:block}
+  .prev-date-label .by{color:var(--muted);font-size:0.75rem;margin-left:6px}
+
+  .empty{padding:60px 20px;text-align:center;color:var(--muted)}
+  .loading{display:flex;flex-direction:column;align-items:center;padding:80px 20px;color:var(--muted)}
+  .spinner{width:30px;height:30px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;margin-bottom:14px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  .submit-bar{position:fixed;bottom:0;left:0;right:0;padding:12px 20px;background:rgba(15,17,21,0.95);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-top:1px solid var(--border);display:flex;gap:12px;align-items:center;z-index:100}
+  .submit-summary{flex:1;font-size:0.85rem;color:var(--muted)}
+  .submit-summary strong{color:var(--text)}
+  .submit-btn{padding:12px 28px;background:var(--accent);border:none;border-radius:10px;color:#fff;font-family:'DM Sans',sans-serif;font-size:0.95rem;font-weight:700;cursor:pointer}
+  .submit-btn:active{opacity:0.8}
+  .submit-btn:disabled{background:var(--border);color:var(--dim);cursor:default}
+
+  .toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%);padding:10px 24px;border-radius:10px;font-size:0.85rem;font-weight:600;opacity:0;transition:opacity 0.3s;pointer-events:none;z-index:200;box-shadow:0 4px 20px rgba(0,0,0,0.4)}
+  .toast.show{opacity:1}
+  .toast.success{background:var(--green);color:#fff}
+  .toast.error{background:var(--red);color:#fff}
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="header-row">
+    <a class="home-link" href="index.html">← Home</a>
+    <h1>Tempest <span>Portion</span></h1>
+    <span class="home-spacer"></span>
+  </div>
+</div>
+<div class="date-bar">
+  <div class="date-display" id="dateDisplay"></div>
+  <div class="date-sub">Daily portion count</div>
+</div>
+<div class="view-toggle">
+  <button type="button" id="viewTodayBtn" class="active" onclick="setView('today')">Today</button>
+  <button type="button" id="viewPrevBtn" onclick="setView('previous')">Previous</button>
+</div>
+<div class="name-bar" id="nameBar">
+  <label>Counted by:</label>
+  <select id="countedBy"><option value="">Select…</option></select>
+</div>
+<div class="prev-date-label" id="prevDateLabel"></div>
+<div class="intro" id="introBar">Count on-hand portions against par, then save. Today's saved counts are pre-filled.</div>
+<div id="appBody"><div class="loading"><div class="spinner"></div><p>Loading portion list...</p></div></div>
+<div class="submit-bar">
+  <div class="submit-summary" id="submitSummary">Enter counts and save</div>
+  <button class="submit-btn" id="saveBtn" onclick="saveCounts()">Save Counts</button>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+var SB='https://sxppuyarecqkgkrsrefc.supabase.co',SK='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN4cHB1eWFyZWNxa2drcnNyZWZjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczOTA4MzAsImV4cCI6MjA5Mjk2NjgzMH0.GM8OfcR68_JjdPeQ3k7j6L3ulJFaeS1xnSLBcdtYXtU';
+var items=[],staff=[],byItem={},prevByItem={},todayStr='',prevDate='',viewMode='today',itemsLoaded=false,st=null;
+
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+
+function api(m,t,q,d,cb){var x=new XMLHttpRequest();x.open(m,SB+'/rest/v1/'+t+(q?'?'+q:''));x.setRequestHeader('apikey',SK);x.setRequestHeader('Authorization','Bearer '+SK);if(d){x.setRequestHeader('Content-Type','application/json');x.setRequestHeader('Prefer','return=representation');}x.onload=function(){var r=null;try{r=JSON.parse(x.responseText);}catch(e){}if(cb)cb(r);};x.onerror=function(){if(cb)cb(null);};x.send(d?JSON.stringify(d):null);}
+
+function init(){
+  var d=new Date(),mn=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  var dn=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  todayStr=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  document.getElementById('dateDisplay').textContent=dn[d.getDay()]+', '+mn[d.getMonth()]+' '+d.getDate();
+  loadData();
+}
+
+function loadData(){
+  api('GET','portion_items','location=eq.Tempest&active=eq.true&order=sort_order.asc',null,function(r){
+    items=r||[];
+    itemsLoaded=true;
+    api('GET','staff','location=eq.Tempest&active=eq.true&order=name.asc',null,function(r2){
+      staff=r2||[];
+      fillStaff();
+      loadToday();
+    });
+  });
+}
+
+function loadToday(){
+  document.getElementById('appBody').innerHTML='<div class="loading"><div class="spinner"></div><p>Loading…</p></div>';
+  api('GET','portion_counts','location=eq.Tempest&count_date=eq.'+todayStr,null,function(r){
+    byItem={};
+    var rows=r||[];
+    for(var i=0;i<rows.length;i++){byItem[rows[i].portion_item_id]={id:rows[i].id,on_hand_text:rows[i].on_hand_text||''};}
+    render();
+  });
+}
+
+function loadPrevious(){
+  document.getElementById('appBody').innerHTML='<div class="loading"><div class="spinner"></div><p>Loading…</p></div>';
+  api('GET','portion_counts','select=count_date&location=eq.Tempest&count_date=lt.'+todayStr+'&order=count_date.desc&limit=1',null,function(r){
+    var rows=r||[];
+    if(!rows.length){
+      prevDate='';prevByItem={};
+      document.getElementById('prevDateLabel').className='prev-date-label';
+      document.getElementById('appBody').innerHTML='<div class="empty">No previous counts recorded yet.</div>';
+      return;
+    }
+    prevDate=rows[0].count_date;
+    api('GET','portion_counts','location=eq.Tempest&count_date=eq.'+prevDate,null,function(r2){
+      prevByItem={};
+      var prows=r2||[];
+      for(var i=0;i<prows.length;i++){prevByItem[prows[i].portion_item_id]={on_hand_text:prows[i].on_hand_text||'',counted_by:prows[i].counted_by||''};}
+      render();
+    });
+  });
+}
+
+function fmtPrevDate(s){
+  var p=s.split('-');
+  var d=new Date(parseInt(p[0],10),parseInt(p[1],10)-1,parseInt(p[2],10));
+  return d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
+}
+
+function setView(mode){
+  if(mode===viewMode)return;
+  viewMode=mode;
+  document.getElementById('viewTodayBtn').className=(mode==='today'?'active':'');
+  document.getElementById('viewPrevBtn').className=(mode==='previous'?'active':'');
+  var isToday=(mode==='today');
+  document.getElementById('nameBar').style.display=isToday?'':'none';
+  document.querySelector('.submit-bar').style.display=isToday?'':'none';
+  document.getElementById('introBar').style.display=isToday?'':'none';
+  document.getElementById('prevDateLabel').className='prev-date-label';
+  if(isToday){loadToday();}else{loadPrevious();}
+}
+
+function fillStaff(){
+  var sel=document.getElementById('countedBy'),h='<option value="">Select…</option>';
+  for(var i=0;i<staff.length;i++){h+='<option value="'+esc(staff[i].name)+'">'+esc(staff[i].name)+'</option>';}
+  sel.innerHTML=h;
+}
+
+function render(){
+  var body=document.getElementById('appBody');
+  if(!items.length){body.innerHTML='<div class="empty">No portion items found.</div>';return;}
+  var isPrev=(viewMode==='previous');
+  if(isPrev){
+    var lbl=document.getElementById('prevDateLabel');
+    var commonBy='';
+    for(var k in prevByItem){if(prevByItem[k].counted_by){commonBy=prevByItem[k].counted_by;break;}}
+    lbl.innerHTML='Showing: <strong>'+esc(fmtPrevDate(prevDate))+'</strong>'+(commonBy?'<span class="by">· Counted by '+esc(commonBy)+'</span>':'');
+    lbl.className='prev-date-label show';
+  }
+  var groups=[],seen={};
+  for(var i=0;i<items.length;i++){var s=items[i].station||'Other';if(!seen[s]){seen[s]=true;groups.push(s);}}
+  var h='';
+  for(var g=0;g<groups.length;g++){
+    var grp=groups[g];
+    h+='<div class="cat-header"><div class="cat-label">'+esc(grp.toUpperCase())+'</div></div>';
+    for(var i=0;i<items.length;i++){
+      var it=items[i];
+      if((it.station||'Other')!==grp)continue;
+      var hasPar=it.par_text!=null&&String(it.par_text).trim()!=='';
+      var par=hasPar?'<div class="count-par">Par: '+esc(it.par_text)+'</div>':'';
+      if(isPrev){
+        var p=prevByItem[it.id],pv=p?(p.on_hand_text||'').trim():'';
+        var by=(p&&p.counted_by)?'<div class="count-by">Counted by '+esc(p.counted_by)+'</div>':'';
+        h+='<div class="count-row readonly">'
+          +'<div class="count-info"><div class="count-name">'+esc(it.name)+'</div>'+par+by+'</div>'
+          +'<div class="count-value'+(pv?'':' blank')+'">'+(pv?esc(pv):'—')+'</div>'
+          +'</div>';
+      }else{
+        var saved=byItem[it.id]?byItem[it.id].on_hand_text:'';
+        h+='<div class="count-row">'
+          +'<div class="count-info"><div class="count-name">'+esc(it.name)+'</div>'+par+'</div>'
+          +'<input class="count-input'+(saved?' filled':'')+'" type="text" inputmode="text" autocomplete="off" data-item-id="'+it.id+'" data-orig="'+esc(saved)+'" value="'+esc(saved)+'" placeholder="count" oninput="onInput(this)">'
+          +'</div>';
+      }
+    }
+  }
+  body.innerHTML=h;
+}
+
+function onInput(el){
+  if(el.value.trim()!==''){el.classList.add('filled');}else{el.classList.remove('filled');}
+}
+
+function showToast(msg,type){
+  var t=document.getElementById('toast');
+  t.textContent=(type==='success'?'✓ ':'⚠ ')+msg;
+  t.className='toast show '+(type||'success');
+  clearTimeout(st);st=setTimeout(function(){t.className='toast';},1800);
+}
+
+function saveCounts(){
+  var name=document.getElementById('countedBy').value;
+  if(!name){showToast('Select who is counting','error');return;}
+  var inputs=document.querySelectorAll('.count-input'),changed=[];
+  for(var i=0;i<inputs.length;i++){
+    var el=inputs[i],val=el.value.trim(),orig=(el.getAttribute('data-orig')||'').trim();
+    if(val===orig)continue;
+    var itemId=parseInt(el.getAttribute('data-item-id'),10),existing=byItem[itemId];
+    if(!existing&&val==='')continue;
+    changed.push({el:el,itemId:itemId,val:val,existingId:existing?existing.id:null});
+  }
+  if(!changed.length){showToast('No changes to save','success');return;}
+  var btn=document.getElementById('saveBtn');btn.disabled=true;
+  var pending=changed.length,done=0,fails=0;
+  changed.forEach(function(c){
+    var cb=function(r){
+      if(Array.isArray(r)){
+        if(r.length){byItem[c.itemId]={id:r[0].id,on_hand_text:r[0].on_hand_text||''};}
+        c.el.setAttribute('data-orig',c.val);
+      }else{fails++;}
+      done++;
+      if(done===pending){
+        btn.disabled=false;
+        if(fails>0)showToast(fails+' count'+(fails>1?'s':'')+' failed to save','error');
+        else showToast('Counts saved','success');
+      }
+    };
+    if(c.existingId){api('PATCH','portion_counts','id=eq.'+c.existingId,{on_hand_text:c.val,counted_by:name},cb);}
+    else{api('POST','portion_counts',null,{portion_item_id:c.itemId,count_date:todayStr,on_hand_text:c.val,counted_by:name,location:'Tempest'},cb);}
+  });
+}
+
+init();
+</script>
+</body>
+</html>
