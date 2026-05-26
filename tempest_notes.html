@@ -80,6 +80,26 @@
 
   .toast{position:fixed;bottom:30px;left:50%;transform:translateX(-50%);background:var(--green);color:#fff;padding:10px 24px;border-radius:10px;font-size:0.85rem;font-weight:600;opacity:0;transition:opacity 0.3s;pointer-events:none;z-index:400;box-shadow:0 4px 20px rgba(0,0,0,0.4)}
   .toast.show{opacity:1}
+  .toast.error{background:var(--red)}
+
+  /* Manager mode toggle (matches prep page) */
+  .mgr-toggle{display:flex;align-items:center;gap:8px;font-size:0.78rem;color:var(--muted);min-height:44px;flex-shrink:0}
+  .mgr-switch{width:40px;height:22px;border-radius:11px;background:var(--border);position:relative;cursor:pointer;transition:background 0.2s}
+  .mgr-switch.on{background:var(--accent)}
+  .mgr-switch .knob{width:18px;height:18px;border-radius:50%;background:#fff;position:absolute;top:2px;left:2px;transition:left 0.2s}
+  .mgr-switch.on .knob{left:20px}
+
+  /* Manager-only controls on note cards (hidden by default) */
+  .note-mgr-actions{display:none;gap:6px;margin-left:auto}
+  .manager-mode .note-mgr-actions{display:flex}
+  .mgr-edit-btn,.mgr-delete-btn{min-height:40px;min-width:44px;display:inline-flex;align-items:center;justify-content:center;background:transparent;border:1px solid var(--border);border-radius:8px;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:0.8rem;font-weight:600;padding:0 12px}
+  .mgr-edit-btn{color:var(--accent)}
+  .mgr-edit-btn:active{background:var(--accent-dim)}
+  .mgr-delete-btn{color:var(--red);border-color:rgba(239,68,68,0.4)}
+  .mgr-delete-btn:active{background:rgba(239,68,68,0.12)}
+  .pin-input{text-align:center;letter-spacing:0.5em;font-size:1.4rem;font-weight:700}
+  .modal input[type="tel"],.modal input[type="text"]{width:100%;padding:11px;min-height:44px;background:var(--bg);border:1px solid var(--border);border-radius:9px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:0.95rem;margin-bottom:8px;outline:none;appearance:none;-webkit-appearance:none}
+  .modal input:focus{border-color:var(--accent)}
   .loading{display:flex;flex-direction:column;align-items:center;padding:80px 20px;color:var(--muted)}
   .spinner{width:30px;height:30px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;margin-bottom:14px}
   @keyframes spin{to{transform:rotate(360deg)}}
@@ -96,6 +116,9 @@
     <button class="filter-btn active" onclick="setFilter('open')">Open</button>
     <button class="filter-btn" onclick="setFilter('resolved')">Resolved</button>
     <button class="filter-btn" onclick="setFilter('all')">All</button>
+  </div>
+  <div style="display:flex;justify-content:flex-end;margin-top:8px">
+    <div class="mgr-toggle"><span>Manager</span><div class="mgr-switch" id="mgrSwitch" onclick="toggleMgr()"><div class="knob"></div></div></div>
   </div>
 </div>
 
@@ -119,6 +142,36 @@
   </div>
 </div>
 
+<!-- Manager PIN modal -->
+<div class="modal-bg" id="pinModal">
+  <div class="modal">
+    <h3>Enter Manager PIN</h3>
+    <label>4-digit PIN</label>
+    <input class="pin-input" type="tel" inputmode="numeric" pattern="[0-9]*" maxlength="4" id="pinInput" autocomplete="off">
+    <div class="modal-err" id="pinErr">Incorrect PIN</div>
+    <div class="modal-btns">
+      <button class="modal-btn cancel" onclick="closePin()">Cancel</button>
+      <button class="modal-btn save" onclick="submitPin()">Unlock</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Note Modal -->
+<div class="modal-bg" id="editNoteModal">
+  <div class="modal">
+    <h3>Edit Note</h3>
+    <label>Category</label>
+    <div class="cat-picker" id="editCatPicker"></div>
+    <label>Note</label>
+    <textarea id="editNoteBody"></textarea>
+    <div class="modal-err" id="editNoteErr"></div>
+    <div class="modal-btns">
+      <button class="modal-btn cancel" onclick="closeEditNote()">Cancel</button>
+      <button class="modal-btn save" id="editNoteSaveBtn" onclick="saveEditNote()">Save</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast">✓ Saved</div>
 
 <script>
@@ -131,6 +184,7 @@ var CATS=[
   {key:'other',emoji:'💬',label:'Other'}
 ];
 var notes=[],staffNames=[],filter='open',selCat='other',st=null;
+var MANAGER_PIN='0000',mgr=false,editSelCat='other',editingNoteId=null;
 
 function api(m,t,q,d,cb){var x=new XMLHttpRequest();x.open(m,SB+'/rest/v1/'+t+(q?'?'+q:''));x.setRequestHeader('apikey',SK);x.setRequestHeader('Authorization','Bearer '+SK);if(d){x.setRequestHeader('Content-Type','application/json');x.setRequestHeader('Prefer','return=representation');}x.onload=function(){var r=null;try{r=JSON.parse(x.responseText);}catch(e){}if(cb)cb(r);};x.onerror=function(){if(cb)cb(null);};x.send(d?JSON.stringify(d):null);}
 
@@ -191,6 +245,7 @@ function render(){
   var h='<div class="feed">';
   for(var i=0;i<list.length;i++)h+=card(list[i]);
   h+='</div>';
+  if(mgr)h='<div class="manager-mode">'+h+'</div>';
   document.getElementById('appBody').innerHTML=h;
 }
 
@@ -206,6 +261,7 @@ function card(n){
   }else{
     h+='<button class="resolve-btn" onclick="resolveNote('+n.id+')">Mark resolved</button>';
   }
+  h+='<div class="note-mgr-actions"><button class="mgr-edit-btn" onclick="openEditNote('+n.id+')">Edit</button><button class="mgr-delete-btn" onclick="deleteNote('+n.id+')">Delete</button></div>';
   h+='</div></div>';
   return h;
 }
@@ -271,6 +327,85 @@ function saveNote(){
 function toast(msg){var t=document.getElementById('toast');t.textContent='✓ '+msg;t.classList.add('show');clearTimeout(st);st=setTimeout(function(){t.classList.remove('show');},1500);}
 
 document.getElementById('noteModal').addEventListener('click',function(e){if(e.target===this)closeNote();});
+
+// ── MANAGER MODE ──
+function toggleMgr(){
+  if(mgr){mgr=false;document.getElementById('mgrSwitch').classList.remove('on');render();return;}
+  if(sessionStorage.getItem('boxkitchen_mgr')==='1'){mgr=true;document.getElementById('mgrSwitch').classList.add('on');render();return;}
+  openPin();
+}
+function openPin(){
+  var inp=document.getElementById('pinInput');inp.value='';
+  document.getElementById('pinErr').classList.remove('show');
+  document.getElementById('pinModal').classList.add('show');
+  setTimeout(function(){inp.focus();},100);
+}
+function closePin(){document.getElementById('pinModal').classList.remove('show');}
+function submitPin(){
+  var v=(document.getElementById('pinInput').value||'').trim();
+  if(v===MANAGER_PIN){
+    sessionStorage.setItem('boxkitchen_mgr','1');
+    closePin();
+    mgr=true;document.getElementById('mgrSwitch').classList.add('on');render();
+    toast('Manager mode unlocked');
+  }else{
+    var e=document.getElementById('pinErr');e.classList.add('show');
+    var inp=document.getElementById('pinInput');inp.value='';inp.focus();
+  }
+}
+function buildEditCatPicker(){
+  var p=document.getElementById('editCatPicker'),h='';
+  for(var i=0;i<CATS.length;i++){
+    h+='<div class="cat-opt'+(CATS[i].key===editSelCat?' sel':'')+'" data-cat="'+CATS[i].key+'" onclick="pickEditCat(\''+CATS[i].key+'\')">'+CATS[i].emoji+' '+esc(CATS[i].label)+'</div>';
+  }
+  p.innerHTML=h;
+}
+function pickEditCat(k){
+  editSelCat=k;
+  var o=document.querySelectorAll('#editCatPicker .cat-opt');
+  for(var i=0;i<o.length;i++)o[i].classList.toggle('sel',o[i].getAttribute('data-cat')===k);
+}
+function openEditNote(id){
+  var n=null;for(var i=0;i<notes.length;i++)if(notes[i].id===id){n=notes[i];break;}
+  if(!n)return;
+  editingNoteId=id;
+  editSelCat=n.category||'other';
+  buildEditCatPicker();
+  document.getElementById('editNoteBody').value=n.body||'';
+  document.getElementById('editNoteErr').classList.remove('show');
+  document.getElementById('editNoteModal').classList.add('show');
+  setTimeout(function(){document.getElementById('editNoteBody').focus();},100);
+}
+function closeEditNote(){document.getElementById('editNoteModal').classList.remove('show');editingNoteId=null;}
+function saveEditNote(){
+  if(!editingNoteId)return;
+  var body=(document.getElementById('editNoteBody').value||'').trim();
+  var err=document.getElementById('editNoteErr');
+  if(!body){err.textContent='Please enter a note.';err.classList.add('show');return;}
+  err.classList.remove('show');
+  var btn=document.getElementById('editNoteSaveBtn');btn.disabled=true;
+  api('PATCH','notes','id=eq.'+editingNoteId,{body:body,category:editSelCat},function(r){
+    btn.disabled=false;
+    if(r&&r.length){
+      for(var i=0;i<notes.length;i++)if(notes[i].id===editingNoteId){notes[i]=r[0];break;}
+      closeEditNote();render();toast('Note saved');
+    }else{
+      err.textContent='Save failed — try again';err.classList.add('show');
+    }
+  });
+}
+function deleteNote(id){
+  if(!confirm('Delete this note permanently?'))return;
+  api('DELETE','notes','id=eq.'+id,null,function(r){
+    if(r && r.code){toast('Delete failed — try again');return;}
+    notes=notes.filter(function(n){return n.id!==id;});
+    render();toast('Note deleted');
+  });
+}
+document.getElementById('pinModal').addEventListener('click',function(e){if(e.target===this)closePin();});
+document.getElementById('editNoteModal').addEventListener('click',function(e){if(e.target===this)closeEditNote();});
+document.getElementById('pinInput').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();submitPin();}});
+
 init();
 </script>
 </body>
