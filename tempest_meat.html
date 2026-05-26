@@ -79,6 +79,44 @@
   .toast.show{opacity:1}
   .toast.success{background:var(--green);color:#fff}
   .toast.error{background:var(--red);color:#fff}
+
+  /* Manager mode toggle (matches prep page) */
+  .mgr-toggle{display:flex;align-items:center;gap:8px;font-size:0.78rem;color:var(--muted);min-height:44px;margin-right:-6px}
+  .mgr-switch{width:40px;height:22px;border-radius:11px;background:var(--border);position:relative;cursor:pointer;transition:background 0.2s}
+  .mgr-switch.on{background:var(--accent)}
+  .mgr-switch .knob{width:18px;height:18px;border-radius:50%;background:#fff;position:absolute;top:2px;left:2px;transition:left 0.2s}
+  .mgr-switch.on .knob{left:20px}
+
+  /* Manager-only controls (hidden by default) */
+  .row-mgr-actions{display:none;gap:6px;flex-shrink:0}
+  .manager-mode .row-mgr-actions{display:flex}
+  .mgr-edit-btn,.mgr-retire-btn{min-width:52px;min-height:44px;display:flex;align-items:center;justify-content:center;background:transparent;border:1px solid var(--border);border-radius:8px;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:0.8rem;font-weight:600;padding:0 8px}
+  .mgr-edit-btn{color:var(--accent)}
+  .mgr-edit-btn:active{background:var(--accent-dim)}
+  .mgr-retire-btn{color:var(--red);border-color:rgba(239,68,68,0.4)}
+  .mgr-retire-btn:active{background:rgba(239,68,68,0.12)}
+  .mgr-add-bar{display:none;padding:12px 20px;border-bottom:1px solid rgba(42,45,53,0.4)}
+  .manager-mode .mgr-add-bar{display:block}
+  .mgr-add-btn{width:100%;min-height:44px;padding:10px;background:transparent;border:1px dashed var(--accent);border-radius:8px;color:var(--accent);font-family:'DM Sans',sans-serif;font-size:0.88rem;font-weight:600;cursor:pointer}
+  .mgr-add-btn:active{background:var(--accent-dim)}
+
+  /* Modals */
+  .modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:300;align-items:center;justify-content:center;padding:16px}
+  .modal-bg.show{display:flex}
+  .modal{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:22px;width:100%;max-width:380px;max-height:90vh;overflow-y:auto}
+  .modal h3{font-size:1.05rem;margin-bottom:14px;font-family:'DM Sans',sans-serif;font-weight:700}
+  .modal label{display:block;font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:7px;margin-top:14px}
+  .modal label:first-of-type{margin-top:0}
+  .modal input,.modal select{width:100%;padding:11px;min-height:44px;background:var(--bg);border:1px solid var(--border);border-radius:9px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:0.95rem;outline:none;appearance:none;-webkit-appearance:none}
+  .modal input:focus,.modal select:focus{border-color:var(--accent)}
+  .modal .pin-input{text-align:center;letter-spacing:0.5em;font-size:1.4rem;font-weight:700}
+  .modal-err{display:none;color:var(--red);font-size:0.83rem;font-weight:600;margin-top:12px}
+  .modal-err.show{display:block}
+  .modal-btns{display:flex;gap:10px;margin-top:18px}
+  .modal-btn{flex:1;padding:12px;min-height:48px;border:none;border-radius:9px;font-family:'DM Sans',sans-serif;font-size:0.92rem;font-weight:700;cursor:pointer}
+  .modal-btn.cancel{background:var(--border);color:var(--text)}
+  .modal-btn.save{background:var(--accent);color:#fff}
+  .modal-btn:disabled{opacity:0.6;cursor:default}
 </style>
 </head>
 <body>
@@ -86,7 +124,7 @@
   <div class="header-row">
     <a class="home-link" href="index.html">← Home</a>
     <h1>Tempest <span>Meat</span></h1>
-    <span class="home-spacer"></span>
+    <div class="mgr-toggle"><span>Manager</span><div class="mgr-switch" id="mgrSwitch" onclick="toggleMgr()"><div class="knob"></div></div></div>
   </div>
 </div>
 <div class="date-bar">
@@ -108,10 +146,44 @@
   <div class="submit-summary" id="submitSummary">Enter counts and save</div>
   <button class="submit-btn" id="saveBtn" onclick="saveCounts()">Save Counts</button>
 </div>
+<!-- Manager PIN modal -->
+<div class="modal-bg" id="pinModal">
+  <div class="modal">
+    <h3>Enter Manager PIN</h3>
+    <label>4-digit PIN</label>
+    <input class="pin-input" type="tel" inputmode="numeric" pattern="[0-9]*" maxlength="4" id="pinInput" autocomplete="off">
+    <div class="modal-err" id="pinErr">Incorrect PIN</div>
+    <div class="modal-btns">
+      <button class="modal-btn cancel" onclick="closePin()">Cancel</button>
+      <button class="modal-btn save" onclick="submitPin()">Unlock</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add/Edit Item modal -->
+<div class="modal-bg" id="itemModal">
+  <div class="modal">
+    <h3 id="itemModalTitle">Edit Item</h3>
+    <label>Name</label>
+    <input type="text" id="itemName" autocomplete="off">
+    <label>Category</label>
+    <select id="itemCategory" onchange="onCategoryChange()"></select>
+    <input type="text" id="itemCategoryNew" style="display:none;margin-top:8px" placeholder="New category name" autocomplete="off">
+    <label>Par (optional)</label>
+    <input type="text" id="itemPar" autocomplete="off" placeholder="e.g. 4 lbs, 2 bags">
+    <div class="modal-err" id="itemErr"></div>
+    <div class="modal-btns">
+      <button class="modal-btn cancel" onclick="closeItem()">Cancel</button>
+      <button class="modal-btn save" id="itemSaveBtn" onclick="saveItem()">Save</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 <script>
 var SB='https://sxppuyarecqkgkrsrefc.supabase.co',SK='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN4cHB1eWFyZWNxa2drcnNyZWZjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczOTA4MzAsImV4cCI6MjA5Mjk2NjgzMH0.GM8OfcR68_JjdPeQ3k7j6L3ulJFaeS1xnSLBcdtYXtU';
 var items=[],staff=[],byItem={},prevByItem={},todayStr='',prevDate='',viewMode='today',itemsLoaded=false,st=null;
+var MANAGER_PIN='0000',mgr=false,editId=null;
 
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 
@@ -214,22 +286,27 @@ function render(){
       if((it.category||'Other')!==grp)continue;
       var hasPar=it.par_text!=null&&String(it.par_text).trim()!=='';
       var par=hasPar?'<div class="count-par">Par: '+esc(it.par_text)+'</div>':'';
+      var mgrActions='<div class="row-mgr-actions"><button class="mgr-edit-btn" onclick="openItem(\'edit\','+it.id+')">Edit</button><button class="mgr-retire-btn" onclick="retireItem('+it.id+')">Retire</button></div>';
       if(isPrev){
         var p=prevByItem[it.id],pv=p?(p.on_hand_text||'').trim():'';
         var by=(p&&p.counted_by)?'<div class="count-by">Counted by '+esc(p.counted_by)+'</div>':'';
         h+='<div class="count-row readonly">'
           +'<div class="count-info"><div class="count-name">'+esc(it.name)+'</div>'+par+by+'</div>'
           +'<div class="count-value'+(pv?'':' blank')+'">'+(pv?esc(pv):'—')+'</div>'
+          +mgrActions
           +'</div>';
       }else{
         var saved=byItem[it.id]?byItem[it.id].on_hand_text:'';
         h+='<div class="count-row">'
           +'<div class="count-info"><div class="count-name">'+esc(it.name)+'</div>'+par+'</div>'
           +'<input class="count-input'+(saved?' filled':'')+'" type="text" inputmode="text" autocomplete="off" data-item-id="'+it.id+'" data-orig="'+esc(saved)+'" value="'+esc(saved)+'" placeholder="count" oninput="onInput(this)">'
+          +mgrActions
           +'</div>';
       }
     }
   }
+  h+='<div class="mgr-add-bar"><button class="mgr-add-btn" onclick="openItem(\'add\')">+ Add new item</button></div>';
+  if(mgr)h='<div class="manager-mode">'+h+'</div>';
   body.innerHTML=h;
 }
 
@@ -275,6 +352,104 @@ function saveCounts(){
     else{api('POST','meat_counts',null,{meat_item_id:c.itemId,count_date:todayStr,on_hand_text:c.val,counted_by:name,location:'Tempest'},cb);}
   });
 }
+
+// ── MANAGER MODE ──
+function toggleMgr(){
+  if(mgr){mgr=false;document.getElementById('mgrSwitch').classList.remove('on');render();return;}
+  if(sessionStorage.getItem('boxkitchen_mgr')==='1'){mgr=true;document.getElementById('mgrSwitch').classList.add('on');render();return;}
+  openPin();
+}
+function openPin(){
+  var inp=document.getElementById('pinInput');inp.value='';
+  document.getElementById('pinErr').classList.remove('show');
+  document.getElementById('pinModal').classList.add('show');
+  setTimeout(function(){inp.focus();},100);
+}
+function closePin(){document.getElementById('pinModal').classList.remove('show');}
+function submitPin(){
+  var v=(document.getElementById('pinInput').value||'').trim();
+  if(v===MANAGER_PIN){
+    sessionStorage.setItem('boxkitchen_mgr','1');
+    closePin();
+    mgr=true;document.getElementById('mgrSwitch').classList.add('on');render();
+    showToast('Manager mode unlocked','success');
+  }else{
+    var e=document.getElementById('pinErr');e.classList.add('show');
+    var inp=document.getElementById('pinInput');inp.value='';inp.focus();
+  }
+}
+function openItem(mode,id){
+  editId=null;
+  document.getElementById('itemErr').classList.remove('show');
+  var cats=[],seen={};
+  for(var i=0;i<items.length;i++){var s=items[i].category||'Other';if(!seen[s]){seen[s]=true;cats.push(s);}}
+  var sel=document.getElementById('itemCategory');
+  var h='';
+  for(var i=0;i<cats.length;i++)h+='<option value="'+esc(cats[i])+'">'+esc(cats[i])+'</option>';
+  h+='<option value="__other__">+ Other (type new)…</option>';
+  sel.innerHTML=h;
+  var nw=document.getElementById('itemCategoryNew');
+  nw.style.display='none';nw.value='';
+  if(mode==='edit'){
+    var it=null;for(var i=0;i<items.length;i++)if(items[i].id===id){it=items[i];break;}
+    if(!it)return;
+    editId=id;
+    document.getElementById('itemModalTitle').textContent='Edit Item';
+    document.getElementById('itemName').value=it.name||'';
+    var ct=it.category||'Other',found=false;
+    for(var i=0;i<sel.options.length;i++)if(sel.options[i].value===ct){sel.value=ct;found=true;break;}
+    if(!found){sel.value='__other__';nw.style.display='block';nw.value=ct;}
+    document.getElementById('itemPar').value=it.par_text||'';
+  }else{
+    document.getElementById('itemModalTitle').textContent='Add Item';
+    document.getElementById('itemName').value='';
+    document.getElementById('itemPar').value='';
+    if(cats.length){sel.value=cats[0];}else{sel.value='__other__';nw.style.display='block';}
+  }
+  document.getElementById('itemModal').classList.add('show');
+}
+function onCategoryChange(){
+  var sel=document.getElementById('itemCategory'),nw=document.getElementById('itemCategoryNew');
+  if(sel.value==='__other__'){nw.style.display='block';setTimeout(function(){nw.focus();},50);}else{nw.style.display='none';}
+}
+function closeItem(){document.getElementById('itemModal').classList.remove('show');editId=null;}
+function saveItem(){
+  var name=(document.getElementById('itemName').value||'').trim();
+  var sel=document.getElementById('itemCategory'),cat=sel.value;
+  if(cat==='__other__')cat=(document.getElementById('itemCategoryNew').value||'').trim();
+  var par=(document.getElementById('itemPar').value||'').trim();
+  var err=document.getElementById('itemErr');
+  if(!name){err.textContent='Name is required';err.classList.add('show');return;}
+  if(!cat){err.textContent='Category is required';err.classList.add('show');return;}
+  err.classList.remove('show');
+  var payload={name:name,category:cat,par_text:par||null};
+  var btn=document.getElementById('itemSaveBtn');btn.disabled=true;
+  if(editId){
+    api('PATCH','meat_items','id=eq.'+editId,payload,function(r){
+      btn.disabled=false;
+      if(r&&r.length){closeItem();showToast('Item saved','success');loadData();}
+      else{err.textContent='Save failed — try again';err.classList.add('show');}
+    });
+  }else{
+    var maxS=0;for(var i=0;i<items.length;i++){var s=items[i].sort_order||0;if(s>maxS)maxS=s;}
+    payload.location='Tempest';payload.active=true;payload.sort_order=maxS+10;
+    api('POST','meat_items',null,payload,function(r){
+      btn.disabled=false;
+      if(r&&r.length){closeItem();showToast('Item added','success');loadData();}
+      else{err.textContent='Add failed — try again';err.classList.add('show');}
+    });
+  }
+}
+function retireItem(id){
+  if(!confirm('Retire this item? It will no longer appear in the count.'))return;
+  api('PATCH','meat_items','id=eq.'+id,{active:false},function(r){
+    if(r&&r.length){showToast('Item retired','success');loadData();}
+    else{showToast('Retire failed — try again','error');}
+  });
+}
+document.getElementById('pinModal').addEventListener('click',function(e){if(e.target===this)closePin();});
+document.getElementById('itemModal').addEventListener('click',function(e){if(e.target===this)closeItem();});
+document.getElementById('pinInput').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();submitPin();}});
 
 init();
 </script>
