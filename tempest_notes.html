@@ -184,7 +184,7 @@ var CATS=[
   {key:'other',emoji:'💬',label:'Other'}
 ];
 var notes=[],staffNames=[],filter='open',selCat='other',st=null;
-var MANAGER_PIN='4311',mgr=false,editSelCat='other',editingNoteId=null;
+var MANAGER_PIN='4316',mgr=false,editSelCat='other',editingNoteId=null;
 
 function api(m,t,q,d,cb){var x=new XMLHttpRequest();x.open(m,SB+'/rest/v1/'+t+(q?'?'+q:''));x.setRequestHeader('apikey',SK);x.setRequestHeader('Authorization','Bearer '+SK);if(d){x.setRequestHeader('Content-Type','application/json');x.setRequestHeader('Prefer','return=representation');}x.onload=function(){var r=null;try{r=JSON.parse(x.responseText);}catch(e){}if(cb)cb(r);};x.onerror=function(){if(cb)cb(null);};x.send(d?JSON.stringify(d):null);}
 
