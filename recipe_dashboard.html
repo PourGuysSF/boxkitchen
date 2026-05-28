@@ -82,13 +82,15 @@
   .mgr-add-btn:active, .mgr-add-btn:hover { background: rgba(232,93,58,0.1); }
   .card-mgr-actions { display: none; gap: 8px; margin-top: 14px; padding-top: 14px; border-top: 1px solid #2a2d35; }
   body.manager-mode .card-mgr-actions { display: flex; }
-  .mgr-edit-btn, .mgr-archive-btn, .mgr-unarchive-btn { flex: 1; min-height: 44px; display: flex; align-items: center; justify-content: center; background: transparent; border: 1px solid #2a2d35; border-radius: 8px; cursor: pointer; font-family: 'DM Sans', sans-serif; font-size: 0.82rem; font-weight: 600; padding: 0 10px; }
+  .mgr-edit-btn, .mgr-archive-btn, .mgr-unarchive-btn, .mgr-delete-btn { flex: 1; min-height: 44px; display: flex; align-items: center; justify-content: center; background: transparent; border: 1px solid #2a2d35; border-radius: 8px; cursor: pointer; font-family: 'DM Sans', sans-serif; font-size: 0.82rem; font-weight: 600; padding: 0 10px; }
   .mgr-edit-btn { color: #e85d3a; }
   .mgr-edit-btn:active, .mgr-edit-btn:hover { background: rgba(232,93,58,0.12); }
   .mgr-archive-btn { color: #ef4444; border-color: rgba(239,68,68,0.4); }
   .mgr-archive-btn:active, .mgr-archive-btn:hover { background: rgba(239,68,68,0.12); }
   .mgr-unarchive-btn { color: #22c55e; border-color: rgba(34,197,94,0.4); }
   .mgr-unarchive-btn:active, .mgr-unarchive-btn:hover { background: rgba(34,197,94,0.12); }
+  .mgr-delete-btn { color: #fff; background: #ef4444; border-color: #ef4444; }
+  .mgr-delete-btn:active, .mgr-delete-btn:hover { background: #dc2626; border-color: #dc2626; }
 
   .card.archived { opacity: 0.6; }
   .card-station { display: inline-block; font-size: 0.8rem; color: #e85d3a; background: rgba(232,93,58,0.12); padding: 3px 10px; border-radius: 4px; margin-bottom: 14px; margin-left: 6px; }
@@ -113,6 +115,7 @@
   .modal-btn { flex: 1; padding: 12px; min-height: 48px; border: none; border-radius: 9px; font-family: 'DM Sans', sans-serif; font-size: 0.92rem; font-weight: 700; cursor: pointer; }
   .modal-btn.cancel { background: #2a2d35; color: #e8e6e3; }
   .modal-btn.save { background: #e85d3a; color: #fff; }
+  .modal-btn.danger { background: #ef4444; color: #fff; }
   .modal-btn:disabled { opacity: 0.6; cursor: default; }
 
   /* Component blocks in the recipe form */
@@ -194,6 +197,22 @@
     <div class="modal-btns">
       <button class="modal-btn cancel" onclick="closeRecipe()">Cancel</button>
       <button class="modal-btn save" id="recipeSaveBtn" onclick="saveRecipe()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Delete confirmation modal -->
+<div class="modal-bg" id="deleteModal">
+  <div class="modal">
+    <h3>Delete recipe permanently</h3>
+    <p style="font-size:0.9rem;color:#e8e6e3;margin-bottom:10px;">You are about to permanently delete <strong id="deleteRecipeName"></strong>.</p>
+    <p style="font-size:0.83rem;color:#ef4444;font-weight:600;margin-bottom:14px;">This cannot be undone.</p>
+    <label>Type the recipe name to confirm</label>
+    <input type="text" id="deleteConfirmInput" autocomplete="off" placeholder="Type the recipe name to confirm">
+    <div class="modal-err" id="deleteErr"></div>
+    <div class="modal-btns">
+      <button class="modal-btn cancel" onclick="closeDelete()">Cancel</button>
+      <button class="modal-btn danger" id="deleteConfirmBtn" onclick="confirmDelete()" disabled>Delete permanently</button>
     </div>
   </div>
 </div>
@@ -344,9 +363,13 @@ function renderRecipes() {
       html += '</div>';
     }
     html += '<div class="expand-hint"><span>▼ tap to expand</span></div>';
-    var archiveBtn = isArchived
-      ? '<button class="mgr-unarchive-btn" onclick="event.stopPropagation();unarchiveRecipe(' + r.id + ')">Unarchive</button>'
-      : '<button class="mgr-archive-btn" onclick="event.stopPropagation();archiveRecipe(' + r.id + ')">Archive</button>';
+    var archiveBtn;
+    if (isArchived) {
+      archiveBtn = '<button class="mgr-unarchive-btn" onclick="event.stopPropagation();unarchiveRecipe(' + r.id + ')">Unarchive</button>'
+                 + '<button class="mgr-delete-btn" onclick="event.stopPropagation();openDelete(' + r.id + ')">Delete</button>';
+    } else {
+      archiveBtn = '<button class="mgr-archive-btn" onclick="event.stopPropagation();archiveRecipe(' + r.id + ')">Archive</button>';
+    }
     html += '<div class="card-mgr-actions">'
       + '<button class="mgr-edit-btn" onclick="event.stopPropagation();openRecipe(\'edit\',' + r.id + ')">Edit</button>'
       + archiveBtn
@@ -687,9 +710,71 @@ function unarchiveRecipe(id) {
   });
 }
 
+function openDelete(id) {
+  var r = null;
+  for (var i = 0; i < allRecipes.length; i++) if (allRecipes[i].id === id) { r = allRecipes[i]; break; }
+  if (!r) return;
+  document.getElementById('deleteRecipeName').textContent = r.name || '(unnamed)';
+  document.getElementById('deleteErr').classList.remove('show');
+  var input = document.getElementById('deleteConfirmInput');
+  input.value = '';
+  input.dataset.target = r.name || '';
+  input.dataset.recipeId = String(r.id);
+  document.getElementById('deleteConfirmBtn').disabled = true;
+  document.getElementById('deleteModal').classList.add('show');
+  setTimeout(function() { input.focus(); }, 100);
+}
+
+function closeDelete() {
+  document.getElementById('deleteModal').classList.remove('show');
+  document.getElementById('deleteErr').classList.remove('show');
+}
+
+function onDeleteInputChange() {
+  var input = document.getElementById('deleteConfirmInput');
+  var match = input.value === input.dataset.target;
+  document.getElementById('deleteConfirmBtn').disabled = !match;
+}
+
+function confirmDelete() {
+  var input = document.getElementById('deleteConfirmInput');
+  if (input.value !== input.dataset.target) return;
+  var id = parseInt(input.dataset.recipeId, 10);
+  if (!id) return;
+  var btn = document.getElementById('deleteConfirmBtn');
+  btn.disabled = true;
+  api('DELETE', 'Recipes', 'id=eq.' + id, null, function(_, status) {
+    if (status >= 200 && status < 300) {
+      closeDelete();
+      showToast('Recipe deleted', 'success');
+      fetchRecipes();
+    } else {
+      var err = document.getElementById('deleteErr');
+      err.textContent = 'Delete failed — try again';
+      err.classList.add('show');
+      showToast('Delete failed', 'error');
+      btn.disabled = false;
+    }
+  });
+}
+
 document.getElementById('pinModal').addEventListener('click', function(e) { if (e.target === this) closePin(); });
 document.getElementById('recipeModal').addEventListener('click', function(e) { if (e.target === this) closeRecipe(); });
+document.getElementById('deleteModal').addEventListener('click', function(e) { if (e.target === this) closeDelete(); });
 document.getElementById('pinInput').addEventListener('keydown', function(e) { if (e.key === 'Enter') { e.preventDefault(); submitPin(); } });
+document.getElementById('deleteConfirmInput').addEventListener('input', onDeleteInputChange);
+document.getElementById('deleteConfirmInput').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter' && !document.getElementById('deleteConfirmBtn').disabled) {
+    e.preventDefault();
+    confirmDelete();
+  }
+});
+document.addEventListener('keydown', function(e) {
+  if (e.key !== 'Escape') return;
+  if (document.getElementById('deleteModal').classList.contains('show')) closeDelete();
+  else if (document.getElementById('recipeModal').classList.contains('show')) closeRecipe();
+  else if (document.getElementById('pinModal').classList.contains('show')) closePin();
+});
 document.getElementById('searchBox').addEventListener('input', renderRecipes);
 
 // Restore manager mode if already unlocked this session.
