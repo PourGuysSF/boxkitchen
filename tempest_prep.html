@@ -113,6 +113,9 @@
   .modal h3{font-size:1rem;margin-bottom:14px}
   .modal input,.modal select{width:100%;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:0.9rem;margin-bottom:10px;outline:none}
   .modal input:focus{border-color:var(--accent)}
+  .modal .pin-input{text-align:center;letter-spacing:0.5em;font-size:1.4rem;font-weight:700}
+  .modal-err{display:none;color:var(--red);font-size:0.83rem;font-weight:600;margin-top:12px}
+  .modal-err.show{display:block}
   .modal-btns{display:flex;gap:10px;margin-top:6px}
   .modal-btn{flex:1;padding:10px;border:none;border-radius:8px;font-family:'DM Sans',sans-serif;font-size:0.9rem;font-weight:600;cursor:pointer}
   .modal-btn.cancel{background:var(--border);color:var(--text)}
@@ -169,6 +172,16 @@
 <div id="staffBarContainer"></div>
 <div id="appBody"><div class="loading"><div class="spinner"></div><p>Loading prep list...</p></div></div>
 
+<!-- Manager PIN Modal -->
+<div class="modal-bg" id="pinModal">
+  <div class="modal">
+    <h3>Enter Manager PIN</h3>
+    <input class="pin-input" type="tel" inputmode="numeric" pattern="[0-9]*" maxlength="4" id="pinInput" autocomplete="off">
+    <div class="modal-err" id="pinErr">Incorrect PIN</div>
+    <div class="modal-btns"><button class="modal-btn cancel" onclick="closePin()">Cancel</button><button class="modal-btn save" onclick="submitPin()">Unlock</button></div>
+  </div>
+</div>
+
 <!-- Add Task Modal -->
 <div class="modal-bg" id="addModal">
   <div class="modal">
@@ -194,6 +207,7 @@
 <script>
 var SB='https://sxppuyarecqkgkrsrefc.supabase.co',SK='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN4cHB1eWFyZWNxa2drcnNyZWZjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczOTA4MzAsImV4cCI6MjA5Mjk2NjgzMH0.GM8OfcR68_JjdPeQ3k7j6L3ulJFaeS1xnSLBcdtYXtU';
 var shift='AM',items=[],logs={},staff=[],mgr=false,st=null,openNotes={};
+var MANAGER_PIN='4316';
 var currentDate=new Date();
 var realToday=new Date();
 
@@ -324,7 +338,29 @@ function bTask(it){
 // ── INTERACTIONS ──
 function togSec(el){el.parentElement.classList.toggle('open')}
 function setShift(s){shift=s;var b=document.querySelectorAll('.shift-btn');for(var i=0;i<b.length;i++)b[i].classList.toggle('active',b[i].textContent.indexOf(s)>-1);render();}
-function toggleMgr(){mgr=!mgr;document.getElementById('mgrSwitch').classList.toggle('on',mgr);render();}
+function toggleMgr(){
+  if(mgr){mgr=false;document.getElementById('mgrSwitch').classList.remove('on');render();return;}
+  if(sessionStorage.getItem('boxkitchen_mgr')==='1'){mgr=true;document.getElementById('mgrSwitch').classList.add('on');render();return;}
+  openPin();
+}
+function openPin(){
+  var inp=document.getElementById('pinInput');inp.value='';
+  document.getElementById('pinErr').classList.remove('show');
+  document.getElementById('pinModal').classList.add('show');
+  setTimeout(function(){inp.focus();},100);
+}
+function closePin(){document.getElementById('pinModal').classList.remove('show');}
+function submitPin(){
+  var v=(document.getElementById('pinInput').value||'').trim();
+  if(v===MANAGER_PIN){
+    sessionStorage.setItem('boxkitchen_mgr','1');
+    closePin();
+    mgr=true;document.getElementById('mgrSwitch').classList.add('on');render();
+  }else{
+    document.getElementById('pinErr').classList.add('show');
+    var inp=document.getElementById('pinInput');inp.value='';inp.focus();
+  }
+}
 
 function togDone(id){
   var dateStr=fmtDate(currentDate);
@@ -410,6 +446,12 @@ function removeStaff(id){
 }
 
 function toast(){var t=document.getElementById('toast');t.classList.add('show');clearTimeout(st);st=setTimeout(function(){t.classList.remove('show');},1200);}
+
+// Restore manager mode if already unlocked this session.
+if(sessionStorage.getItem('boxkitchen_mgr')==='1'){mgr=true;document.getElementById('mgrSwitch').classList.add('on');}
+document.getElementById('pinModal').addEventListener('click',function(e){if(e.target===this)closePin();});
+document.getElementById('pinInput').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();submitPin();}});
+
 init();
 </script>
 
