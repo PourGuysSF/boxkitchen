@@ -50,6 +50,9 @@
   .progress-bar{width:100px;height:6px;background:var(--border);border-radius:3px;overflow:hidden}
   .progress-fill{height:100%;background:var(--green);border-radius:3px;transition:width 0.4s}
   .progress-text{font-size:0.78rem;color:var(--muted);font-weight:600;min-width:40px;text-align:right}
+  .viewas-bar{display:flex;align-items:center;gap:8px;padding:8px 20px;border-bottom:1px solid var(--border);background:var(--surface);font-size:0.78rem;color:var(--muted)}
+  .viewas-bar select{background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 8px;font-family:'DM Sans',sans-serif;font-size:0.8rem}
+  .empty-filter{padding:14px 20px;color:var(--muted);font-style:italic;font-size:0.85rem}
 
   /* STAFF BAR - manager mode */
   .staff-bar{display:none;padding:10px 20px;border-bottom:1px solid var(--border);background:var(--surface)}
@@ -169,6 +172,9 @@
     <div class="date-today" id="todayLink" onclick="goToday()" style="display:none">↩ Back to today</div>
   </div>
 </div>
+<div class="viewas-bar">View as:
+  <select id="viewAs" onchange="setViewAs(this.value)"></select>
+</div>
 <div id="staffBarContainer"></div>
 <div id="appBody"><div class="loading"><div class="spinner"></div><p>Loading prep list...</p></div></div>
 
@@ -207,6 +213,8 @@
 <script>
 var SB='https://sxppuyarecqkgkrsrefc.supabase.co',SK='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN4cHB1eWFyZWNxa2drcnNyZWZjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczOTA4MzAsImV4cCI6MjA5Mjk2NjgzMH0.GM8OfcR68_JjdPeQ3k7j6L3ulJFaeS1xnSLBcdtYXtU';
 var shift='AM',items=[],logs={},staff=[],mgr=false,st=null,openNotes={};
+var VIEWAS_KEY='boxkitchen_viewas_prep';
+var viewAs=localStorage.getItem(VIEWAS_KEY)||''; // '' = All
 var MANAGER_PIN='4316';
 var currentDate=new Date();
 var realToday=new Date();
@@ -260,6 +268,31 @@ function getStaffForShift(){
   return names;
 }
 
+function matchWho(it){
+  if(!viewAs)return true;                 // "All" → no filtering
+  var l=logs[it.id];
+  var w=(l&&l.assigned_to)?l.assigned_to:'';
+  if(!w)return false;                      // unassigned hidden when filtering
+  return w.toLowerCase().indexOf(viewAs.toLowerCase())>-1; // case-insensitive substring
+}
+function setViewAs(v){
+  viewAs=v;
+  if(v)localStorage.setItem(VIEWAS_KEY,v); else localStorage.removeItem(VIEWAS_KEY);
+  render();
+}
+function buildViewAs(){
+  var sel=document.getElementById('viewAs');if(!sel)return;
+  var seen={},names=[];
+  for(var i=0;i<staff.length;i++){var nm=staff[i].name;if(nm&&!seen[nm]){seen[nm]=1;names.push(nm);}}
+  names.sort(function(a,b){return a.toLowerCase()<b.toLowerCase()?-1:1;});
+  // stale-name handling: saved cook no longer active → reset to All + clear storage
+  if(viewAs&&seen[viewAs]!==1){viewAs='';localStorage.removeItem(VIEWAS_KEY);}
+  var h='<option value="">All</option>';
+  for(var i=0;i<names.length;i++)h+='<option value="'+esc(names[i])+'">'+esc(names[i])+'</option>';
+  sel.innerHTML=h;
+  sel.value=viewAs;
+}
+
 function getF(){
   var dayAbbr=getDayAbbr(currentDate);
   var c=[],d=[],w=[];
@@ -269,10 +302,11 @@ function getF(){
     else if(it.category==='daily')d.push(it);
     else if(it.category==='weekly'&&(!it.day_specific||it.day_specific===dayAbbr))w.push(it);
   }
-  return{c:c,d:d,w:w};
+  return{c:c.filter(matchWho),d:d.filter(matchWho),w:w.filter(matchWho)};
 }
 
 function render(){
+  buildViewAs();
   var f=getF(),all=f.c.concat(f.d).concat(f.w),dn=0;
   for(var i=0;i<all.length;i++){var l=logs[all[i].id];if(l&&l.completed)dn++;}
   document.getElementById('progressFill').style.width=(all.length?Math.round(dn/all.length*100):0)+'%';
@@ -300,6 +334,7 @@ function render(){
 function bSec(ty,ti,li){
   var dn=0;for(var i=0;i<li.length;i++){var l=logs[li[i].id];if(l&&l.completed)dn++;}
   var h='<div class="section open"><div class="section-header" onclick="togSec(this)"><span class="section-title '+ty+'">'+ti+'</span><div class="section-right"><span class="section-count">'+dn+'/'+li.length+'</span><span class="chevron">▼</span></div></div><div class="section-body">';
+  if(li.length===0&&viewAs)h+='<div class="empty-filter">Nothing assigned to '+esc(viewAs)+' in this section.</div>';
   for(var i=0;i<li.length;i++)h+=bTask(li[i]);
   h+='<button class="add-btn" onclick="openAdd(\''+ty+'\')">+ Add task</button></div></div>';
   return h;
@@ -376,10 +411,10 @@ function uLog(id,f,v){
   var dateStr=fmtDate(currentDate);
   var l=logs[id],d={};d[f]=v;
   if(l&&l.id){
-    api('PATCH','prep_logs','id=eq.'+l.id,d,function(r){if(r&&r.length)logs[id]=r[0];toast();});
+    api('PATCH','prep_logs','id=eq.'+l.id,d,function(r){if(r&&r.length)logs[id]=r[0];toast();if(f==='assigned_to')render();});
   }else{
     var o={prep_item_id:id,date:dateStr,completed:false,assigned_to:'',quantity:'',notes:''};o[f]=v;
-    api('POST','prep_logs',null,o,function(r){if(r&&r.length)logs[id]=r[0];toast();});
+    api('POST','prep_logs',null,o,function(r){if(r&&r.length)logs[id]=r[0];toast();if(f==='assigned_to')render();});
   }
 }
 
