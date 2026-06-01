@@ -111,6 +111,22 @@
   .manager-mode .item-name{cursor:pointer}
   .add-btn{display:none;padding:10px 20px;color:var(--accent);font-size:0.85rem;font-weight:600;cursor:pointer;background:transparent;border:none;font-family:'DM Sans',sans-serif;width:100%;text-align:left}
   .manager-mode .add-btn{display:block}
+  .manager-mode .item-par{cursor:pointer}
+  .item-par.mgr-edit{border-bottom:1px dashed var(--border)}
+  .item-par .par-input{width:46px;font-size:0.85rem;background:var(--surface);border:1px solid var(--accent);border-radius:5px;color:var(--text);padding:3px 5px;font-family:'DM Sans',sans-serif;outline:none;text-align:center}
+  .unit-select{width:100%;max-width:90px;font-size:0.8rem;background:var(--surface);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:4px 4px;font-family:'DM Sans',sans-serif;outline:none;cursor:pointer}
+  .unit-select:focus{border-color:var(--accent)}
+  .manage-units-btn{display:none;background:transparent;border:1px solid var(--border);border-radius:7px;color:var(--accent);font-family:'DM Sans',sans-serif;font-size:0.72rem;font-weight:600;padding:5px 9px;cursor:pointer;white-space:nowrap}
+  .unit-list{max-height:50vh;overflow-y:auto;margin-bottom:12px}
+  .unit-row{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid rgba(42,45,53,0.4)}
+  .unit-row input.unit-name{flex:1;margin:0;padding:7px 9px}
+  .unit-row.retired input.unit-name{opacity:0.5;text-decoration:line-through}
+  .unit-row .u-btn{padding:6px 10px;border:1px solid var(--border);border-radius:7px;background:transparent;color:var(--muted);font-family:'DM Sans',sans-serif;font-size:0.72rem;font-weight:600;cursor:pointer;white-space:nowrap}
+  .unit-row .u-btn.retire{color:var(--red)}
+  .unit-row .u-btn.restore{color:var(--green)}
+  .unit-add-row{display:flex;gap:8px;margin-bottom:6px}
+  .unit-add-row input{flex:1;margin:0}
+  .unit-add-row button{padding:8px 12px;border:none;border-radius:8px;background:var(--accent);color:#fff;font-family:'DM Sans',sans-serif;font-size:0.82rem;font-weight:600;cursor:pointer}
 
   /* SUBMIT BAR */
   .submit-bar{position:fixed;bottom:0;left:0;right:0;padding:12px 20px;background:rgba(15,17,21,0.95);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-top:1px solid var(--border);display:flex;gap:12px;align-items:center;z-index:100}
@@ -164,6 +180,7 @@
     <h1>Tempest <span>Orders</span></h1>
     <div class="mgr-toggle"><span>Manager</span><div class="mgr-switch" id="mgrSwitch" onclick="toggleMgr()"><div class="knob"></div></div></div>
   </div>
+  <div class="header-row" style="justify-content:flex-end;margin-bottom:0"><button class="manage-units-btn" id="manageUnitsBtn" onclick="openUnitsModal()" style="margin-top:6px">⚙ Manage units</button></div>
   <div class="guide-toggle">
     <button class="guide-btn active" onclick="setGuide('birite')">BIRITE & DAIRY</button>
     <button class="guide-btn" onclick="setGuide('produce')">PRODUCE & PROTEIN</button>
@@ -191,17 +208,33 @@
   <div class="modal">
     <h3>Add Order Item</h3>
     <input type="text" id="addItemName" placeholder="Item name">
-    <input type="text" id="addItemUnit" placeholder="Unit (EA, CS, lb, BAG, etc.)">
+    <select id="addItemUnit" onchange="onAddUnitChange()"></select>
     <input type="text" id="addItemPar" placeholder="Par level">
     <select id="addItemCat"><option value="">Select category...</option></select>
     <select id="addItemVendor" onchange="refreshCatDropdown()"></select>
     <div class="modal-btns"><button class="modal-btn cancel" onclick="closeAdd()">Cancel</button><button class="modal-btn save" onclick="saveAdd()">Add</button></div>
   </div>
 </div>
+<div class="modal-bg" id="unitsModal">
+  <div class="modal">
+    <h3>Manage Units</h3>
+    <div class="unit-add-row"><input type="text" id="newUnitName" placeholder="New unit name" autocomplete="off"><button onclick="addUnit()">Add</button></div>
+    <div class="unit-list" id="unitList"></div>
+    <div class="modal-btns"><button class="modal-btn cancel" onclick="closeUnitsModal()">Done</button></div>
+  </div>
+</div>
+<div class="modal-bg" id="unitAddModal">
+  <div class="modal">
+    <h3>New Unit</h3>
+    <input type="text" id="otherUnitName" placeholder="Unit name (e.g. flat, sleeve)" autocomplete="off">
+    <div class="modal-btns"><button class="modal-btn cancel" onclick="closeOtherUnit()">Cancel</button><button class="modal-btn save" onclick="saveOtherUnit()">Add</button></div>
+  </div>
+</div>
 <div class="toast" id="toast"></div>
 <script>
 var SB='https://sxppuyarecqkgkrsrefc.supabase.co',SK='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN4cHB1eWFyZWNxa2drcnNyZWZjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczOTA4MzAsImV4cCI6MjA5Mjk2NjgzMH0.GM8OfcR68_JjdPeQ3k7j6L3ulJFaeS1xnSLBcdtYXtU';
 var guide='birite',items=[],mgr=false,todayStr='',st=null,quantities={};
+var units=[],unitMap={},otherUnitTarget=null;
 var openOrder={birite:null,produce:null},prevOrders={birite:[],produce:[]};
 var unlocked={birite:false,produce:false},viewMode='today';
 var submitting={birite:false,produce:false},creatingDraft={birite:false,produce:false},saveTimer={birite:null,produce:null},pendingSave={birite:false,produce:false};
@@ -236,7 +269,14 @@ function updateDelivery(){
 
 function api(m,t,q,d,cb){var x=new XMLHttpRequest();x.open(m,SB+'/rest/v1/'+t+(q?'?'+q:''));x.setRequestHeader('apikey',SK);x.setRequestHeader('Authorization','Bearer '+SK);if(d){x.setRequestHeader('Content-Type','application/json');x.setRequestHeader('Prefer','return=representation');}x.onload=function(){var r=null;try{r=JSON.parse(x.responseText);}catch(e){}if(cb)cb(r,x.status);};x.onerror=function(){if(cb)cb(null,0);};x.send(d?JSON.stringify(d):null);}
 
+function loadUnits(cb){
+  api('GET','order_units','order=retired.asc,sort_order.asc,label.asc',null,function(ru){
+    units=ru||[];unitMap={};for(var i=0;i<units.length;i++)unitMap[units[i].id]=units[i];
+    if(cb)cb();
+  });
+}
 function loadData(){
+  loadUnits(function(){
   api('GET','order_items','location=eq.Tempest&order=sort_order.asc',null,function(r){
     items=r||[];
     // Load the one OPEN order per guide (not date-scoped — survives midnight & reloads).
@@ -250,6 +290,7 @@ function loadData(){
       }
       render();
     });
+  });
   });
 }
 
@@ -322,8 +363,12 @@ function buildItem(it){
   var h='<div class="item-row '+(hasQ?'has-qty':'')+'" data-id="'+it.id+'">';
   h+='<div class="mgr-controls"><button class="move-btn" onclick="event.stopPropagation();moveItem('+it.id+',-1)">▲</button><button class="move-btn" onclick="event.stopPropagation();moveItem('+it.id+',1)">▼</button></div>';
   h+='<div class="item-name" onclick="editName('+it.id+',this)">'+esc(it.name)+'</div>';
-  h+='<div class="item-par">'+(it.par_level||'-')+'</div>';
-  h+='<div class="item-unit">'+(it.unit||'')+'</div>';
+  h+= mgr
+    ? '<div class="item-par mgr-edit" onclick="editPar('+it.id+',this)">'+esc(String(it.par_level||'-'))+'</div>'
+    : '<div class="item-par">'+(it.par_level||'-')+'</div>';
+  h+= mgr
+    ? '<div class="item-unit"><select class="unit-select" onchange="setUnit('+it.id+',this.value)">'+buildUnitOptions(it)+'</select></div>'
+    : '<div class="item-unit">'+esc(unitLabel(it))+'</div>';
   h+='<div class="item-qty"><input class="'+inpCls+'"'+inpAttrs+' value="'+esc(q)+'" placeholder="—" onchange="setQty('+it.id+',this.value)" onfocus="this.select()"></div>';
   h+='<button class="delete-btn" onclick="event.stopPropagation();delItem('+it.id+')">✕</button>';
   h+='</div>';
@@ -331,6 +376,108 @@ function buildItem(it){
 }
 
 function esc(s){return s?String(s).replace(/"/g,'&quot;').replace(/</g,'&lt;'):''}
+
+// ---- Units (manager-side editing + shared list) ----
+function unitLabel(it){return (it.unit_id&&unitMap[it.unit_id])?unitMap[it.unit_id].label:(it.unit||'');}
+function buildUnitOptions(it){
+  var cur=it.unit_id||null,h='<option value=""'+(cur?'':' selected')+'>—</option>',seen={};
+  for(var i=0;i<units.length;i++){
+    var u=units[i];if(u.retired&&u.id!==cur)continue;
+    seen[u.id]=true;
+    h+='<option value="'+u.id+'"'+(u.id===cur?' selected':'')+'>'+esc(u.label)+(u.retired?' (retired)':'')+'</option>';
+  }
+  if(cur&&!seen[cur]&&unitMap[cur])h+='<option value="'+cur+'" selected>'+esc(unitMap[cur].label)+'</option>';
+  h+='<option value="__other__">+ Other…</option>';
+  return h;
+}
+function editPar(id,el){
+  if(!mgr)return;var cur=el.textContent;if(cur==='-')cur='';
+  el.innerHTML='<input type="number" inputmode="decimal" class="par-input" value="'+esc(cur)+'" onblur="savePar('+id+',this)" onkeydown="if(event.key===\'Enter\')this.blur()">';
+  var inp=el.querySelector('input');inp.focus();inp.select();
+}
+function savePar(id,inp){
+  var v=inp.value.trim(),body={par_level:(v===''?null:v)};
+  api('PATCH','order_items','id=eq.'+id,body,function(r){
+    if(r&&r.length){for(var i=0;i<items.length;i++)if(items[i].id===id)items[i].par_level=(v===''?null:v);}
+    showToast('Saved','success');render();
+  });
+}
+function setUnit(id,val){
+  if(val==='__other__'){otherUnitTarget=id;render();openOtherUnit();return;}
+  var uid=val?Number(val):null,u=uid?unitMap[uid]:null;
+  api('PATCH','order_items','id=eq.'+id,{unit_id:uid,unit:(u?u.label:null)},function(r){
+    if(r&&r.length){for(var i=0;i<items.length;i++)if(items[i].id===id){items[i].unit_id=uid;items[i].unit=(u?u.label:null);}}
+    showToast('Saved','success');render();
+  });
+}
+// New-unit modal ("+ Other…" from a row, or "Add" from Manage Units)
+function openOtherUnit(){document.getElementById('otherUnitName').value='';document.getElementById('unitAddModal').classList.add('show');setTimeout(function(){document.getElementById('otherUnitName').focus();},100);}
+function closeOtherUnit(){document.getElementById('unitAddModal').classList.remove('show');otherUnitTarget=null;}
+function saveOtherUnit(){
+  var v=document.getElementById('otherUnitName').value.trim();if(!v){return;}
+  for(var i=0;i<units.length;i++)if(units[i].label.toLowerCase()===v.toLowerCase()){showToast('Unit already exists','error');return;}
+  api('POST','order_units',null,{label:v,sort_order:1000},function(r){
+    if(r&&r.length){
+      var nu=r[0];units.push(nu);unitMap[nu.id]=nu;
+      var tgt=otherUnitTarget;document.getElementById('unitAddModal').classList.remove('show');otherUnitTarget=null;
+      showToast('Unit added','success');
+      if(tgt==='__add__'){fillAddUnitSelect(nu.id);}
+      else if(tgt!=null){setUnit(tgt,nu.id);}
+      else{render();if(document.getElementById('unitsModal').classList.contains('show'))renderUnitList();}
+    }else{showToast('Add failed','error');}
+  });
+}
+// Manage Units list
+function openUnitsModal(){renderUnitList();document.getElementById('newUnitName').value='';document.getElementById('unitsModal').classList.add('show');}
+function closeUnitsModal(){document.getElementById('unitsModal').classList.remove('show');}
+function renderUnitList(){
+  var h='';
+  for(var i=0;i<units.length;i++){
+    var u=units[i];
+    h+='<div class="unit-row'+(u.retired?' retired':'')+'" data-uid="'+u.id+'">';
+    h+='<input class="unit-name" value="'+esc(u.label)+'" onblur="renameUnit('+u.id+',this)" onkeydown="if(event.key===\'Enter\')this.blur()">';
+    if(u.retired)h+='<button class="u-btn restore" onclick="setRetired('+u.id+',false)">Restore</button>';
+    else h+='<button class="u-btn retire" onclick="setRetired('+u.id+',true)">Retire</button>';
+    h+='</div>';
+  }
+  document.getElementById('unitList').innerHTML=h;
+}
+function addUnit(){
+  var inp=document.getElementById('newUnitName'),v=inp.value.trim();if(!v)return;
+  for(var i=0;i<units.length;i++)if(units[i].label.toLowerCase()===v.toLowerCase()){showToast('Unit already exists','error');return;}
+  api('POST','order_units',null,{label:v,sort_order:1000},function(r){
+    if(r&&r.length){var nu=r[0];units.push(nu);unitMap[nu.id]=nu;inp.value='';showToast('Unit added','success');renderUnitList();render();}
+    else showToast('Add failed','error');
+  });
+}
+function renameUnit(uid,inp){
+  var v=inp.value.trim(),u=unitMap[uid];if(!u||v===u.label)return;
+  if(!v){inp.value=u.label;return;}
+  for(var i=0;i<units.length;i++)if(units[i].id!==uid&&units[i].label.toLowerCase()===v.toLowerCase()){showToast('Name already in use','error');inp.value=u.label;return;}
+  api('PATCH','order_units','id=eq.'+uid,{label:v},function(r){
+    if(r&&r.length){
+      u.label=v;
+      // Keep the legacy unit-string snapshot in sync on every affected item.
+      api('PATCH','order_items','unit_id=eq.'+uid,{unit:v},function(){
+        for(var i=0;i<items.length;i++)if(items[i].unit_id===uid)items[i].unit=v;
+        showToast('Renamed','success');renderUnitList();render();
+      });
+    }else{showToast('Rename failed','error');inp.value=u.label;}
+  });
+}
+function setRetired(uid,val){
+  api('PATCH','order_units','id=eq.'+uid,{retired:val},function(r){
+    if(r&&r.length){if(unitMap[uid])unitMap[uid].retired=val;showToast(val?'Retired':'Restored','success');renderUnitList();render();}
+    else showToast('Update failed','error');
+  });
+}
+function fillAddUnitSelect(selectedId){
+  var sel=document.getElementById('addItemUnit'),cur=selectedId||null,h='<option value="">Unit…</option>';
+  for(var i=0;i<units.length;i++){var u=units[i];if(u.retired)continue;h+='<option value="'+u.id+'"'+(u.id===cur?' selected':'')+'>'+esc(u.label)+'</option>';}
+  h+='<option value="__other__">+ Other…</option>';
+  sel.innerHTML=h;
+}
+function onAddUnitChange(){var sel=document.getElementById('addItemUnit');if(sel.value==='__other__'){otherUnitTarget='__add__';sel.value='';openOtherUnit();}}
 
 function togV(el){el.parentElement.classList.toggle('open')}
 function setGuide(g){guide=g;var b=document.querySelectorAll('.guide-btn');for(var i=0;i<b.length;i++)b[i].classList.toggle('active',i===(g==='birite'?0:1));updateDelivery();if(viewMode==='previous')loadPrevious();else render();}
@@ -387,7 +534,7 @@ function renderPrevious(){
   }
   document.getElementById('appBody').innerHTML=h;
 }
-function toggleMgr(){mgr=!mgr;document.getElementById('mgrSwitch').classList.toggle('on',mgr);render();}
+function toggleMgr(){mgr=!mgr;document.getElementById('mgrSwitch').classList.toggle('on',mgr);document.getElementById('manageUnitsBtn').style.display=mgr?'block':'none';render();}
 
 function setQty(id,val){
   val=val.trim();if(val)quantities[id]=val;else delete quantities[id];
@@ -537,7 +684,7 @@ function moveItem(id,dir){
 }
 
 function openAdd(vendor){
-  document.getElementById('addItemName').value='';document.getElementById('addItemUnit').value='';
+  document.getElementById('addItemName').value='';fillAddUnitSelect(null);
   document.getElementById('addItemPar').value='';
   // Populate vendor dropdown
   var sel=document.getElementById('addItemVendor'),vs=getVendors();sel.innerHTML='';
@@ -572,13 +719,15 @@ function refreshCatDropdown(){
 function closeAdd(){document.getElementById('addModal').classList.remove('show')}
 function saveAdd(){
   var name=document.getElementById('addItemName').value.trim();
-  var unit=document.getElementById('addItemUnit').value.trim();
+  var unitVal=document.getElementById('addItemUnit').value;
+  var unitId=(unitVal&&unitVal!=='__other__')?Number(unitVal):null;
+  var unitStr=unitId&&unitMap[unitId]?unitMap[unitId].label:null;
   var par=document.getElementById('addItemPar').value.trim();
   var cat=document.getElementById('addItemCat').value.trim();
   var vendor=document.getElementById('addItemVendor').value;
   if(!name)return;
   var mx=0;for(var i=0;i<items.length;i++)if(items[i].vendor===vendor&&items[i].sort_order>mx)mx=items[i].sort_order;
-  api('POST','order_items',null,{name:name,vendor:vendor,location:'Tempest',unit:unit||null,par_level:par||null,category:cat||null,sort_order:mx+1},function(r){
+  api('POST','order_items',null,{name:name,vendor:vendor,location:'Tempest',unit_id:unitId,unit:unitStr,par_level:par||null,category:cat||null,sort_order:mx+1},function(r){
     if(r&&r.length){items.push(r[0]);showToast('Added','success');render();}
     closeAdd();
   });
