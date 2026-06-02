@@ -152,7 +152,7 @@
   .task.sortable-drag{background:var(--surface2);box-shadow:0 6px 20px rgba(0,0,0,0.5)}
   .toast.err{background:var(--red)}
 </style>
-<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.7/Sortable.min.js"></script>
+<script src="vendor/sortablejs-1.15.7.min.js"></script>
 </head>
 <body>
 <div class="header">
@@ -439,7 +439,8 @@ var sortables=[];
 function initSortables(){
   for(var i=0;i<sortables.length;i++){try{sortables[i].destroy();}catch(e){}}
   sortables=[];
-  if(!mgr||typeof Sortable==='undefined')return;
+  if(!mgr)return;
+  if(typeof Sortable==='undefined'){toastErr('Drag unavailable — reload page');return;}
   var lists=document.querySelectorAll('.section-body[data-cat]');
   for(var i=0;i<lists.length;i++){
     (function(listEl){
@@ -448,9 +449,7 @@ function initSortables(){
         handle:'.drag-handle',
         draggable:'.task',
         animation:150,
-        delay:200,
-        delayOnTouchOnly:true,
-        touchStartThreshold:8,
+        delay:0,
         ghostClass:'sortable-ghost',
         chosenClass:'sortable-chosen',
         dragClass:'sortable-drag',
