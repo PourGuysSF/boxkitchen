@@ -469,8 +469,10 @@ function persistOrder(listEl,cat,evt){
   var rows=listEl.querySelectorAll('.task'),visIds=[];
   for(var i=0;i<rows.length;i++)visIds.push(parseInt(rows[i].getAttribute('data-id'),10));
   var draggedId=parseInt(evt.item.getAttribute('data-id'),10);
-  var group=items.filter(function(x){return x.shift===shift&&x.category===cat;});
-  group.sort(function(a,b){return a.sort_order-b.sort_order;});
+  // FULL group = every item in this category+shift across ALL days, kept in the
+  // rendered order (items[] order). Do NOT re-sort on raw sort_order: legacy
+  // ties/NULLs would disagree with what's on screen and scramble the result.
+  var group=[];for(var i=0;i<items.length;i++){if(items[i].shift===shift&&items[i].category===cat)group.push(items[i]);}
   var dragged=null,rest=[];
   for(var i=0;i<group.length;i++){if(group[i].id===draggedId)dragged=group[i];else rest.push(group[i]);}
   if(!dragged)return;
