@@ -222,6 +222,7 @@
 var SB='https://sxppuyarecqkgkrsrefc.supabase.co',SK='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN4cHB1eWFyZWNxa2drcnNyZWZjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczOTA4MzAsImV4cCI6MjA5Mjk2NjgzMH0.GM8OfcR68_JjdPeQ3k7j6L3ulJFaeS1xnSLBcdtYXtU';
 var shift='AM',items=[],logs={},staff=[],mgr=false,st=null,openNotes={};
 var VIEWAS_KEY='boxkitchen_viewas_prep';
+var MGR_KEY='boxkitchen.mgr';
 var viewAs=localStorage.getItem(VIEWAS_KEY)||''; // '' = All
 var MANAGER_PIN='4316';
 var currentDate=new Date();
@@ -383,8 +384,7 @@ function bTask(it){
 function togSec(el){el.parentElement.classList.toggle('open')}
 function setShift(s){shift=s;var b=document.querySelectorAll('.shift-btn');for(var i=0;i<b.length;i++)b[i].classList.toggle('active',b[i].textContent.indexOf(s)>-1);render();}
 function toggleMgr(){
-  if(mgr){mgr=false;document.getElementById('mgrSwitch').classList.remove('on');render();return;}
-  if(sessionStorage.getItem('boxkitchen_mgr')==='1'){mgr=true;document.getElementById('mgrSwitch').classList.add('on');render();return;}
+  if(mgr){mgr=false;document.getElementById('mgrSwitch').classList.remove('on');try{localStorage.removeItem(MGR_KEY);}catch(e){}render();return;}
   openPin();
 }
 function openPin(){
@@ -397,7 +397,7 @@ function closePin(){document.getElementById('pinModal').classList.remove('show')
 function submitPin(){
   var v=(document.getElementById('pinInput').value||'').trim();
   if(v===MANAGER_PIN){
-    sessionStorage.setItem('boxkitchen_mgr','1');
+    try{localStorage.setItem(MGR_KEY,'1');}catch(e){}
     closePin();
     mgr=true;document.getElementById('mgrSwitch').classList.add('on');render();
   }else{
@@ -459,17 +459,20 @@ function initSortables(){
   }
 }
 
-// Persist a drag using the same scheme as the old arrows: permute the
-// group's existing sort_order values (no renumber-all, no sparse insert),
-// write only to the single global prep_items.sort_order, PATCH changed rows.
+// Persist a drag: renumber the dragged group with clean, unique, increasing
+// sort_order values (10,20,30,...) so the reload order (order=sort_order.asc)
+// is deterministic even if legacy rows carried duplicate/zero/tied values.
+// Writes only to the single global prep_items.sort_order, PATCH changed rows.
 function persistOrder(listEl,cat,evt){
   if(evt.oldIndex===evt.newIndex)return;
   var snap={};for(var i=0;i<items.length;i++)snap[items[i].id]=items[i].sort_order;
   var rows=listEl.querySelectorAll('.task'),visIds=[];
   for(var i=0;i<rows.length;i++)visIds.push(parseInt(rows[i].getAttribute('data-id'),10));
   var draggedId=parseInt(evt.item.getAttribute('data-id'),10);
-  var group=items.filter(function(x){return x.shift===shift&&x.category===cat;});
-  group.sort(function(a,b){return a.sort_order-b.sort_order;});
+  // FULL group = every item in this category+shift across ALL days, kept in the
+  // rendered order (items[] order). Do NOT re-sort on raw sort_order: legacy
+  // ties/NULLs would disagree with what's on screen and scramble the result.
+  var group=[];for(var i=0;i<items.length;i++){if(items[i].shift===shift&&items[i].category===cat)group.push(items[i]);}
   var dragged=null,rest=[];
   for(var i=0;i<group.length;i++){if(group[i].id===draggedId)dragged=group[i];else rest.push(group[i]);}
   if(!dragged)return;
@@ -482,11 +485,11 @@ function persistOrder(listEl,cat,evt){
     var prevId=visIds[vi-1];at=idxOf(rest,prevId);at=at<0?rest.length:at+1;
   }
   newGroup=rest.slice(0,at).concat([dragged]).concat(rest.slice(at));
-  // reassign the group's existing sort_order values in the new order
-  var vals=group.map(function(x){return x.sort_order;}).sort(function(a,b){return a-b;});
+  // renumber the group with clean, unique, increasing values
   var changed=[];
   for(var i=0;i<newGroup.length;i++){
-    if(newGroup[i].sort_order!==vals[i]){newGroup[i].sort_order=vals[i];changed.push(newGroup[i]);}
+    var nv=(i+1)*10;
+    if(newGroup[i].sort_order!==nv){newGroup[i].sort_order=nv;changed.push(newGroup[i]);}
   }
   items.sort(function(a,b){return a.sort_order-b.sort_order;});
   render(); // optimistic
@@ -552,8 +555,9 @@ function removeStaff(id){
 function toast(){var t=document.getElementById('toast');t.textContent='✓ Saved';t.classList.remove('err');t.classList.add('show');clearTimeout(st);st=setTimeout(function(){t.classList.remove('show');},1200);}
 function toastErr(msg){var t=document.getElementById('toast');t.textContent='⚠ '+msg;t.classList.add('err','show');clearTimeout(st);st=setTimeout(function(){t.classList.remove('show');},2200);}
 
-// Restore manager mode if already unlocked this session.
-if(sessionStorage.getItem('boxkitchen_mgr')==='1'){mgr=true;document.getElementById('mgrSwitch').classList.add('on');}
+// Restore manager mode from a prior unlock. Default to cook view (off) on
+// missing value or any error so cooks never land in manager mode.
+try{if(localStorage.getItem(MGR_KEY)==='1'){mgr=true;document.getElementById('mgrSwitch').classList.add('on');}}catch(e){}
 document.getElementById('pinModal').addEventListener('click',function(e){if(e.target===this)closePin();});
 document.getElementById('pinInput').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();submitPin();}});
 
