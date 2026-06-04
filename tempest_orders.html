@@ -235,8 +235,8 @@
 var SB='https://sxppuyarecqkgkrsrefc.supabase.co',SK='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN4cHB1eWFyZWNxa2drcnNyZWZjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczOTA4MzAsImV4cCI6MjA5Mjk2NjgzMH0.GM8OfcR68_JjdPeQ3k7j6L3ulJFaeS1xnSLBcdtYXtU';
 var guide='birite',items=[],mgr=false,todayStr='',st=null,quantities={};
 var units=[],unitMap={},otherUnitTarget=null;
-var openOrder={birite:null,produce:null},prevOrders={birite:[],produce:[]};
-var unlocked={birite:false,produce:false},viewMode='today';
+var curOrder={birite:null,produce:null},prevOrders={birite:[],produce:[]};
+var viewMode='today';
 var submitting={birite:false,produce:false},creatingDraft={birite:false,produce:false},saveTimer={birite:null,produce:null},pendingSave={birite:false,produce:false};
 var biriteVendors=['Birite','Dairy'];
 var produceVendors=['Schmitz Ranch','Asia Intl','Cooks Produce'];
@@ -247,8 +247,7 @@ function guideLabel(g){return g==='birite'?'Birite & Dairy':'Produce & Protein';
 function guideDbName(g){return g==='birite'?'birite_dairy':'produce_protein';}
 function fmtTime(iso){var d=new Date(iso),h=d.getHours(),m=d.getMinutes(),ap=h>=12?'pm':'am';h=h%12;if(h===0)h=12;return h+':'+String(m).padStart(2,'0')+ap;}
 function fmtDateTime(iso){var d=new Date(iso),mn=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],dn=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];return dn[d.getDay()]+', '+mn[d.getMonth()]+' '+d.getDate()+' · '+fmtTime(iso);}
-function orderHasContent(g){var gi=itemsInGuide(g);for(var i=0;i<gi.length;i++)if(quantities[gi[i].id])return true;return false;}
-function isLocked(g){return orderHasContent(g)&&!unlocked[g];}
+function isSubmitted(g){return !!(curOrder[g]&&curOrder[g].status==='submitted');}
 
 function init(){
   var d=new Date(),mn=['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -281,14 +280,30 @@ function loadData(){
     items=r||[];
     // Load the one OPEN order per guide (not date-scoped — survives midnight & reloads).
     api('GET','orders','location=eq.Tempest&status=eq.open',null,function(r2){
-      openOrder={birite:null,produce:null};quantities={};
+      var openByGuide={birite:null,produce:null};
       if(r2)for(var i=0;i<r2.length;i++){
         var g=r2[i].guide_name==='birite_dairy'?'birite':'produce';
-        openOrder[g]=r2[i];
-        var qs=r2[i].quantities||{};
-        for(var k in qs){if(qs[k]!==''&&qs[k]!=null)quantities[k]=qs[k];}
+        openByGuide[g]=r2[i];
       }
-      render();
+      // Also load today's SUBMITTED order per guide (by local submit_date) so the
+      // post-submit view persists across reloads.
+      api('GET','orders','location=eq.Tempest&status=eq.submitted&order=submitted_at.desc',null,function(r3){
+        var subByGuide={birite:null,produce:null};
+        if(r3)for(var j=0;j<r3.length;j++){
+          var g2=r3[j].guide_name==='birite_dairy'?'birite':'produce';
+          if(!subByGuide[g2]&&r3[j].submit_date===todayStr)subByGuide[g2]=r3[j];
+        }
+        // An open row is the live working draft; otherwise fall back to today's submitted.
+        curOrder={birite:null,produce:null};quantities={};
+        ['birite','produce'].forEach(function(g){
+          var row=openByGuide[g]||subByGuide[g];
+          if(!row)return;
+          curOrder[g]=row;
+          var qs=row.quantities||{};
+          for(var k in qs){if(qs[k]!==''&&qs[k]!=null)quantities[k]=qs[k];}
+        });
+        render();
+      });
     });
   });
   });
@@ -298,7 +313,7 @@ function loadData(){
 function fetchOpenOrder(g,cb){
   api('GET','orders','location=eq.Tempest&guide_name=eq.'+guideDbName(g)+'&status=eq.open&order=created_at.desc&limit=1',null,function(r){
     if(Array.isArray(r)&&r.length){
-      openOrder[g]=r[0];
+      curOrder[g]=r[0];
       var qs=r[0].quantities||{};
       for(var k in qs){if(!quantities[k]&&qs[k])quantities[k]=qs[k];}
       if(viewMode==='today'&&guide===g)render();
@@ -312,8 +327,9 @@ function getVendors(){return guide==='birite'?biriteVendors:produceVendors;}
 function render(){
   if(viewMode==='previous'){renderPrevious();return;}
   var vendors=getVendors(),cls=mgr?'manager-mode':'',h='';
-  if(isLocked(guide)){
-    h+='<div class="lock-banner">🔒 '+guideLabel(guide)+' has an order in progress. Tap “Unlock to edit” below to change it.</div>';
+  if(isSubmitted(guide)){
+    var co=curOrder[guide];
+    h+='<div class="lock-banner">🔒 Submitted by '+esc(co.submitted_by||'—')+(co.submitted_at?' at '+fmtTime(co.submitted_at):'')+' — tap “Unlock to edit” below to change it.</div>';
   }
   h+='<div class="'+cls+'">';
   for(var vi=0;vi<vendors.length;vi++){
@@ -352,12 +368,24 @@ function render(){
   }
   h+='</div>';
   document.getElementById('appBody').innerHTML=h;
+  syncNameBar();
   updateSummary();
+}
+
+// Filled-by field: read-only (showing the submitter) when submitted, editable otherwise.
+function syncNameBar(){
+  var inp=document.getElementById('filledBy');if(!inp)return;
+  if(isSubmitted(guide)){
+    inp.value=(curOrder[guide]&&curOrder[guide].submitted_by)||'';
+    inp.readOnly=true;
+  }else{
+    inp.readOnly=false;
+  }
 }
 
 function buildItem(it){
   var q=quantities[it.id]||'',hasQ=q&&q!=='0'&&q!=='';
-  var locked=isLocked(guide);
+  var locked=isSubmitted(guide);
   var inpCls='qty-input'+(hasQ?' filled':'')+(locked?' locked':'');
   var inpAttrs=locked?' readonly':'';
   var h='<div class="item-row '+(hasQ?'has-qty':'')+'" data-id="'+it.id+'">';
@@ -547,48 +575,39 @@ function setQty(id,val){
 }
 
 function scheduleSave(g){
-  if(submitting[g])return;
+  if(submitting[g]||isSubmitted(g))return;
   if(saveTimer[g])clearTimeout(saveTimer[g]);
   saveTimer[g]=setTimeout(function(){saveTimer[g]=null;saveDraft(g);},400);
 }
 
 // Persist the guide's in-progress quantities to its single OPEN order row.
 function saveDraft(g){
-  if(submitting[g])return;
+  if(submitting[g]||isSubmitted(g))return;
   var gi=itemsInGuide(g),qs={},cnt=0;
   for(var i=0;i<gi.length;i++){var id=gi[i].id;if(quantities[id]){qs[String(id)]=quantities[id];cnt++;}}
   var body={quantities:qs,item_count:cnt,updated_at:new Date().toISOString()};
-  if(openOrder[g]&&openOrder[g].id){
-    api('PATCH','orders','id=eq.'+openOrder[g].id,body,function(r){
-      if(Array.isArray(r)&&r.length)openOrder[g]=r[0];
+  if(curOrder[g]&&curOrder[g].id){
+    api('PATCH','orders','id=eq.'+curOrder[g].id,body,function(r){
+      if(Array.isArray(r)&&r.length)curOrder[g]=r[0];
     });
   }else{
     if(creatingDraft[g]){pendingSave[g]=true;return;}
     creatingDraft[g]=true;
     api('POST','orders',null,{guide_name:guideDbName(g),location:'Tempest',status:'open',quantities:qs,item_count:cnt},function(r,status){
       creatingDraft[g]=false;
-      if(Array.isArray(r)&&r.length){openOrder[g]=r[0];if(pendingSave[g]){pendingSave[g]=false;saveDraft(g);}return;}
+      if(Array.isArray(r)&&r.length){curOrder[g]=r[0];if(pendingSave[g]){pendingSave[g]=false;saveDraft(g);}return;}
       // Another device already opened one — adopt it silently, then re-save our edits onto it.
       if(status===409){fetchOpenOrder(g,function(){pendingSave[g]=false;if(!submitting[g])saveDraft(g);});return;}
     });
   }
 }
 
-// Open a fresh blank order for a guide after a submit (resilient to the shared-device race).
-function openFreshOrder(g,cb){
-  api('POST','orders',null,{guide_name:guideDbName(g),location:'Tempest',status:'open',quantities:{},item_count:0},function(r,status){
-    if(Array.isArray(r)&&r.length){openOrder[g]=r[0];if(cb)cb();return;}
-    if(status===409){fetchOpenOrder(g,cb);return;}
-    if(cb)cb();
-  });
-}
-
 function updateSummary(){
   var gi=itemsInGuide(guide),c=0;
   for(var i=0;i<gi.length;i++)if(quantities[gi[i].id])c++;
   var sum=document.getElementById('submitSummary'),btn=document.getElementById('submitBtn');
-  if(isLocked(guide)){
-    sum.innerHTML='<strong>'+guideLabel(guide)+'</strong> order is locked';
+  if(isSubmitted(guide)){
+    sum.innerHTML='<strong>'+guideLabel(guide)+'</strong> order submitted';
     btn.textContent='🔓 Unlock to edit';
     btn.disabled=false;
   }else{
@@ -598,13 +617,18 @@ function updateSummary(){
   }
 }
 
-function onSubmitClick(){if(isLocked(guide))unlockGuide();else submitOrder();}
+function onSubmitClick(){if(isSubmitted(guide))unlockGuide();else submitOrder();}
 
+// Flip the submitted row back to 'open' in place (same id, no new row) so the cook
+// can edit the pre-filled quantities. Non-destructive — no confirm needed.
 function unlockGuide(){
-  if(!orderHasContent(guide))return;
-  if(!confirm('This '+guideLabel(guide)+' order has items entered. Unlock to edit it?'))return;
-  unlocked[guide]=true;
-  render();
+  var g=guide,co=curOrder[g];
+  if(!co||co.status!=='submitted')return;
+  co.status='open';render();
+  api('PATCH','orders','id=eq.'+co.id,{status:'open',updated_at:new Date().toISOString()},function(r,status){
+    if(Array.isArray(r)&&r.length){curOrder[g]=r[0];}
+    else if(status===409){fetchOpenOrder(g);}
+  });
 }
 
 function submitOrder(){
@@ -626,24 +650,20 @@ function submitOrder(){
   var payload={status:'submitted',submitted_by:name,submitted_at:now.toISOString(),submit_date:submitDate,item_count:cnt,quantities:qs};
   function fail(){submitting[g]=false;btn.disabled=false;showToast('Could not submit. Try again.','error');}
   function doPatch(){
-    api('PATCH','orders','id=eq.'+openOrder[g].id,payload,function(r){
+    api('PATCH','orders','id=eq.'+curOrder[g].id,payload,function(r){
       if(!(Array.isArray(r)&&r.length)){fail();return;}
-      // Stamped to history. Clear and open a fresh blank order for this guide.
-      for(var i=0;i<gi.length;i++)delete quantities[gi[i].id];
-      unlocked[g]=false;openOrder[g]=null;
-      openFreshOrder(g,function(){
-        submitting[g]=false;
-        showToast('Order submitted — '+cnt+' items','success');
-        render();
-      });
+      // Keep the submitted order on screen: same row, now status=submitted.
+      curOrder[g]=r[0];submitting[g]=false;
+      showToast('Order submitted — '+cnt+' items','success');
+      render();
     });
   }
-  if(openOrder[g]&&openOrder[g].id){doPatch();}
+  if(curOrder[g]&&curOrder[g].id){doPatch();}
   else{
     // No open row yet (autosave hadn't created one) — create, then submit it.
     api('POST','orders',null,{guide_name:guideDbName(g),location:'Tempest',status:'open',quantities:qs,item_count:cnt},function(r,status){
-      if(Array.isArray(r)&&r.length){openOrder[g]=r[0];doPatch();}
-      else if(status===409){fetchOpenOrder(g,function(){if(openOrder[g]&&openOrder[g].id)doPatch();else fail();});}
+      if(Array.isArray(r)&&r.length){curOrder[g]=r[0];doPatch();}
+      else if(status===409){fetchOpenOrder(g,function(){if(curOrder[g]&&curOrder[g].id)doPatch();else fail();});}
       else fail();
     });
   }
