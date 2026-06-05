@@ -28,6 +28,17 @@
   .section{padding:20px 16px 4px}
   .section-title{font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--accent);padding:0 4px 10px}
 
+  /* ACTIVITY */
+  .activity-list{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden}
+  .activity-row{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--border);font-size:0.85rem;color:var(--text);text-decoration:none;line-height:1.3}
+  .activity-row:last-child{border-bottom:none}
+  .activity-row:hover{background:var(--surface2)}
+  .activity-text{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .activity-chev{color:var(--dim);font-weight:300;flex-shrink:0}
+  .activity-row:hover .activity-chev{color:var(--accent)}
+  .activity-msg{padding:12px 14px;font-size:0.84rem;color:var(--muted)}
+  .activity-msg.muted{font-style:italic}
+
   /* CARDS */
   .card-list{display:flex;flex-direction:column;gap:8px}
   .card{display:flex;align-items:center;gap:12px;min-height:64px;padding:12px 16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;text-decoration:none;color:var(--text);transition:background 0.15s,border-color 0.15s,transform 0.05s}
@@ -120,6 +131,13 @@
   <div class="today-label">Today</div>
   <div class="today-date" id="todayDate"></div>
   <div class="today-reminders" id="todayReminders"></div>
+</div>
+
+<div class="section">
+  <div class="section-title">Activity</div>
+  <div class="activity-list" id="activityList">
+    <div class="activity-msg">Loading recent activity…</div>
+  </div>
 </div>
 
 <div class="section">
@@ -266,6 +284,84 @@
       box.appendChild(el);
     }
   }
+})();
+</script>
+
+<script>
+(function(){
+  var SB='https://sxppuyarecqkgkrsrefc.supabase.co',SK='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN4cHB1eWFyZWNxa2drcnNyZWZjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczOTA4MzAsImV4cCI6MjA5Mjk2NjgzMH0.GM8OfcR68_JjdPeQ3k7j6L3ulJFaeS1xnSLBcdtYXtU';
+  function api(m,t,q,d,cb){var x=new XMLHttpRequest();x.open(m,SB+'/rest/v1/'+t+(q?'?'+q:''));x.setRequestHeader('apikey',SK);x.setRequestHeader('Authorization','Bearer '+SK);x.onload=function(){var r=null;try{r=JSON.parse(x.responseText);}catch(e){}if(cb)cb(Array.isArray(r)?r:[]);};x.onerror=function(){if(cb)cb([]);};x.send(null);}
+  function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+
+  var dnShort=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  function clock(d){var h=d.getHours(),m=d.getMinutes(),ap=h>=12?'PM':'AM';h=h%12;if(h===0)h=12;return h+':'+String(m).padStart(2,'0')+' '+ap;}
+  function sameDay(a,b){return a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate();}
+  function relTime(d){
+    var now=new Date(),label;
+    if(sameDay(d,now))label='Today';
+    else if(sameDay(d,new Date(now.getTime()-86400000)))label='Yesterday';
+    else label=dnShort[d.getDay()];
+    return label+' '+clock(d);
+  }
+  function midnightFromDate(s){var p=String(s||'').split('-');if(p.length!==3)return null;return new Date(parseInt(p[0],10),parseInt(p[1],10)-1,parseInt(p[2],10));}
+
+  // 72-hour window: precise ISO for orders, date floor for the count tables.
+  var cutoff=new Date(Date.now()-72*3600*1000);
+  var iso72=cutoff.toISOString();
+  var floor=new Date();floor.setDate(floor.getDate()-2);
+  var date3=floor.getFullYear()+'-'+String(floor.getMonth()+1).padStart(2,'0')+'-'+String(floor.getDate()).padStart(2,'0');
+
+  function groupCounts(rows){
+    var map={};
+    for(var i=0;i<rows.length;i++){
+      var r=rows[i],by=r.counted_by||'—',date=r.count_date||'',key=by+'|'+date;
+      var g=map[key]||(map[key]={by:by,date:date,n:0,first:null,last:null});
+      g.n++;
+      if(r.created_at){var t=new Date(r.created_at);if(!g.first||t<g.first)g.first=t;if(!g.last||t>g.last)g.last=t;}
+    }
+    var out=[];for(var k in map)out.push(map[k]);return out;
+  }
+  function groupTime(g){
+    if(g.first){var s=relTime(g.first);if(g.last&&g.last.getTime()!==g.first.getTime())s+=' – '+clock(g.last);return s;}
+    var md=midnightFromDate(g.date);return md?relTime(md):'';
+  }
+  function groupSortTs(g){return (g.last||g.first||midnightFromDate(g.date)||new Date(0)).getTime();}
+
+  var orders=null,meat=null,portion=null;
+  function done(){
+    if(orders===null||meat===null||portion===null)return;
+    var entries=[];
+    for(var i=0;i<orders.length;i++){
+      var o=orders[i];if(!o.submitted_at)continue;
+      var label=o.guide_name==='birite_dairy'?'Birite/Dairy order':'Produce/Protein order';
+      var n=o.item_count||0;
+      entries.push({ts:new Date(o.submitted_at).getTime(),href:'tempest_orders.html',
+        text:'📋 '+label+' — '+(o.submitted_by||'—')+' — '+relTime(new Date(o.submitted_at))+' — '+n+' item'+(n!==1?'s':'')});
+    }
+    function addCounts(rows,emoji,label,href){
+      var gs=groupCounts(rows);
+      for(var i=0;i<gs.length;i++){var g=gs[i];
+        entries.push({ts:groupSortTs(g),href:href,
+          text:emoji+' '+label+' — '+g.by+' — '+groupTime(g)+' — '+g.n+' item'+(g.n!==1?'s':'')});
+      }
+    }
+    addCounts(meat,'🥩','Meat count','tempest_meat.html');
+    addCounts(portion,'🍱','Portion count','tempest_portion.html');
+
+    entries.sort(function(a,b){return b.ts-a.ts;});
+
+    var box=document.getElementById('activityList');
+    if(!entries.length){box.innerHTML='<div class="activity-msg muted">No recent submissions</div>';return;}
+    var h='';
+    for(var i=0;i<entries.length;i++){
+      h+='<a class="activity-row" href="'+entries[i].href+'"><span class="activity-text">'+esc(entries[i].text)+'</span><span class="activity-chev">›</span></a>';
+    }
+    box.innerHTML=h;
+  }
+
+  api('GET','orders','select=guide_name,submitted_by,submitted_at,item_count&location=eq.Tempest&status=eq.submitted&submitted_at=gte.'+encodeURIComponent(iso72)+'&order=submitted_at.desc',null,function(r){orders=r;done();});
+  api('GET','meat_counts','location=eq.Tempest&count_date=gte.'+date3+'&order=count_date.desc',null,function(r){meat=r;done();});
+  api('GET','portion_counts','location=eq.Tempest&count_date=gte.'+date3+'&order=count_date.desc',null,function(r){portion=r;done();});
 })();
 </script>
 </body>
