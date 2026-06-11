@@ -276,7 +276,7 @@ function loadUnits(cb){
 }
 function loadData(){
   loadUnits(function(){
-  api('GET','order_items','location=eq.Tempest&order=sort_order.asc',null,function(r){
+  api('GET','order_items','location=eq.Tempest&active=eq.true&order=sort_order.asc',null,function(r){
     items=r||[];
     // Load the one OPEN order per guide (not date-scoped — survives midnight & reloads).
     api('GET','orders','location=eq.Tempest&status=eq.open',null,function(r2){
