@@ -202,7 +202,7 @@
     <h3>Add Prep Item</h3>
     <input type="text" id="addName" placeholder="Task name">
     <select id="addCat"><option value="cleaning">Cleaning</option><option value="daily" selected>Daily Prep</option><option value="weekly">Weekly Prep</option></select>
-    <input type="text" id="addDay" placeholder="Day (e.g. MON) — weekly only">
+    <select id="addDay"><option value="">Every day (no specific day)</option><option value="SUN">SUN</option><option value="MON">MON</option><option value="TUE">TUE</option><option value="WED">WED</option><option value="THU">THU</option><option value="FRI">FRI</option><option value="SAT">SAT</option></select>
     <div class="modal-btns"><button class="modal-btn cancel" onclick="closeAddModal()">Cancel</button><button class="modal-btn save" onclick="saveNewItem()">Add</button></div>
   </div>
 </div>
@@ -513,9 +513,9 @@ function persistOrder(listEl,cat,evt){
 function openAdd(c){document.getElementById('addCat').value=c;document.getElementById('addName').value='';document.getElementById('addDay').value='';document.getElementById('addModal').classList.add('show');setTimeout(function(){document.getElementById('addName').focus();},100);}
 function closeAddModal(){document.getElementById('addModal').classList.remove('show')}
 function saveNewItem(){
-  var n=document.getElementById('addName').value.trim(),c=document.getElementById('addCat').value,d=document.getElementById('addDay').value.trim().toUpperCase()||null;
+  var n=document.getElementById('addName').value.trim(),c=document.getElementById('addCat').value,d=document.getElementById('addDay').value||null;
   if(!n)return;var mx=0;for(var i=0;i<items.length;i++)if(items[i].shift===shift&&items[i].category===c&&items[i].sort_order>mx)mx=items[i].sort_order;
-  api('POST','prep_items',null,{name:n,shift:shift,category:c,location:'Tempest',team:'kitchen',day_specific:d,sort_order:mx+1},function(r){if(r&&r.length){items.push(r[0]);toast();render();}closeAddModal();});
+  api('POST','prep_items',null,{name:n,shift:shift,category:c,location:'Tempest',team:'kitchen',day_specific:d,sort_order:mx+1},function(r){if(r&&r.length){items.push(r[0]);toast();render();closeAddModal();}else{toastErr('Could not add item');}});
 }
 
 // ── STAFF MANAGEMENT ──
