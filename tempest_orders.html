@@ -127,6 +127,9 @@
   .unit-add-row{display:flex;gap:8px;margin-bottom:6px}
   .unit-add-row input{flex:1;margin:0}
   .unit-add-row button{padding:8px 12px;border:none;border-radius:8px;background:var(--accent);color:#fff;font-family:'DM Sans',sans-serif;font-size:0.82rem;font-weight:600;cursor:pointer}
+  .shelf-vendor-hd{font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin:12px 0 4px}
+  .shelf-vendor-hd:first-child{margin-top:0}
+  .shelf-moves{display:flex;flex-direction:column;gap:1px;flex-shrink:0}
 
   /* SUBMIT BAR */
   .submit-bar{position:fixed;bottom:0;left:0;right:0;padding:12px 20px;background:rgba(15,17,21,0.95);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-top:1px solid var(--border);display:flex;gap:12px;align-items:center;z-index:100}
@@ -180,7 +183,7 @@
     <h1>Tempest <span>Orders</span></h1>
     <div class="mgr-toggle"><span>Manager</span><div class="mgr-switch" id="mgrSwitch" onclick="toggleMgr()"><div class="knob"></div></div></div>
   </div>
-  <div class="header-row" style="justify-content:flex-end;margin-bottom:0"><button class="manage-units-btn" id="manageUnitsBtn" onclick="openUnitsModal()" style="margin-top:6px">⚙ Manage units</button></div>
+  <div class="header-row" style="justify-content:flex-end;gap:8px;margin-bottom:0"><button class="manage-units-btn" id="manageShelvesBtn" onclick="openShelvesModal()" style="margin-top:6px">⚙ Manage shelves</button><button class="manage-units-btn" id="manageUnitsBtn" onclick="openUnitsModal()" style="margin-top:6px">⚙ Manage units</button></div>
   <div class="guide-toggle">
     <button class="guide-btn active" onclick="setGuide('birite')">BIRITE & DAIRY</button>
     <button class="guide-btn" onclick="setGuide('produce')">PRODUCE & PROTEIN</button>
@@ -223,6 +226,14 @@
     <div class="modal-btns"><button class="modal-btn cancel" onclick="closeUnitsModal()">Done</button></div>
   </div>
 </div>
+<div class="modal-bg" id="shelvesModal">
+  <div class="modal">
+    <h3>Manage Shelves</h3>
+    <div class="unit-add-row"><select id="newShelfVendor" style="flex:0 0 auto;width:auto;min-width:104px;margin:0"></select><input type="text" id="newShelfName" placeholder="New shelf name" autocomplete="off"><button onclick="addShelf()">Add</button></div>
+    <div class="unit-list" id="shelfList"></div>
+    <div class="modal-btns"><button class="modal-btn cancel" onclick="closeShelvesModal()">Done</button></div>
+  </div>
+</div>
 <div class="modal-bg" id="unitAddModal">
   <div class="modal">
     <h3>New Unit</h3>
@@ -241,6 +252,7 @@ var submitting={birite:false,produce:false},creatingDraft={birite:false,produce:
 var biriteVendors=['Birite','Dairy'];
 var produceVendors=['Schmitz Ranch','Asia Intl','Cooks Produce'];
 var vendorColors={'Birite':'birite','Dairy':'dairy','Schmitz Ranch':'schmitz','Asia Intl':'asia','Cooks Produce':'cooks'};
+var catByVendor={},catRegistryLoaded=false;
 
 function itemsInGuide(g){var vs=g==='birite'?biriteVendors:produceVendors;return items.filter(function(it){return vs.indexOf(it.vendor)!==-1;});}
 function guideLabel(g){return g==='birite'?'Birite & Dairy':'Produce & Protein';}
@@ -274,8 +286,22 @@ function loadUnits(cb){
     if(cb)cb();
   });
 }
+// Managed "shelf" registry (order_categories). Drives section order + the add-item
+// shelf picker. Loaded before the first render; if it fails, the guide falls back to
+// today's first-seen grouping so ordering never breaks.
+function loadCategories(cb){
+  api('GET','order_categories','location=eq.Tempest&order=vendor.asc,sort_order.asc',null,function(rc){
+    catByVendor={};catRegistryLoaded=false;
+    if(Array.isArray(rc)){
+      catRegistryLoaded=true;
+      for(var i=0;i<rc.length;i++){var c=rc[i];if(!catByVendor[c.vendor])catByVendor[c.vendor]=[];catByVendor[c.vendor].push(c);}
+    }
+    if(cb)cb();
+  });
+}
 function loadData(){
   loadUnits(function(){
+  loadCategories(function(){
   api('GET','order_items','location=eq.Tempest&active=eq.true&order=sort_order.asc',null,function(r){
     items=r||[];
     // Load the one OPEN order per guide (not date-scoped — survives midnight & reloads).
@@ -305,6 +331,7 @@ function loadData(){
         render();
       });
     });
+  });
   });
   });
 }
@@ -339,12 +366,24 @@ function render(){
     var filled=0;for(var i=0;i<vItems.length;i++)if(quantities[vItems[i].id])filled++;
     var colorCls=vendorColors[v]||'birite';
 
-    // Group by category within vendor
-    var cats=[],catMap={},catOrder=[];
+    // Bucket items by their category text, then order the sections from the managed
+    // shelf registry (active shelves first, in their order); anything left over
+    // (unregistered / retired-but-still-populated / 'Other') falls in first-seen order
+    // at the end. If the registry didn't load, this degrades to today's first-seen order.
+    var catMap={},seenCat={},catOrder=[];
     for(var i=0;i<vItems.length;i++){
       var c=vItems[i].category||'Other';
-      if(!catMap[c]){catMap[c]=[];catOrder.push(c);}
+      if(!catMap[c])catMap[c]=[];
       catMap[c].push(vItems[i]);
+    }
+    var regList=(catRegistryLoaded&&catByVendor[v])?catByVendor[v]:[];
+    for(var ri=0;ri<regList.length;ri++){
+      var rl=regList[ri];if(!rl.active)continue;
+      if(catMap[rl.label]&&!seenCat[rl.label]){catOrder.push(rl.label);seenCat[rl.label]=true;}
+    }
+    for(var i=0;i<vItems.length;i++){
+      var c2=vItems[i].category||'Other';
+      if(!seenCat[c2]){catOrder.push(c2);seenCat[c2]=true;}
     }
 
     h+='<div class="vendor-section open">';
@@ -507,6 +546,118 @@ function fillAddUnitSelect(selectedId){
 }
 function onAddUnitChange(){var sel=document.getElementById('addItemUnit');if(sel.value==='__other__'){otherUnitTarget='__add__';sel.value='';openOtherUnit();}}
 
+// ---- Manage Shelves (order-guide categories / order_categories registry) ----
+function fillCatSelect(vendor,selected){
+  var catSel=document.getElementById('addItemCat');
+  catSel.innerHTML='<option value="">Select shelf...</option>';
+  var list=(catByVendor[vendor]||[]).filter(function(c){return c.active;});
+  if(list.length){
+    for(var i=0;i<list.length;i++){
+      var o=document.createElement('option');o.value=list[i].label;o.textContent=list[i].label;
+      if(selected&&selected===list[i].label)o.selected=true;
+      catSel.appendChild(o);
+    }
+    return;
+  }
+  // Fallback (registry empty/failed): offer existing item categories for this vendor.
+  var seen={};
+  for(var i=0;i<items.length;i++){
+    if(items[i].vendor===vendor&&items[i].category&&!seen[items[i].category]){
+      seen[items[i].category]=true;
+      var o=document.createElement('option');o.value=items[i].category;o.textContent=items[i].category;
+      if(selected&&selected===items[i].category)o.selected=true;
+      catSel.appendChild(o);
+    }
+  }
+}
+function findShelf(cid){
+  for(var v in catByVendor){var l=catByVendor[v];for(var i=0;i<l.length;i++)if(l[i].id===cid)return l[i];}
+  return null;
+}
+function openShelvesModal(){
+  var sel=document.getElementById('newShelfVendor'),vs=getVendors();sel.innerHTML='';
+  for(var i=0;i<vs.length;i++){var o=document.createElement('option');o.value=vs[i];o.textContent=vs[i];sel.appendChild(o);}
+  document.getElementById('newShelfName').value='';
+  renderShelfList();
+  document.getElementById('shelvesModal').classList.add('show');
+}
+function closeShelvesModal(){document.getElementById('shelvesModal').classList.remove('show');}
+function renderShelfList(){
+  var vs=getVendors(),h='';
+  for(var vi=0;vi<vs.length;vi++){
+    var v=vs[vi],list=catByVendor[v]||[];
+    h+='<div class="shelf-vendor-hd">'+esc(v)+'</div>';
+    if(!list.length){h+='<div style="padding:6px 0;color:var(--dim);font-size:0.8rem">No shelves yet</div>';continue;}
+    for(var i=0;i<list.length;i++){
+      var c=list[i];
+      h+='<div class="unit-row'+(c.active?'':' retired')+'" data-cid="'+c.id+'">';
+      h+='<div class="shelf-moves"><button class="move-btn" onclick="moveShelf('+c.id+',-1)">▲</button><button class="move-btn" onclick="moveShelf('+c.id+',1)">▼</button></div>';
+      h+='<input class="unit-name" value="'+esc(c.label)+'" onblur="renameShelf('+c.id+',this)" onkeydown="if(event.key===\'Enter\')this.blur()">';
+      if(c.active)h+='<button class="u-btn retire" onclick="setShelfActive('+c.id+',false)">Retire</button>';
+      else h+='<button class="u-btn restore" onclick="setShelfActive('+c.id+',true)">Restore</button>';
+      h+='</div>';
+    }
+  }
+  document.getElementById('shelfList').innerHTML=h;
+}
+function moveShelf(cid,dir){
+  var c=findShelf(cid);if(!c)return;
+  var list=catByVendor[c.vendor]||[];
+  var ci=-1;for(var i=0;i<list.length;i++)if(list[i].id===cid){ci=i;break;}
+  var si=ci+dir;if(si<0||si>=list.length)return;
+  var other=list[si],tmp=c.sort_order;
+  c.sort_order=other.sort_order;other.sort_order=tmp;
+  api('PATCH','order_categories','id=eq.'+c.id,{sort_order:c.sort_order},null);
+  api('PATCH','order_categories','id=eq.'+other.id,{sort_order:other.sort_order},null);
+  list.sort(function(a,b){return a.sort_order-b.sort_order;});
+  renderShelfList();render();
+}
+function renameShelf(cid,inp){
+  var c=findShelf(cid);if(!c)return;
+  var v=inp.value.trim();
+  if(!v||v===c.label){inp.value=c.label;return;}
+  var list=catByVendor[c.vendor]||[];
+  for(var i=0;i<list.length;i++)if(list[i].id!==cid&&list[i].label.toLowerCase()===v.toLowerCase()){showToast('Shelf name already in use','error');inp.value=c.label;return;}
+  if(!confirm('Rename shelf "'+c.label+'" to "'+v+'"? Every item on it moves to the new name.')){inp.value=c.label;return;}
+  var old=c.label;
+  api('PATCH','order_categories','id=eq.'+cid,{label:v},function(r){
+    if(!(r&&r.length)){showToast('Rename failed','error');inp.value=old;return;}
+    c.label=v;
+    // Cascade the new label onto every item on this (vendor, old-label) shelf.
+    // encodeURIComponent is required — vendor names have spaces and labels may contain '&'.
+    api('PATCH','order_items','vendor=eq.'+encodeURIComponent(c.vendor)+'&category=eq.'+encodeURIComponent(old),{category:v},function(r2){
+      for(var i=0;i<items.length;i++)if(items[i].vendor===c.vendor&&items[i].category===old)items[i].category=v;
+      showToast('Shelf renamed','success');renderShelfList();render();
+    });
+  });
+}
+function addShelf(){
+  var vendor=document.getElementById('newShelfVendor').value;
+  var inp=document.getElementById('newShelfName'),v=inp.value.trim();
+  if(!v)return;
+  var list=catByVendor[vendor]||[];
+  for(var i=0;i<list.length;i++)if(list[i].label.toLowerCase()===v.toLowerCase()){showToast('Shelf already exists','error');return;}
+  var mx=0;for(var i=0;i<list.length;i++)if(list[i].sort_order>mx)mx=list[i].sort_order;
+  api('POST','order_categories',null,{location:'Tempest',vendor:vendor,label:v,sort_order:mx+10,active:true},function(r){
+    if(r&&r.length){
+      if(!catByVendor[vendor])catByVendor[vendor]=[];
+      catByVendor[vendor].push(r[0]);
+      inp.value='';showToast('Shelf added','success');renderShelfList();render();
+    }else showToast('Add failed','error');
+  });
+}
+function setShelfActive(cid,val){
+  var c=findShelf(cid);if(!c)return;
+  if(!val){
+    var n=0;for(var i=0;i<items.length;i++)if(items[i].vendor===c.vendor&&items[i].category===c.label)n++;
+    if(!confirm('Retire shelf "'+c.label+'"?'+(n?(' '+n+' item'+(n!==1?'s':'')+' on it will still show at the bottom until you move them.'):'')))return;
+  }
+  api('PATCH','order_categories','id=eq.'+cid,{active:val},function(r){
+    if(r&&r.length){c.active=val;showToast(val?'Restored':'Retired','success');renderShelfList();render();}
+    else showToast('Update failed','error');
+  });
+}
+
 function togV(el){el.parentElement.classList.toggle('open')}
 function setGuide(g){guide=g;var b=document.querySelectorAll('.guide-btn');for(var i=0;i<b.length;i++)b[i].classList.toggle('active',i===(g==='birite'?0:1));updateDelivery();if(viewMode==='previous')loadPrevious();else render();}
 
@@ -562,7 +713,7 @@ function renderPrevious(){
   }
   document.getElementById('appBody').innerHTML=h;
 }
-function toggleMgr(){mgr=!mgr;document.getElementById('mgrSwitch').classList.toggle('on',mgr);document.getElementById('manageUnitsBtn').style.display=mgr?'block':'none';render();}
+function toggleMgr(){mgr=!mgr;document.getElementById('mgrSwitch').classList.toggle('on',mgr);var d=mgr?'block':'none';document.getElementById('manageUnitsBtn').style.display=d;document.getElementById('manageShelvesBtn').style.display=d;render();}
 
 function setQty(id,val){
   val=val.trim();if(val)quantities[id]=val;else delete quantities[id];
@@ -709,33 +860,12 @@ function openAdd(vendor){
   // Populate vendor dropdown
   var sel=document.getElementById('addItemVendor'),vs=getVendors();sel.innerHTML='';
   for(var i=0;i<vs.length;i++){var o=document.createElement('option');o.value=vs[i];o.textContent=vs[i];if(vs[i]===vendor)o.selected=true;sel.appendChild(o);}
-  // Populate category dropdown from existing items for this vendor
-  var catSel=document.getElementById('addItemCat');
-  catSel.innerHTML='<option value="">Select category...</option>';
-  var seen={};
-  for(var i=0;i<items.length;i++){
-    if(items[i].vendor===vendor&&items[i].category&&!seen[items[i].category]){
-      seen[items[i].category]=true;
-      var o=document.createElement('option');o.value=items[i].category;o.textContent=items[i].category;
-      catSel.appendChild(o);
-    }
-  }
+  // Populate the shelf dropdown from the managed shelf registry for this vendor
+  fillCatSelect(vendor);
   document.getElementById('addModal').classList.add('show');
   setTimeout(function(){document.getElementById('addItemName').focus();},100);
 }
-function refreshCatDropdown(){
-  var vendor=document.getElementById('addItemVendor').value;
-  var catSel=document.getElementById('addItemCat');
-  catSel.innerHTML='<option value="">Select category...</option>';
-  var seen={};
-  for(var i=0;i<items.length;i++){
-    if(items[i].vendor===vendor&&items[i].category&&!seen[items[i].category]){
-      seen[items[i].category]=true;
-      var o=document.createElement('option');o.value=items[i].category;o.textContent=items[i].category;
-      catSel.appendChild(o);
-    }
-  }
-}
+function refreshCatDropdown(){fillCatSelect(document.getElementById('addItemVendor').value);}
 function closeAdd(){document.getElementById('addModal').classList.remove('show')}
 function saveAdd(){
   var name=document.getElementById('addItemName').value.trim();
