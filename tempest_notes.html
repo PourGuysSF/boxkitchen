@@ -398,8 +398,14 @@ function deleteNote(id){
   if(!confirm('Delete this note permanently?'))return;
   api('DELETE','notes','id=eq.'+id,null,function(r){
     if(r && r.code){toast('Delete failed — try again');return;}
-    notes=notes.filter(function(n){return n.id!==id;});
-    render();toast('Note deleted');
+    // Confirm the row is actually gone before claiming success. A blocked
+    // delete (e.g. a missing RLS delete policy) returns no error but changes
+    // nothing, which used to show a false "deleted" that reappeared on reload.
+    api('GET','notes','id=eq.'+id+'&select=id',null,function(chk){
+      if(chk && chk.length){toast("Delete didn't save — check permissions");return;}
+      notes=notes.filter(function(n){return n.id!==id;});
+      render();toast('Note deleted');
+    });
   });
 }
 document.getElementById('pinModal').addEventListener('click',function(e){if(e.target===this)closePin();});
