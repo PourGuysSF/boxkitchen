@@ -19,7 +19,7 @@
 <style>
   @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@700;900&display=swap');
   *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-  :root{--bg:#0f1115;--surface:#1a1d24;--surface2:#22262f;--border:#2a2d35;--accent:#e85d3a;--accent-dim:rgba(232,93,58,0.15);--green:#22c55e;--green-dim:rgba(34,197,94,0.12);--yellow:#f59e0b;--blue:#3b82f6;--red:#ef4444;--text:#e8e6e3;--muted:#8a8a8a;--dim:#555}
+  :root{--bg:#0f1115;--surface:#1a1d24;--surface2:#22262f;--border:#2a2d35;--accent:#e85d3a;--accent-dim:rgba(232,93,58,0.15);--green:#22c55e;--green-dim:rgba(34,197,94,0.12);--yellow:#f59e0b;--blue:#3b82f6;--red:#ef4444;--purple:#a855f7;--text:#e8e6e3;--muted:#8a8a8a;--dim:#555}
   body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding-bottom:80px}
 
   .header{position:sticky;top:0;z-index:100;background:rgba(15,17,21,0.95);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-bottom:1px solid var(--border);padding:14px 20px 12px}
@@ -74,6 +74,18 @@
   .chevron{font-size:0.65rem;color:var(--dim);transition:transform 0.2s}
   .section.open .chevron{transform:rotate(180deg)}
   .section-body{display:none}.section.open .section-body{display:block}
+  /* A6: station sub-groups within the Prep List */
+  .station-group{border-top:1px solid rgba(42,45,53,0.5)}
+  .station-header{display:flex;justify-content:space-between;align-items:center;padding:7px 20px;background:var(--surface2)}
+  .station-title{font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:1.2px}
+  .station-count{font-size:0.66rem;color:var(--dim);background:var(--border);padding:1px 7px;border-radius:9px}
+  .st-salad{color:var(--green)}.st-grill{color:var(--red)}.st-saute{color:var(--blue)}.st-kits{color:var(--purple)}.st-none{color:var(--muted)}
+  .station-right{display:flex;align-items:center;gap:8px}
+  .station-assign{background:var(--surface);border:1px solid var(--border);color:var(--muted);border-radius:6px;padding:2px 5px;font-family:'DM Sans',sans-serif;font-size:0.66rem;max-width:112px;outline:none}
+  /* Kit/Make toggle (PM-line kit items) */
+  .mode-pill{display:inline-block;font-size:0.58rem;font-weight:700;letter-spacing:0.5px;padding:2px 7px;border-radius:4px;margin-left:6px;text-transform:uppercase;cursor:pointer;vertical-align:middle;border:1px solid var(--border)}
+  .mode-pill.mode-kit{background:var(--surface2);color:var(--muted)}
+  .mode-pill.mode-make{background:var(--red);color:#fff;border-color:var(--red);animation:notePulse 2s infinite}
 
   /* TASK ROW */
   .task{display:flex;align-items:center;gap:8px;padding:10px 20px;border-bottom:1px solid rgba(42,45,53,0.4)}
@@ -187,6 +199,8 @@
 </div>
 <div class="viewas-bar">View as:
   <select id="viewAs" onchange="setViewAs(this.value)"></select>
+  <span style="margin-left:2px">Station:</span>
+  <select id="viewStation" onchange="setViewStation(this.value)"></select>
 </div>
 <div id="staffBarContainer"></div>
 <div id="appBody"><div class="loading"><div class="spinner"></div><p>Loading prep list...</p></div></div>
@@ -207,6 +221,7 @@
     <h3>Add Prep Item</h3>
     <input type="text" id="addName" placeholder="Task name">
     <select id="addCat"><option value="cleaning">Cleaning</option><option value="daily" selected>Daily Prep</option><option value="weekly">Weekly Prep</option></select>
+    <select id="addStation"><option value="salad">Salad station</option><option value="grill">Grill station</option><option value="saute">Sauté station</option><option value="kits">Kits</option></select>
     <select id="addDay"><option value="">Every day (no specific day)</option><option value="SUN">SUN</option><option value="MON">MON</option><option value="TUE">TUE</option><option value="WED">WED</option><option value="THU">THU</option><option value="FRI">FRI</option><option value="SAT">SAT</option></select>
     <div class="modal-btns"><button class="modal-btn cancel" onclick="closeAddModal()">Cancel</button><button class="modal-btn save" onclick="saveNewItem()">Add</button></div>
   </div>
@@ -243,11 +258,16 @@ var shift='AM',items=[],logs={},staff=[],mgr=false,st=null,openNotes={};
 var VIEWAS_KEY='boxkitchen_viewas_prep';
 var MGR_KEY='boxkitchen.mgr';
 var viewAs=localStorage.getItem(VIEWAS_KEY)||''; // '' = All
+var STATION_VIEW_KEY='boxkitchen_stationview_prep';
+var viewStation=localStorage.getItem(STATION_VIEW_KEY)||''; // '' = All stations
 var MANAGER_PIN='4316';
 var currentDate=new Date();
 var realToday=new Date();
 var prevPct=null,celebrateArmed=false; // A8: completion celebration state
 var sectionLabels={}; // A5b: editable section header labels (category -> label)
+// A6: prep stations (kitchen = Salad/Grill/Sauté; Line PM also has Kits)
+var STATION_META={salad:{label:'Salad',cls:'st-salad'},grill:{label:'Grill',cls:'st-grill'},saute:{label:'Sauté',cls:'st-saute'},kits:{label:'Kits',cls:'st-kits'}};
+function stationOrder(){return ['salad','grill','saute'];}
 
 function fmtDate(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function getDayAbbr(d){return['SUN','MON','TUE','WED','THU','FRI','SAT'][d.getDay()];}
@@ -331,6 +351,32 @@ function buildViewAs(){
   sel.value=viewAs;
 }
 
+// A6 Pass 2: station filter + assign-whole-station
+function matchStation(it){return !viewStation||it.station===viewStation;}
+function setViewStation(v){viewStation=v;if(v)localStorage.setItem(STATION_VIEW_KEY,v);else localStorage.removeItem(STATION_VIEW_KEY);render();}
+function buildStationFilter(){
+  var sel=document.getElementById('viewStation');if(!sel)return;
+  var order=stationOrder();
+  if(viewStation&&order.indexOf(viewStation)<0){viewStation='';localStorage.removeItem(STATION_VIEW_KEY);}
+  var h='<option value="">All stations</option>';
+  for(var i=0;i<order.length;i++){var m=STATION_META[order[i]];h+='<option value="'+order[i]+'">'+esc(m?m.label:order[i])+'</option>';}
+  sel.innerHTML=h;sel.value=viewStation;
+}
+function assignStation(sk,name){
+  if(name==='')return;
+  var val=(name==='__clear__')?'':name;
+  var list=items.filter(function(it){return it.shift===shift&&it.category==='daily'&&(it.station||'__none__')===sk;});
+  if(!list.length)return;
+  var lbl=(STATION_META[sk]?STATION_META[sk].label:sk);
+  if(!confirm(val?('Assign all '+list.length+' '+lbl+' items to '+val+'?'):('Clear the assigned cook on all '+list.length+' '+lbl+' items?')))return;
+  var dateStr=fmtDate(currentDate),pending=list.length;
+  list.forEach(function(it){
+    var l=logs[it.id];
+    if(l&&l.id){api('PATCH','prep_logs','id=eq.'+l.id,{assigned_to:val},function(r){if(r&&r.length)logs[it.id]=r[0];if(--pending===0){toast();render();}});}
+    else{api('POST','prep_logs',null,{prep_item_id:it.id,date:dateStr,completed:false,assigned_to:val,quantity:'',notes:''},function(r){if(r&&r.length)logs[it.id]=r[0];if(--pending===0){toast();render();}});}
+  });
+}
+
 function getF(){
   var dayAbbr=getDayAbbr(currentDate);
   var c=[],d=[],w=[];
@@ -340,11 +386,11 @@ function getF(){
     else if(it.category==='daily')d.push(it);
     else if(it.category==='weekly'&&(!it.day_specific||it.day_specific===dayAbbr))w.push(it);
   }
-  return{c:c.filter(matchWho),d:d.filter(matchWho),w:w.filter(matchWho)};
+  return{c:c.filter(matchWho),d:d.filter(matchWho).filter(matchStation),w:w.filter(matchWho)};
 }
 
 function render(){
-  buildViewAs();
+  buildViewAs();buildStationFilter();
   var f=getF(),all=f.c.concat(f.d).concat(f.w),dn=0;
   for(var i=0;i<all.length;i++){var l=logs[all[i].id];if(l&&l.completed)dn++;}
   var pct=all.length?Math.round(dn/all.length*100):0;
@@ -371,7 +417,7 @@ function render(){
   var h='<div class="'+cls+'">'+sb;
   var dayAbbr=getDayAbbr(currentDate);
   h+=bSec('cleaning',esc(sectionLabels.cleaning||'Daily Cleaning / Projects'),f.c);
-  h+=bSec('daily',esc(sectionLabels.daily||'Prep List'),f.d);
+  h+=bDaily(esc(sectionLabels.daily||'Prep List'),f.d);
   if(f.w.length>0)h+=bSec('weekly',dayAbbr+' — '+esc(sectionLabels.weekly||'Weekly Prep'),f.w);
   h+='</div>';
   document.getElementById('appBody').innerHTML=h;
@@ -384,6 +430,30 @@ function bSec(ty,ti,li){
   if(li.length===0&&viewAs)h+='<div class="empty-filter">Nothing assigned to '+esc(viewAs)+' in this section.</div>';
   for(var i=0;i<li.length;i++)h+=bTask(li[i]);
   h+='<button class="add-btn" onclick="openAdd(\''+ty+'\')">+ Add task</button></div></div>';
+  return h;
+}
+
+// A6: the Prep List (daily bucket) rendered as station sub-groups.
+function bDaily(ti,li){
+  var dn=0;for(var i=0;i<li.length;i++){var l=logs[li[i].id];if(l&&l.completed)dn++;}
+  var h='<div class="section open"><div class="section-header" onclick="togSec(this)"><span class="section-title daily">'+ti+'</span><div class="section-right"><span class="section-count">'+dn+'/'+li.length+'</span><span class="chevron">▼</span></div></div><div class="section-body">';
+  if(li.length===0&&viewAs)h+='<div class="empty-filter">Nothing assigned to '+esc(viewAs)+' in the prep list.</div>';
+  var groups={};for(var i=0;i<li.length;i++){var s=li[i].station||'__none__';(groups[s]=groups[s]||[]).push(li[i]);}
+  var order=stationOrder(),keys=[];
+  for(var k=0;k<order.length;k++)if(groups[order[k]])keys.push(order[k]);
+  for(var s in groups)if(s!=='__none__'&&keys.indexOf(s)<0)keys.push(s);
+  if(groups['__none__'])keys.push('__none__');
+  for(var k=0;k<keys.length;k++){
+    var sk=keys[k],si=groups[sk],meta=STATION_META[sk]||{label:'Unassigned',cls:'st-none'};
+    var sdn=0;for(var i=0;i<si.length;i++){var l=logs[si[i].id];if(l&&l.completed)sdn++;}
+    var srH='<div class="station-right"><span class="station-count">'+sdn+'/'+si.length+'</span>';
+    if(mgr){var so='<option value="">Assign ▾</option><option value="__clear__">— Clear —</option>',ss=getStaffForShift();for(var z=0;z<ss.length;z++)so+='<option value="'+esc(ss[z].name)+'">'+esc(ss[z].name)+'</option>';srH+='<select class="station-assign" onchange="assignStation(\''+sk+'\',this.value);this.value=\'\';">'+so+'</select>';}
+    srH+='</div>';
+    h+='<div class="station-group"><div class="station-header"><span class="station-title '+meta.cls+'">'+esc(meta.label)+'</span>'+srH+'</div><div class="station-body" data-station="'+sk+'">';
+    for(var i=0;i<si.length;i++)h+=bTask(si[i]);
+    h+='</div></div>';
+  }
+  h+='<button class="add-btn" onclick="openAdd(\'daily\')">+ Add task</button></div></div>';
   return h;
 }
 
@@ -400,6 +470,7 @@ function bTask(it){
   h+='<div class="task-info"><div class="task-name" onclick="editN('+it.id+',this)">'+esc(it.name);
   if(it.day_specific&&it.category==='weekly')h+='<span class="task-day">'+it.day_specific+'</span>';
   if(hasNote)h+='<span class="note-badge">NOTE</span>';
+  if(it.station==='kits'){var md=(l.mode)||'kit';h+='<span class="mode-pill mode-'+md+'" onclick="event.stopPropagation();toggleMode('+it.id+')">'+(md==='make'?'MAKE':'KIT')+'</span>';}
   h+='</div><input class="task-name-input" id="ni'+it.id+'" value="'+esc(it.name)+'" onblur="saveN('+it.id+',this)" onkeydown="if(event.key===\'Enter\')this.blur()"></div>';
   h+='<div class="task-fields">';
   h+='<select class="who-select '+(w?'assigned':'')+'" onchange="uLog('+it.id+',\'assigned_to\',this.value)">';
@@ -466,6 +537,12 @@ function uLog(id,f,v){
   }
 }
 
+// Kit/Make: flip a kit item's per-day mode (kit <-> make). Any cook; resets daily.
+function toggleMode(id){
+  var l=logs[id],cur=(l&&l.mode)||'kit',v=(cur==='kit')?'make':'kit',dateStr=fmtDate(currentDate);
+  if(l&&l.id){api('PATCH','prep_logs','id=eq.'+l.id,{mode:v},function(r){if(r&&r.length)logs[id]=r[0];toast();render();});}
+  else{api('POST','prep_logs',null,{prep_item_id:id,date:dateStr,completed:false,assigned_to:'',quantity:'',notes:'',mode:v},function(r){if(r&&r.length)logs[id]=r[0];toast();render();});}
+}
 function togNote(id){openNotes[id]=!openNotes[id];var r=document.getElementById('nr'+id);if(r)r.classList.toggle('show');}
 
 function editN(id,el){if(!mgr)return;var inp=document.getElementById('ni'+id);el.style.display='none';inp.style.display='block';inp.focus();}
@@ -480,10 +557,12 @@ function initSortables(){
   sortables=[];
   if(!mgr)return;
   if(typeof Sortable==='undefined'){toastErr('Drag unavailable — reload page');return;}
-  var lists=document.querySelectorAll('.section-body[data-cat]');
+  var lists=document.querySelectorAll('.section-body[data-cat], .station-body[data-station]');
   for(var i=0;i<lists.length;i++){
     (function(listEl){
       var cat=listEl.getAttribute('data-cat');
+      var station=listEl.getAttribute('data-station');
+      var effCat=(cat!==null)?cat:'daily';
       sortables.push(Sortable.create(listEl,{
         handle:'.drag-handle',
         draggable:'.task',
@@ -492,7 +571,7 @@ function initSortables(){
         ghostClass:'sortable-ghost',
         chosenClass:'sortable-chosen',
         dragClass:'sortable-drag',
-        onEnd:function(evt){persistOrder(listEl,cat,evt);}
+        onEnd:function(evt){persistOrder(listEl,effCat,station,evt);}
       }));
     })(lists[i]);
   }
@@ -502,7 +581,7 @@ function initSortables(){
 // sort_order values (10,20,30,...) so the reload order (order=sort_order.asc)
 // is deterministic even if legacy rows carried duplicate/zero/tied values.
 // Writes only to the single global prep_items.sort_order, PATCH changed rows.
-function persistOrder(listEl,cat,evt){
+function persistOrder(listEl,cat,station,evt){
   if(evt.oldIndex===evt.newIndex)return;
   var snap={};for(var i=0;i<items.length;i++)snap[items[i].id]=items[i].sort_order;
   var rows=listEl.querySelectorAll('.task'),visIds=[];
@@ -511,7 +590,7 @@ function persistOrder(listEl,cat,evt){
   // FULL group = every item in this category+shift across ALL days, kept in the
   // rendered order (items[] order). Do NOT re-sort on raw sort_order: legacy
   // ties/NULLs would disagree with what's on screen and scramble the result.
-  var group=[];for(var i=0;i<items.length;i++){if(items[i].shift===shift&&items[i].category===cat)group.push(items[i]);}
+  var group=[];for(var i=0;i<items.length;i++){var gi=items[i];if(gi.shift!==shift||gi.category!==cat)continue;if(cat==='daily'&&(gi.station||'__none__')!==(station||'__none__'))continue;group.push(gi);}
   var dragged=null,rest=[];
   for(var i=0;i<group.length;i++){if(group[i].id===draggedId)dragged=group[i];else rest.push(group[i]);}
   if(!dragged)return;
@@ -549,12 +628,13 @@ function persistOrder(listEl,cat,evt){
 }
 
 // ── ADD TASK ──
-function openAdd(c){document.getElementById('addCat').value=c;document.getElementById('addName').value='';document.getElementById('addDay').value='';document.getElementById('addModal').classList.add('show');setTimeout(function(){document.getElementById('addName').focus();},100);}
+function openAdd(c){document.getElementById('addCat').value=c;document.getElementById('addStation').value='salad';document.getElementById('addName').value='';document.getElementById('addDay').value='';document.getElementById('addModal').classList.add('show');setTimeout(function(){document.getElementById('addName').focus();},100);}
 function closeAddModal(){document.getElementById('addModal').classList.remove('show')}
 function saveNewItem(){
   var n=document.getElementById('addName').value.trim(),c=document.getElementById('addCat').value,d=document.getElementById('addDay').value||null;
+  var stn=(c==='daily')?document.getElementById('addStation').value:null;
   if(!n)return;var mx=0;for(var i=0;i<items.length;i++)if(items[i].shift===shift&&items[i].category===c&&items[i].sort_order>mx)mx=items[i].sort_order;
-  api('POST','prep_items',null,{name:n,shift:shift,category:c,location:'Tempest',team:'kitchen',day_specific:d,sort_order:mx+1},function(r){if(r&&r.length){items.push(r[0]);toast();render();closeAddModal();}else{toastErr('Could not add item');}});
+  api('POST','prep_items',null,{name:n,shift:shift,category:c,location:'Tempest',team:'kitchen',day_specific:d,station:stn,sort_order:mx+1},function(r){if(r&&r.length){items.push(r[0]);toast();render();closeAddModal();}else{toastErr('Could not add item');}});
 }
 
 // ── A5b: SECTION NAMES (editable headers, manager mode) ──
