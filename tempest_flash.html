@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<script>
+  // Site-password gate (same as every inner page): bounce to hub if not authed.
+  (function(){
+    var raw = localStorage.getItem('boxkitchen_auth');
+    var ts = raw ? parseInt(raw, 10) : 0;
+    var TTL = 30 * 24 * 60 * 60 * 1000; // 30 days
+    if (!ts || isNaN(ts) || (Date.now() - ts) > TTL) {
+      window.location.replace('index.html');
+    }
+  })();
+</script>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Tempest Flash Report</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@700;900&display=swap');
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  :root{--bg:#0f1115;--surface:#1a1d24;--surface2:#22262f;--border:#2a2d35;--accent:#e85d3a;--accent-dim:rgba(232,93,58,0.15);--green:#22c55e;--green-dim:rgba(34,197,94,0.12);--yellow:#f59e0b;--blue:#3b82f6;--red:#ef4444;--text:#e8e6e3;--muted:#8a8a8a;--dim:#555}
+  body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding-bottom:96px}
+
+  .header{position:sticky;top:0;z-index:100;background:rgba(15,17,21,0.95);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-bottom:1px solid var(--border);padding:14px 20px 12px}
+  .header-row{display:flex;justify-content:space-between;align-items:center}
+  .header h1{font-family:'Playfair Display',serif;font-size:1.4rem;font-weight:900}
+  .header h1 span{color:var(--accent)}
+  .home-link{display:inline-flex;align-items:center;justify-content:center;min-height:44px;min-width:44px;padding:0 10px;margin-left:-10px;font-family:'DM Sans',sans-serif;font-size:0.85rem;font-weight:500;color:rgba(232,230,227,0.75);text-decoration:none;transition:color 0.15s}
+  .home-link:hover,.home-link:active{color:var(--accent)}
+  .lock-tag{font-size:0.7rem;color:var(--muted);display:flex;align-items:center;gap:5px}
+
+  /* DATE BAR */
+  .date-bar{display:flex;justify-content:space-between;align-items:center;padding:10px 20px;border-bottom:1px solid var(--border)}
+  .date-left{display:flex;align-items:center;gap:10px}
+  .date-arrow{width:32px;height:32px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:0.9rem;cursor:pointer;display:flex;align-items:center;justify-content:center}
+  .date-arrow:active{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .date-display{font-size:0.9rem;font-weight:600}
+  .day-display{font-size:0.75rem;color:var(--accent);font-weight:700;text-transform:uppercase;letter-spacing:1px}
+  .date-today{font-size:0.7rem;color:var(--muted);cursor:pointer;text-decoration:underline;text-align:right}
+
+  /* SUMMARY CARD */
+  .summary{display:flex;padding:14px 20px;gap:10px;border-bottom:1px solid var(--border);background:var(--surface)}
+  .stat{flex:1;text-align:center}
+  .stat-label{font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:4px}
+  .stat-val{font-size:1.15rem;font-weight:700;font-variant-numeric:tabular-nums}
+  .stat-val.pct{color:var(--accent)}
+  .stat-val.run{color:var(--green)}
+  .stat-sub{font-size:0.6rem;color:var(--dim);margin-top:2px}
+
+  /* VENDOR / SALES ROWS */
+  .intro{padding:10px 20px 2px;color:var(--muted);font-size:0.78rem}
+  .flash-row{display:flex;align-items:center;gap:10px;padding:9px 20px;border-bottom:1px solid rgba(42,45,53,0.5)}
+  .flash-row.sales{background:var(--surface);border-top:1px solid var(--border)}
+  .vname{flex:1;font-size:0.88rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .flash-row.sales .vname{color:var(--green)}
+  .money-wrap{display:flex;align-items:center;gap:2px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:0 10px;width:140px;transition:border-color 0.15s}
+  .money-wrap:focus-within{border-color:var(--accent)}
+  .money-wrap.filled{border-color:var(--green);background:var(--green-dim)}
+  .flash-row.sales .money-wrap.filled{border-color:var(--green)}
+  .money-wrap .dollar{color:var(--muted);font-size:0.85rem}
+  .money-input{flex:1;min-width:0;background:transparent;border:none;outline:none;color:var(--text);font-family:'DM Sans',sans-serif;font-size:0.92rem;font-weight:600;text-align:right;padding:9px 0;min-height:44px}
+  .money-input::placeholder{color:var(--dim);font-weight:400}
+
+  /* ENTERED BY + SAVE BAR */
+  .entered-bar{display:flex;align-items:center;gap:10px;padding:10px 20px;border-bottom:1px solid var(--border)}
+  .entered-bar label{font-size:0.72rem;color:var(--muted);font-weight:600;white-space:nowrap}
+  .entered-bar input{flex:1;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:0.85rem;padding:9px 10px;min-height:44px;outline:none}
+  .entered-bar input:focus{border-color:var(--accent)}
+  .save-bar{position:fixed;bottom:0;left:0;right:0;z-index:150;background:rgba(15,17,21,0.96);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-top:1px solid var(--border);padding:12px 20px;display:flex;align-items:center;gap:12px}
+  .save-summary{flex:1;font-size:0.78rem;color:var(--muted)}
+  .save-summary b{color:var(--text)}
+  .save-btn{padding:12px 22px;background:var(--accent);color:#fff;border:none;border-radius:10px;font-family:'DM Sans',sans-serif;font-size:0.9rem;font-weight:700;cursor:pointer;min-height:48px}
+  .save-btn:disabled{opacity:0.5;cursor:default}
+
+  .loading{display:flex;flex-direction:column;align-items:center;padding:80px 20px;color:var(--muted)}
+  .spinner{width:30px;height:30px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;margin-bottom:14px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  .toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--green);color:#fff;padding:8px 22px;border-radius:10px;font-size:0.82rem;font-weight:600;opacity:0;transition:opacity 0.3s;pointer-events:none;z-index:400;box-shadow:0 4px 20px rgba(0,0,0,0.4)}
+  .toast.show{opacity:1}
+  .toast.err{background:var(--red)}
+
+  /* MODE TOGGLE + MONTH REPORT */
+  .mode-toggle{display:flex;background:var(--surface);border-radius:10px;border:1px solid var(--border);overflow:hidden;margin-top:10px}
+  .mode-btn{flex:1;padding:9px;text-align:center;font-family:'DM Sans',sans-serif;font-size:0.85rem;font-weight:600;border:none;background:transparent;color:var(--muted);cursor:pointer}
+  .mode-btn.active{background:var(--accent);color:#fff}
+  .rmonth-kpi{display:flex;gap:10px;padding:14px 20px;background:var(--surface);border-bottom:1px solid var(--border)}
+  .rsection{padding:16px 0 4px;border-bottom:1px solid var(--border)}
+  .rsection-title{font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--accent);padding:0 20px 10px}
+  .rscroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .rtable{border-collapse:collapse;font-size:0.74rem;font-variant-numeric:tabular-nums;white-space:nowrap;min-width:100%}
+  .rtable th,.rtable td{padding:6px 12px;border-bottom:1px solid rgba(42,45,53,0.6);text-align:right}
+  .rtable th{color:var(--muted);font-weight:700;text-transform:uppercase;font-size:0.6rem;letter-spacing:0.5px;background:var(--surface)}
+  .rtable td.l,.rtable th.l{text-align:left}
+  .rtable tr.total td{font-weight:700;border-top:2px solid var(--border);border-bottom:none;background:var(--surface2)}
+  .rempty{padding:36px 20px;color:var(--muted);font-style:italic;text-align:center}
+
+  /* MANAGE VENDORS button + modal */
+  .manage-btn{display:block;margin:10px auto 0;background:transparent;border:1px solid var(--border);border-radius:7px;color:var(--accent);font-family:'DM Sans',sans-serif;font-size:0.72rem;font-weight:600;padding:7px 12px;cursor:pointer}
+  .modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:600;align-items:center;justify-content:center;padding:16px}
+  .modal-bg.show{display:flex}
+  .modal{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:22px;width:100%;max-width:420px;max-height:86vh;overflow-y:auto}
+  .modal h3{font-size:1rem;margin-bottom:14px}
+  .modal input{width:100%;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:0.9rem;outline:none}
+  .modal input:focus{border-color:var(--accent)}
+  .nb-label{font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin:14px 0 7px}
+  .modal-btns{display:flex;gap:10px;margin-top:16px}
+  .modal-btn{flex:1;padding:11px;border:none;border-radius:8px;font-family:'DM Sans',sans-serif;font-size:0.9rem;font-weight:600;cursor:pointer;min-height:44px}
+  .modal-btn.cancel{background:var(--border);color:var(--text)}
+  .modal-btn.save{background:var(--accent);color:#fff}
+  .vrow{display:flex;align-items:center;gap:7px;padding:7px 0;border-bottom:1px solid var(--border)}
+  .vrow.retired .vname-input{opacity:0.5}
+  .vmove{display:flex;flex-direction:column;gap:2px;flex-shrink:0}
+  .vmini{width:26px;height:17px;border:1px solid var(--border);background:transparent;color:var(--muted);border-radius:4px;font-size:0.6rem;cursor:pointer;line-height:1;padding:0}
+  .vmini:active{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .vname-input{flex:1;min-width:0;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:8px;font-family:'DM Sans',sans-serif;font-size:0.85rem;outline:none}
+  .vname-input:focus{border-color:var(--accent)}
+  .vretire{flex-shrink:0;background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--red);font-size:0.68rem;padding:7px 9px;cursor:pointer;white-space:nowrap;font-family:'DM Sans',sans-serif;min-height:34px}
+  .vretire.restore{color:var(--green)}
+
+  /* PIN GATE (whole page — financials) */
+  .gate{position:fixed;inset:0;z-index:1000;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:30px;text-align:center}
+  .gate.hide{display:none}
+  .gate h2{font-family:'Playfair Display',serif;font-size:1.5rem;margin-bottom:6px}
+  .gate p{color:var(--muted);font-size:0.85rem;margin-bottom:22px}
+  .gate .pin-input{width:180px;text-align:center;letter-spacing:0.5em;font-size:1.5rem;font-weight:700;background:var(--surface);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:12px;outline:none;font-family:'DM Sans',sans-serif}
+  .gate .pin-input:focus{border-color:var(--accent)}
+  .gate-err{display:none;color:var(--red);font-size:0.83rem;font-weight:600;margin-top:14px}
+  .gate-err.show{display:block}
+  .gate-btns{display:flex;gap:10px;margin-top:20px}
+  .gate-btn{padding:11px 20px;border:none;border-radius:9px;font-family:'DM Sans',sans-serif;font-size:0.9rem;font-weight:600;cursor:pointer;min-height:48px}
+  .gate-btn.go{background:var(--accent);color:#fff}
+  .gate-btn.back{background:var(--border);color:var(--text);text-decoration:none;display:inline-flex;align-items:center;justify-content:center}
+</style>
+</head>
+<body>
+
+<!-- PIN gate — shown until unlocked; hides all financials -->
+<div class="gate" id="gate">
+  <h2>Flash Report</h2>
+  <p>Manager PIN required — this page shows sales &amp; food cost.</p>
+  <input class="pin-input" type="tel" inputmode="numeric" pattern="[0-9]*" maxlength="4" id="gateInput" autocomplete="off">
+  <div class="gate-err" id="gateErr">Incorrect PIN</div>
+  <div class="gate-btns">
+    <a class="gate-btn back" href="index.html">← Home</a>
+    <button class="gate-btn go" onclick="submitGate()">Unlock</button>
+  </div>
+</div>
+
+<div class="header">
+  <div class="header-row">
+    <a class="home-link" href="index.html">← Home</a>
+    <h1>Flash <span>Report</span></h1>
+    <div class="lock-tag">🔒 Manager</div>
+  </div>
+  <div class="mode-toggle">
+    <button class="mode-btn active" id="mEntry" onclick="switchMode('entry')">Daily entry</button>
+    <button class="mode-btn" id="mReport" onclick="switchMode('report')">Month report</button>
+  </div>
+  <button class="manage-btn" onclick="openVendors()">⚙ Manage vendors</button>
+</div>
+
+<div id="entryView">
+<div class="date-bar">
+  <div class="date-left">
+    <button class="date-arrow" onclick="changeDate(-1)">◀</button>
+    <div class="date-info">
+      <div class="date-display" id="dateDisplay"></div>
+      <div class="day-display" id="dayDisplay"></div>
+    </div>
+    <button class="date-arrow" onclick="changeDate(1)">▶</button>
+  </div>
+  <div class="date-today" id="todayLink" onclick="goToday()" style="display:none">↩ Back to today</div>
+</div>
+
+<div class="summary">
+  <div class="stat"><div class="stat-label">Gross Cost</div><div class="stat-val" id="sGross">$0</div><div class="stat-sub">purchases today</div></div>
+  <div class="stat"><div class="stat-label">Daily %</div><div class="stat-val pct" id="sDaily">—</div><div class="stat-sub">cost ÷ sales</div></div>
+  <div class="stat"><div class="stat-label">Running %</div><div class="stat-val run" id="sRun">—</div><div class="stat-sub" id="sRunSub">month to date</div></div>
+</div>
+
+<div class="entered-bar">
+  <label for="enteredBy">Entered by</label>
+  <input type="text" id="enteredBy" placeholder="Your name (optional)" autocomplete="off">
+</div>
+
+<div id="appBody"><div class="loading"><div class="spinner"></div><p>Loading…</p></div></div>
+</div><!-- /entryView -->
+
+<div id="reportView" style="display:none">
+  <div class="date-bar">
+    <div class="date-left">
+      <button class="date-arrow" onclick="changeMonth(-1)">◀</button>
+      <div class="date-info">
+        <div class="date-display" id="monthDisplay"></div>
+        <div class="day-display">Month report</div>
+      </div>
+      <button class="date-arrow" onclick="changeMonth(1)">▶</button>
+    </div>
+    <button class="manage-btn" style="margin:0" onclick="exportMonth()">⬇ Excel</button>
+  </div>
+  <div id="reportBody"></div>
+</div>
+
+<div class="save-bar">
+  <div class="save-summary" id="saveSummary">—</div>
+  <button class="save-btn" id="saveBtn" onclick="saveDay()">Save day</button>
+</div>
+
+<!-- Manage Vendors modal -->
+<div class="modal-bg" id="vendorsModal">
+  <div class="modal">
+    <h3>Manage Vendors</h3>
+    <div id="vendorList"></div>
+    <div class="nb-label">Add a vendor</div>
+    <div style="display:flex;gap:8px">
+      <input type="text" id="newVendorName" placeholder="New vendor name" autocomplete="off">
+      <button class="modal-btn save" style="flex:0 0 auto;padding:11px 16px" onclick="addVendor()">Add</button>
+    </div>
+    <div class="modal-btns"><button class="modal-btn cancel" onclick="closeVendors()">Done</button></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="vendor/xlsx.full.min.js"></script>
+<script>
+var SB='https://sxppuyarecqkgkrsrefc.supabase.co',SK='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN4cHB1eWFyZWNxa2drcnNyZWZjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczOTA4MzAsImV4cCI6MjA5Mjk2NjgzMH0.GM8OfcR68_JjdPeQ3k7j6L3ulJFaeS1xnSLBcdtYXtU';
+var MANAGER_PIN='4316';
+var LOCATION='Tempest';
+
+var currentDate=new Date(),realToday=new Date();
+var vendors=[];               // active flash_vendors, sorted
+var daysByDate={};            // dateStr -> flash_days row (for the loaded month)
+var loadedMonthKey='';        // 'YYYY-MM' currently loaded
+var st=null;
+
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+function api(m,t,q,d,cb){var x=new XMLHttpRequest();x.open(m,SB+'/rest/v1/'+t+(q?'?'+q:''));x.setRequestHeader('apikey',SK);x.setRequestHeader('Authorization','Bearer '+SK);if(d){x.setRequestHeader('Content-Type','application/json');x.setRequestHeader('Prefer','return=representation');}x.onload=function(){var r=null;try{r=JSON.parse(x.responseText);}catch(e){}if(cb)cb(r);};x.onerror=function(){if(cb)cb(null);};x.send(d?JSON.stringify(d):null);}
+
+function fmtDate(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function monthKey(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');}
+function money(n){var v=Number(n)||0;return '$'+v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function pct(n){return (Number(n)*100).toFixed(1)+'%';}
+function num(v){var n=parseFloat(String(v).replace(/[^0-9.\-]/g,''));return isNaN(n)?0:n;}
+
+/* ---- PIN gate (whole page) ---- */
+function revealApp(){document.getElementById('gate').classList.add('hide');init();}
+function submitGate(){
+  var v=(document.getElementById('gateInput').value||'').trim();
+  if(v===MANAGER_PIN){
+    try{sessionStorage.setItem('boxkitchen_mgr','1');}catch(e){}
+    revealApp();
+  }else{
+    document.getElementById('gateErr').classList.add('show');
+    var inp=document.getElementById('gateInput');inp.value='';inp.focus();
+  }
+}
+document.getElementById('gateInput').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();submitGate();}});
+
+/* ---- Boot ---- */
+function boot(){
+  var already=false;try{already=sessionStorage.getItem('boxkitchen_mgr')==='1';}catch(e){}
+  if(already){revealApp();}
+  else{document.getElementById('gate').classList.remove('hide');setTimeout(function(){document.getElementById('gateInput').focus();},120);}
+}
+function init(){updateDateDisplay();loadVendors(function(){loadMonth(render);});}
+
+function loadVendors(cb){
+  api('GET','flash_vendors','location=eq.'+encodeURIComponent(LOCATION)+'&order=sort_order.asc',null,function(r){
+    vendors=Array.isArray(r)?r:[];   // all vendors; active filtered per view
+    if(cb)cb();
+  });
+}
+function activeVendors(){var a=[];for(var i=0;i<vendors.length;i++)if(vendors[i].active)a.push(vendors[i]);return a;}
+function loadMonth(cb){
+  var d=currentDate,start=new Date(d.getFullYear(),d.getMonth(),1),end=new Date(d.getFullYear(),d.getMonth()+1,0);
+  api('GET','flash_days','location=eq.'+encodeURIComponent(LOCATION)+'&report_date=gte.'+fmtDate(start)+'&report_date=lte.'+fmtDate(end),null,function(r){
+    daysByDate={};
+    if(Array.isArray(r))for(var i=0;i<r.length;i++)daysByDate[r[i].report_date]=r[i];
+    loadedMonthKey=monthKey(currentDate);
+    if(cb)cb();
+  });
+}
+
+function updateDateDisplay(){
+  var mn=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  var dn=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  document.getElementById('dateDisplay').textContent=mn[currentDate.getMonth()]+' '+currentDate.getDate()+', '+currentDate.getFullYear();
+  document.getElementById('dayDisplay').textContent=dn[currentDate.getDay()];
+  document.getElementById('todayLink').style.display=(fmtDate(currentDate)===fmtDate(realToday))?'none':'block';
+}
+function changeDate(dir){
+  currentDate=new Date(currentDate.getTime()+dir*86400000);
+  updateDateDisplay();
+  if(monthKey(currentDate)!==loadedMonthKey)loadMonth(render);else render();
+}
+function goToday(){currentDate=new Date();updateDateDisplay();if(monthKey(currentDate)!==loadedMonthKey)loadMonth(render);else render();}
+
+/* ---- Render the day's entry rows ---- */
+function render(){
+  var row=daysByDate[fmtDate(currentDate)]||{},pur=row.purchases||{};
+  var h='<div class="intro">Enter each vendor’s invoice total for this day, then food sales.</div>';
+  var av=activeVendors();
+  for(var i=0;i<av.length;i++){
+    var v=av[i],amt=pur[v.id];
+    var val=(amt==null||amt==='')?'':String(amt);
+    h+='<div class="flash-row">'+
+         '<div class="vname">'+esc(v.name)+'</div>'+
+         '<div class="money-wrap'+(val!==''?' filled':'')+'"><span class="dollar">$</span>'+
+           '<input class="money-input" type="text" inputmode="decimal" autocomplete="off" data-vid="'+v.id+'" value="'+esc(val)+'" placeholder="0.00" oninput="onInput(this)">'+
+         '</div>'+
+       '</div>';
+  }
+  var sales=(row.food_sales==null||row.food_sales==='')?'':String(row.food_sales);
+  h+='<div class="flash-row sales">'+
+       '<div class="vname">FOOD SALES</div>'+
+       '<div class="money-wrap'+(sales!==''?' filled':'')+'"><span class="dollar">$</span>'+
+         '<input class="money-input" id="foodSales" type="text" inputmode="decimal" autocomplete="off" value="'+esc(sales)+'" placeholder="0.00" oninput="onInput(this)">'+
+       '</div>'+
+     '</div>';
+  document.getElementById('appBody').innerHTML=h;
+  document.getElementById('enteredBy').value=row.entered_by||document.getElementById('enteredBy').value||'';
+  recalc();
+}
+
+function onInput(el){
+  var w=el.parentElement;
+  if(el.value.trim()!=='')w.classList.add('filled');else w.classList.remove('filled');
+  recalc();
+}
+
+/* Sum today's purchases from the live inputs. */
+function liveGrossToday(){
+  var g=0,ins=document.querySelectorAll('.money-input[data-vid]');
+  for(var i=0;i<ins.length;i++)g+=num(ins[i].value);
+  return g;
+}
+function liveSales(){var el=document.getElementById('foodSales');return el?num(el.value):0;}
+
+function grossOf(row){var p=row&&row.purchases||{},g=0;for(var k in p)if(p.hasOwnProperty(k))g+=num(p[k]);return g;}
+
+function recalc(){
+  var gToday=liveGrossToday(),sToday=liveSales();
+  document.getElementById('sGross').textContent=money(gToday);
+  document.getElementById('sDaily').textContent=sToday>0?pct(gToday/sToday):'—';
+  // Running: cumulative cost & sales for the month up to & including current date.
+  var cutoff=fmtDate(currentDate),cumC=0,cumS=0;
+  for(var ds in daysByDate){
+    if(!daysByDate.hasOwnProperty(ds))continue;
+    if(ds>cutoff)continue;
+    if(ds===cutoff)continue; // use live values for the current day instead
+    cumC+=grossOf(daysByDate[ds]);
+    cumS+=num(daysByDate[ds].food_sales);
+  }
+  cumC+=gToday;cumS+=sToday;
+  document.getElementById('sRun').textContent=cumS>0?pct(cumC/cumS):'—';
+  document.getElementById('sRunSub').textContent='thru '+(currentDate.getMonth()+1)+'/'+currentDate.getDate();
+  document.getElementById('saveSummary').innerHTML='Gross <b>'+money(gToday)+'</b> · Sales <b>'+money(sToday)+'</b>';
+}
+
+/* ---- Save (upsert one flash_days row) ---- */
+function saveDay(){
+  var purchases={},ins=document.querySelectorAll('.money-input[data-vid]');
+  for(var i=0;i<ins.length;i++){var vid=ins[i].getAttribute('data-vid'),val=ins[i].value.trim();if(val!=='')purchases[vid]=num(val);}
+  var salesEl=document.getElementById('foodSales'),foodSales=(salesEl&&salesEl.value.trim()!=='')?num(salesEl.value):null;
+  var enteredBy=document.getElementById('enteredBy').value.trim()||null;
+  var dateStr=fmtDate(currentDate),existing=daysByDate[dateStr];
+  var payload={purchases:purchases,food_sales:foodSales,entered_by:enteredBy};
+  var btn=document.getElementById('saveBtn');btn.disabled=true;
+  function done(r){
+    btn.disabled=false;
+    if(r&&r.length){daysByDate[dateStr]=r[0];showToast('Saved',false);recalc();}
+    else{showToast('Save failed — try again',true);}
+  }
+  if(existing&&existing.id){api('PATCH','flash_days','id=eq.'+existing.id,payload,done);}
+  else{payload.location=LOCATION;payload.report_date=dateStr;api('POST','flash_days',null,payload,done);}
+}
+
+function showToast(msg,isErr){var t=document.getElementById('toast');t.textContent=(isErr?'⚠ ':'✓ ')+msg;t.classList.toggle('err',!!isErr);t.classList.add('show');clearTimeout(st);st=setTimeout(function(){t.classList.remove('show');},1600);}
+
+/* ---- Month report ---- */
+var mode='entry';
+function switchMode(m){
+  mode=m;
+  document.getElementById('mEntry').classList.toggle('active',m==='entry');
+  document.getElementById('mReport').classList.toggle('active',m==='report');
+  document.getElementById('entryView').style.display=(m==='entry')?'':'none';
+  document.getElementById('reportView').style.display=(m==='report')?'':'none';
+  var sb=document.querySelector('.save-bar');if(sb)sb.style.display=(m==='entry')?'':'none';
+  if(m==='report'){updateMonthDisplay();if(monthKey(currentDate)!==loadedMonthKey)loadMonth(renderReport);else renderReport();}
+  else{updateDateDisplay();render();}
+}
+function updateMonthDisplay(){
+  var mn=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  document.getElementById('monthDisplay').textContent=mn[currentDate.getMonth()]+' '+currentDate.getFullYear();
+}
+function changeMonth(dir){
+  currentDate=new Date(currentDate.getFullYear(),currentDate.getMonth()+dir,1);
+  updateMonthDisplay();loadMonth(renderReport);
+}
+function money0(v){return '$'+Math.round(Number(v)||0).toLocaleString('en-US');}
+function computeMonth(){
+  var y=currentDate.getFullYear(),m=currentDate.getMonth(),N=new Date(y,m+1,0).getDate();
+  var days=[],cumC=0,cumS=0,vtot={},monthPurch=0,monthSales=0,i,d;
+  for(i=0;i<vendors.length;i++)vtot[vendors[i].id]={sum:0,deliv:0};
+  for(d=1;d<=N;d++){
+    var ds=y+'-'+String(m+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+    var row=daysByDate[ds]||{},pur=row.purchases||{},gross=0;
+    for(i=0;i<vendors.length;i++){var vid=vendors[i].id,a=num(pur[vid]);gross+=a;if(a>0){vtot[vid].sum+=a;vtot[vid].deliv++;}}
+    var sales=num(row.food_sales);
+    cumC+=gross;cumS+=sales;monthPurch+=gross;monthSales+=sales;
+    days.push({d:d,pur:pur,gross:gross,sales:sales,cumC:cumC,cumS:cumS});
+  }
+  return {y:y,m:m,N:N,days:days,vtot:vtot,monthPurch:monthPurch,monthSales:monthSales};
+}
+function renderReport(){
+  var mm=computeMonth(),i,d;
+  // Columns: active vendors + any retired vendor that still has spend this month.
+  var shown=[];for(i=0;i<vendors.length;i++){if(vendors[i].active||(mm.vtot[vendors[i].id]&&mm.vtot[vendors[i].id].sum>0))shown.push(vendors[i]);}
+  var h='<div class="rmonth-kpi">'+
+    '<div class="stat"><div class="stat-label">Purchases</div><div class="stat-val">'+money0(mm.monthPurch)+'</div></div>'+
+    '<div class="stat"><div class="stat-label">Food Sales</div><div class="stat-val">'+money0(mm.monthSales)+'</div></div>'+
+    '<div class="stat"><div class="stat-label">Food Cost %</div><div class="stat-val run">'+(mm.monthSales>0?pct(mm.monthPurch/mm.monthSales):'—')+'</div></div>'+
+    '</div>';
+  if(mm.monthPurch===0&&mm.monthSales===0){
+    document.getElementById('reportBody').innerHTML=h+'<div class="rempty">No entries for this month yet.</div>';return;
+  }
+  // Daily detail (full per-vendor grid)
+  h+='<div class="rsection"><div class="rsection-title">Daily detail</div><div class="rscroll"><table class="rtable"><thead><tr><th class="l">Date</th>';
+  for(i=0;i<shown.length;i++)h+='<th>'+esc(shown[i].name)+'</th>';
+  h+='<th>Gross</th><th>Sales</th><th>Cum Cost</th><th>Cum Sales</th><th>Daily%</th><th>Run%</th></tr></thead><tbody>';
+  for(d=0;d<mm.days.length;d++){
+    var day=mm.days[d];
+    h+='<tr><td class="l">'+(mm.m+1)+'/'+day.d+'</td>';
+    for(i=0;i<shown.length;i++){var a=num(day.pur[shown[i].id]);h+='<td>'+(a>0?money0(a):'')+'</td>';}
+    h+='<td>'+(day.gross>0?money0(day.gross):'')+'</td><td>'+(day.sales>0?money0(day.sales):'')+'</td>'+
+       '<td>'+(day.cumC>0?money0(day.cumC):'')+'</td><td>'+(day.cumS>0?money0(day.cumS):'')+'</td>'+
+       '<td>'+(day.sales>0?pct(day.gross/day.sales):'')+'</td><td>'+(day.cumS>0?pct(day.cumC/day.cumS):'')+'</td></tr>';
+  }
+  h+='<tr class="total"><td class="l">TOTAL</td>';
+  for(i=0;i<shown.length;i++){var vs=mm.vtot[shown[i].id].sum;h+='<td>'+(vs>0?money0(vs):'')+'</td>';}
+  h+='<td>'+money0(mm.monthPurch)+'</td><td>'+money0(mm.monthSales)+'</td><td></td><td></td><td></td><td>'+(mm.monthSales>0?pct(mm.monthPurch/mm.monthSales):'—')+'</td></tr>';
+  h+='</tbody></table></div></div>';
+  // Weekly period summary
+  h+='<div class="rsection"><div class="rsection-title">Weekly period summary</div><div class="rscroll"><table class="rtable"><thead><tr><th class="l">Wk</th><th class="l">Dates</th><th>Purchases</th><th>Sales</th><th>Cost%</th><th>Avg Day Purch</th><th>Avg Day Sales</th><th class="l">Top Vendor</th><th>Top $</th></tr></thead><tbody>';
+  var periods=[[1,7],[8,14],[15,21],[22,28],[29,mm.N]],pi,md=String(mm.m+1).padStart(2,'0');
+  for(pi=0;pi<periods.length;pi++){
+    var a=periods[pi][0],b=Math.min(periods[pi][1],mm.N);
+    if(a>mm.N)continue;
+    var pPur=0,pSales=0,cnt=b-a+1,best='—',bestV=0,s;
+    for(d=a;d<=b;d++){pPur+=mm.days[d-1].gross;pSales+=mm.days[d-1].sales;}
+    for(i=0;i<shown.length;i++){s=0;for(d=a;d<=b;d++)s+=num(mm.days[d-1].pur[shown[i].id]);if(s>bestV){bestV=s;best=shown[i].name;}}
+    h+='<tr><td class="l">'+(pi+1)+'</td><td class="l">'+md+'/'+String(a).padStart(2,'0')+'–'+md+'/'+String(b).padStart(2,'0')+'</td>'+
+       '<td>'+money0(pPur)+'</td><td>'+money0(pSales)+'</td><td>'+(pSales>0?pct(pPur/pSales):'—')+'</td>'+
+       '<td>'+money0(pPur/cnt)+'</td><td>'+money0(pSales/cnt)+'</td><td class="l">'+esc(best)+'</td><td>'+(bestV>0?money0(bestV):'—')+'</td></tr>';
+  }
+  h+='</tbody></table></div></div>';
+  // Vendor spend breakdown
+  h+='<div class="rsection"><div class="rsection-title">Vendor spend breakdown</div><div class="rscroll"><table class="rtable"><thead><tr><th class="l">Vendor</th><th>Total Spend</th><th>% of Purch</th><th>Deliveries</th><th>Avg Delivery</th></tr></thead><tbody>';
+  for(i=0;i<shown.length;i++){
+    var t=mm.vtot[shown[i].id].sum,dv=mm.vtot[shown[i].id].deliv;
+    h+='<tr><td class="l">'+esc(shown[i].name)+(shown[i].active?'':' <span style="color:var(--dim);font-size:0.85em">(retired)</span>')+'</td><td>'+money0(t)+'</td><td>'+(mm.monthPurch>0?pct(t/mm.monthPurch):'—')+'</td><td>'+dv+'</td><td>'+(dv>0?money0(t/dv):'—')+'</td></tr>';
+  }
+  h+='</tbody></table></div></div>';
+  document.getElementById('reportBody').innerHTML=h;
+}
+
+/* ---- Manage vendors (manager) ---- */
+function findVendor(id){for(var i=0;i<vendors.length;i++)if(vendors[i].id===id)return vendors[i];return null;}
+function idxOf(id){for(var i=0;i<vendors.length;i++)if(vendors[i].id===id)return i;return -1;}
+function refreshViews(){if(mode==='report')renderReport();else render();}
+function openVendors(){renderVendorList();document.getElementById('vendorsModal').classList.add('show');}
+function closeVendors(){document.getElementById('vendorsModal').classList.remove('show');}
+function renderVendorList(){
+  var h='',i;
+  for(i=0;i<vendors.length;i++){
+    var v=vendors[i];
+    h+='<div class="vrow'+(v.active?'':' retired')+'">'+
+         '<div class="vmove"><button class="vmini" onclick="moveVendor('+v.id+',-1)">▲</button><button class="vmini" onclick="moveVendor('+v.id+',1)">▼</button></div>'+
+         '<input class="vname-input" value="'+esc(v.name)+'" onchange="renameVendor('+v.id+',this)">'+
+         '<button class="vretire'+(v.active?'':' restore')+'" onclick="setVendorActive('+v.id+','+(v.active?'false':'true')+')">'+(v.active?'Retire':'Restore')+'</button>'+
+       '</div>';
+  }
+  document.getElementById('vendorList').innerHTML=h;
+}
+function moveVendor(id,dir){
+  var i=idxOf(id);if(i<0)return;var j=i+dir;if(j<0||j>=vendors.length)return;
+  var a=vendors[i],b=vendors[j],sa=a.sort_order,sb=b.sort_order;
+  a.sort_order=sb;b.sort_order=sa;
+  vendors.sort(function(x,y){return x.sort_order-y.sort_order;});
+  renderVendorList();refreshViews();
+  api('PATCH','flash_vendors','id=eq.'+a.id,{sort_order:a.sort_order},null);
+  api('PATCH','flash_vendors','id=eq.'+b.id,{sort_order:b.sort_order},null);
+}
+function renameVendor(id,inp){
+  var v=inp.value.trim(),o=findVendor(id);if(!o)return;
+  if(!v){inp.value=o.name;return;}
+  for(var i=0;i<vendors.length;i++){if(vendors[i].id!==id&&vendors[i].name.toLowerCase()===v.toLowerCase()){showToast('That vendor already exists',true);inp.value=o.name;return;}}
+  o.name=v;refreshViews();
+  api('PATCH','flash_vendors','id=eq.'+id,{name:v},function(r){if(!(r&&r.length))showToast('Rename failed — try again',true);});
+}
+function addVendor(){
+  var el=document.getElementById('newVendorName'),v=el.value.trim(),i;if(!v){el.focus();return;}
+  for(i=0;i<vendors.length;i++){if(vendors[i].name.toLowerCase()===v.toLowerCase()){showToast('That vendor already exists',true);return;}}
+  var mx=0;for(i=0;i<vendors.length;i++)if(vendors[i].sort_order>mx)mx=vendors[i].sort_order;
+  api('POST','flash_vendors',null,{location:LOCATION,name:v,sort_order:mx+10,active:true},function(r){
+    if(r&&r.length){vendors.push(r[0]);vendors.sort(function(x,y){return x.sort_order-y.sort_order;});el.value='';renderVendorList();refreshViews();showToast('Vendor added',false);}
+    else showToast('Add failed — try again',true);
+  });
+}
+function setVendorActive(id,val){
+  if(!val&&!confirm('Retire this vendor? It stays in past reports but won’t show for new daily entry.'))return;
+  var o=findVendor(id);if(!o)return;o.active=val;
+  renderVendorList();refreshViews();
+  api('PATCH','flash_vendors','id=eq.'+id,{active:val},function(r){if(!(r&&r.length))showToast('Update failed — try again',true);});
+}
+document.getElementById('vendorsModal').addEventListener('click',function(e){if(e.target===this)closeVendors();});
+
+/* ---- Excel export (vendored SheetJS) ---- */
+function exportMonth(){
+  if(typeof XLSX==='undefined'){showToast('Export not available — reload',true);return;}
+  var mn=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  var mm=computeMonth(),i,d;
+  var shown=[];for(i=0;i<vendors.length;i++){if(vendors[i].active||(mm.vtot[vendors[i].id]&&mm.vtot[vendors[i].id].sum>0))shown.push(vendors[i]);}
+  var sl=shown.length,MONEY='$#,##0.00',PCT='0.0%',aoa=[],money=[],pcts=[],gi=1+sl;
+  aoa.push(['DAILY FLASH FOOD COST REPORT — TEMPEST']);
+  aoa.push([mn[mm.m]+' '+mm.y]);
+  var hdr=['DATE'];for(i=0;i<sl;i++)hdr.push(shown[i].name);hdr.push('GROSS COST','FOOD SALES','CUMUL COST','CUMUL SALES','DAILY %','RUNNING %');
+  aoa.push(hdr);
+  for(d=0;d<mm.days.length;d++){
+    var day=mm.days[d],R=aoa.length,row=[(mm.m+1)+'/'+day.d];
+    for(i=0;i<sl;i++){var a=num(day.pur[shown[i].id]);row.push(a>0?a:null);if(a>0)money.push([R,1+i]);}
+    row.push(day.gross||null,day.sales||null,day.cumC||null,day.cumS||null,day.sales>0?day.gross/day.sales:null,day.cumS>0?day.cumC/day.cumS:null);
+    if(day.gross)money.push([R,gi]);if(day.sales)money.push([R,gi+1]);if(day.cumC)money.push([R,gi+2]);if(day.cumS)money.push([R,gi+3]);
+    if(day.sales>0)pcts.push([R,gi+4]);if(day.cumS>0)pcts.push([R,gi+5]);
+    aoa.push(row);
+  }
+  var TR=aoa.length,trow=['TOTAL'];
+  for(i=0;i<sl;i++){var vs=mm.vtot[shown[i].id].sum;trow.push(vs>0?vs:null);if(vs>0)money.push([TR,1+i]);}
+  trow.push(mm.monthPurch,mm.monthSales,null,null,null,mm.monthSales>0?mm.monthPurch/mm.monthSales:null);
+  money.push([TR,gi],[TR,gi+1]);if(mm.monthSales>0)pcts.push([TR,gi+5]);
+  aoa.push(trow);aoa.push([]);
+  aoa.push(['WEEKLY PERIOD SUMMARY']);
+  aoa.push(['PERIOD','DATES','PURCHASES','FOOD SALES','FOOD COST %','AVG DAILY PURCH','AVG DAILY SALES','TOP VENDOR','TOP VENDOR $']);
+  var periods=[[1,7],[8,14],[15,21],[22,28],[29,mm.N]],pi,md=String(mm.m+1).padStart(2,'0');
+  for(pi=0;pi<periods.length;pi++){
+    var a=periods[pi][0],b=Math.min(periods[pi][1],mm.N);if(a>mm.N)continue;
+    var pPur=0,pSales=0,cnt=b-a+1,best='N/A',bestV=0,s;
+    for(d=a;d<=b;d++){pPur+=mm.days[d-1].gross;pSales+=mm.days[d-1].sales;}
+    for(i=0;i<sl;i++){s=0;for(d=a;d<=b;d++)s+=num(mm.days[d-1].pur[shown[i].id]);if(s>bestV){bestV=s;best=shown[i].name;}}
+    var WR=aoa.length;
+    aoa.push([pi+1,md+'/'+String(a).padStart(2,'0')+'-'+md+'/'+String(b).padStart(2,'0'),pPur,pSales,pSales>0?pPur/pSales:0,pPur/cnt,pSales/cnt,best,bestV]);
+    money.push([WR,2],[WR,3],[WR,5],[WR,6],[WR,8]);pcts.push([WR,4]);
+  }
+  aoa.push([]);
+  aoa.push(['VENDOR SPEND BREAKDOWN']);
+  aoa.push(['VENDOR','TOTAL SPEND','% OF PURCHASES','DELIVERY COUNT','AVG DELIVERY $']);
+  for(i=0;i<sl;i++){var t=mm.vtot[shown[i].id].sum,dv=mm.vtot[shown[i].id].deliv,VR=aoa.length;
+    aoa.push([shown[i].name+(shown[i].active?'':' (retired)'),t,mm.monthPurch>0?t/mm.monthPurch:0,dv,dv>0?t/dv:0]);
+    money.push([VR,1],[VR,4]);pcts.push([VR,2]);
+  }
+  var ws=XLSX.utils.aoa_to_sheet(aoa),enc=XLSX.utils.encode_cell,c;
+  for(i=0;i<money.length;i++){c=ws[enc({r:money[i][0],c:money[i][1]})];if(c&&c.t==='n')c.z=MONEY;}
+  for(i=0;i<pcts.length;i++){c=ws[enc({r:pcts[i][0],c:pcts[i][1]})];if(c&&c.t==='n')c.z=PCT;}
+  var cols=[{wch:9}];for(i=0;i<sl;i++)cols.push({wch:11});for(i=0;i<6;i++)cols.push({wch:12});ws['!cols']=cols;
+  var wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,(mn[mm.m]+' '+mm.y).slice(0,31));
+  XLSX.writeFile(wb,'Tempest_Flash_'+mn[mm.m]+'_'+mm.y+'.xlsx');
+  showToast('Excel downloaded',false);
+}
+
+boot();
+</script>
+</body>
+</html>
