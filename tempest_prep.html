@@ -106,6 +106,7 @@
   .manager-mode .delete-btn{display:flex}
   .add-btn{display:none;padding:10px 20px;color:var(--accent);font-size:0.85rem;font-weight:600;cursor:pointer;background:transparent;border:none;font-family:'DM Sans',sans-serif;width:100%;text-align:left}
   .manager-mode .add-btn{display:block}
+  .manage-sections-btn{display:none;margin-top:10px;background:transparent;border:1px solid var(--border);border-radius:7px;color:var(--accent);font-family:'DM Sans',sans-serif;font-size:0.72rem;font-weight:600;padding:6px 10px;cursor:pointer;white-space:nowrap}
 
   /* MODALS */
   .modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:300;align-items:center;justify-content:center}
@@ -168,6 +169,7 @@
     <button class="shift-btn active" onclick="setShift('AM')">AM SHIFT</button>
     <button class="shift-btn" onclick="setShift('PM')">PM SHIFT</button>
   </div>
+  <button class="manage-sections-btn" id="manageSectionsBtn" onclick="openSectionsModal()">⚙ Section names</button>
 </div>
 <div class="date-bar">
   <div class="date-left">
@@ -220,6 +222,20 @@
   </div>
 </div>
 
+<!-- Section Names Modal (manager) -->
+<div class="modal-bg" id="sectionsModal">
+  <div class="modal">
+    <h3>Section Names</h3>
+    <div class="nb-label">Prep list section</div>
+    <input type="text" id="secDaily" placeholder="Prep List">
+    <div class="nb-label">Cleaning section</div>
+    <input type="text" id="secCleaning" placeholder="Daily Cleaning / Projects">
+    <div class="nb-label">Weekly section (the day is added automatically)</div>
+    <input type="text" id="secWeekly" placeholder="Weekly Prep">
+    <div class="modal-btns"><button class="modal-btn cancel" onclick="closeSectionsModal()">Cancel</button><button class="modal-btn save" onclick="saveSections()">Save</button></div>
+  </div>
+</div>
+
 <div class="toast" id="toast">✓ Saved</div>
 <script>
 var SB='https://sxppuyarecqkgkrsrefc.supabase.co',SK='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN4cHB1eWFyZWNxa2drcnNyZWZjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczOTA4MzAsImV4cCI6MjA5Mjk2NjgzMH0.GM8OfcR68_JjdPeQ3k7j6L3ulJFaeS1xnSLBcdtYXtU';
@@ -231,6 +247,7 @@ var MANAGER_PIN='4316';
 var currentDate=new Date();
 var realToday=new Date();
 var prevPct=null,celebrateArmed=false; // A8: completion celebration state
+var sectionLabels={}; // A5b: editable section header labels (category -> label)
 
 function fmtDate(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function getDayAbbr(d){return['SUN','MON','TUE','WED','THU','FRI','SAT'][d.getDay()];}
@@ -260,7 +277,7 @@ function loadData(){
     items=r||[];
     api('GET','staff','location=eq.Tempest&active=eq.true&order=name.asc',null,function(r2){
       staff=r2||[];
-      loadLogs();
+      loadSections(loadLogs);
     });
   });
 }
@@ -270,6 +287,14 @@ function loadLogs(){
   api('GET','prep_logs','date=eq.'+dateStr,null,function(r){
     logs={};if(r)for(var i=0;i<r.length;i++)logs[r[i].prep_item_id]=r[i];
     render();
+  });
+}
+// A5b: load this team's editable section labels (falls back to defaults if empty).
+function loadSections(cb){
+  api('GET','prep_sections','location=eq.Tempest&team=eq.kitchen',null,function(r){
+    sectionLabels={};
+    if(Array.isArray(r))for(var i=0;i<r.length;i++)sectionLabels[r[i].category]=r[i].label;
+    if(cb)cb();
   });
 }
 
@@ -345,9 +370,9 @@ function render(){
 
   var h='<div class="'+cls+'">'+sb;
   var dayAbbr=getDayAbbr(currentDate);
-  h+=bSec('cleaning','Daily Cleaning / Projects',f.c);
-  h+=bSec('daily','Prep List',f.d);
-  if(f.w.length>0)h+=bSec('weekly',dayAbbr+' — Weekly Prep',f.w);
+  h+=bSec('cleaning',esc(sectionLabels.cleaning||'Daily Cleaning / Projects'),f.c);
+  h+=bSec('daily',esc(sectionLabels.daily||'Prep List'),f.d);
+  if(f.w.length>0)h+=bSec('weekly',dayAbbr+' — '+esc(sectionLabels.weekly||'Weekly Prep'),f.w);
   h+='</div>';
   document.getElementById('appBody').innerHTML=h;
   initSortables();
@@ -396,9 +421,10 @@ function bTask(it){
 function togSec(el){el.parentElement.classList.toggle('open')}
 function setShift(s){shift=s;var b=document.querySelectorAll('.shift-btn');for(var i=0;i<b.length;i++)b[i].classList.toggle('active',b[i].textContent.indexOf(s)>-1);render();}
 function toggleMgr(){
-  if(mgr){mgr=false;document.getElementById('mgrSwitch').classList.remove('on');try{localStorage.removeItem(MGR_KEY);}catch(e){}render();return;}
+  if(mgr){mgr=false;document.getElementById('mgrSwitch').classList.remove('on');try{localStorage.removeItem(MGR_KEY);}catch(e){}syncMgrBtn();render();return;}
   openPin();
 }
+function syncMgrBtn(){var b=document.getElementById('manageSectionsBtn');if(b)b.style.display=mgr?'inline-block':'none';}
 function openPin(){
   var inp=document.getElementById('pinInput');inp.value='';
   document.getElementById('pinErr').classList.remove('show');
@@ -411,7 +437,7 @@ function submitPin(){
   if(v===MANAGER_PIN){
     try{localStorage.setItem(MGR_KEY,'1');}catch(e){}
     closePin();
-    mgr=true;document.getElementById('mgrSwitch').classList.add('on');render();
+    mgr=true;document.getElementById('mgrSwitch').classList.add('on');syncMgrBtn();render();
   }else{
     document.getElementById('pinErr').classList.add('show');
     var inp=document.getElementById('pinInput');inp.value='';inp.focus();
@@ -531,6 +557,30 @@ function saveNewItem(){
   api('POST','prep_items',null,{name:n,shift:shift,category:c,location:'Tempest',team:'kitchen',day_specific:d,sort_order:mx+1},function(r){if(r&&r.length){items.push(r[0]);toast();render();closeAddModal();}else{toastErr('Could not add item');}});
 }
 
+// ── A5b: SECTION NAMES (editable headers, manager mode) ──
+function openSectionsModal(){
+  document.getElementById('secDaily').value=sectionLabels.daily||'Prep List';
+  document.getElementById('secCleaning').value=sectionLabels.cleaning||'Daily Cleaning / Projects';
+  document.getElementById('secWeekly').value=sectionLabels.weekly||'Weekly Prep';
+  document.getElementById('sectionsModal').classList.add('show');
+}
+function closeSectionsModal(){document.getElementById('sectionsModal').classList.remove('show');}
+function saveSections(){
+  var vals={daily:document.getElementById('secDaily').value.trim(),cleaning:document.getElementById('secCleaning').value.trim(),weekly:document.getElementById('secWeekly').value.trim()};
+  var cats=['daily','cleaning','weekly'],pending=0,anyFail=false;
+  function finish(){closeSectionsModal();if(anyFail)toastErr('Some names could not be saved');else toast();render();}
+  cats.forEach(function(cat){
+    var v=vals[cat];
+    if(!v||v===(sectionLabels[cat]||''))return; // skip blank or unchanged
+    pending++;
+    api('PATCH','prep_sections','location=eq.Tempest&team=eq.kitchen&category=eq.'+cat,{label:v},function(r){
+      if(r&&r.length)sectionLabels[cat]=v;else anyFail=true;
+      if(--pending===0)finish();
+    });
+  });
+  if(pending===0)finish();
+}
+
 // ── STAFF MANAGEMENT ──
 function openStaffModal(){
   document.getElementById('staffName').value='';
@@ -625,7 +675,7 @@ function confetti(n,dur){
 
 // Restore manager mode from a prior unlock. Default to cook view (off) on
 // missing value or any error so cooks never land in manager mode.
-try{if(localStorage.getItem(MGR_KEY)==='1'){mgr=true;document.getElementById('mgrSwitch').classList.add('on');}}catch(e){}
+try{if(localStorage.getItem(MGR_KEY)==='1'){mgr=true;document.getElementById('mgrSwitch').classList.add('on');syncMgrBtn();}}catch(e){}
 document.getElementById('pinModal').addEventListener('click',function(e){if(e.target===this)closePin();});
 document.getElementById('pinInput').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();submitPin();}});
 
