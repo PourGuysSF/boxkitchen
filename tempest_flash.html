@@ -156,8 +156,9 @@
     <div class="lock-tag">🔒 Manager</div>
   </div>
   <div class="mode-toggle">
-    <button class="mode-btn active" id="mEntry" onclick="switchMode('entry')">Daily entry</button>
-    <button class="mode-btn" id="mReport" onclick="switchMode('report')">Month report</button>
+    <button class="mode-btn active" id="mEntry" onclick="switchMode('entry')">Entry</button>
+    <button class="mode-btn" id="mReport" onclick="switchMode('report')">Month</button>
+    <button class="mode-btn" id="mYtd" onclick="switchMode('ytd')">YTD</button>
   </div>
   <button class="manage-btn" onclick="openVendors()">⚙ Manage vendors</button>
 </div>
@@ -195,11 +196,11 @@
       <button class="date-arrow" onclick="changeMonth(-1)">◀</button>
       <div class="date-info">
         <div class="date-display" id="monthDisplay"></div>
-        <div class="day-display">Month report</div>
+        <div class="day-display" id="reportKind">Month report</div>
       </div>
       <button class="date-arrow" onclick="changeMonth(1)">▶</button>
     </div>
-    <button class="manage-btn" style="margin:0" onclick="exportMonth()">⬇ Excel</button>
+    <button class="manage-btn" id="exportBtn" style="margin:0" onclick="exportMonth()">⬇ Excel</button>
   </div>
   <div id="reportBody"></div>
 </div>
@@ -381,25 +382,68 @@ function saveDay(){
 
 function showToast(msg,isErr){var t=document.getElementById('toast');t.textContent=(isErr?'⚠ ':'✓ ')+msg;t.classList.toggle('err',!!isErr);t.classList.add('show');clearTimeout(st);st=setTimeout(function(){t.classList.remove('show');},1600);}
 
-/* ---- Month report ---- */
-var mode='entry';
+/* ---- Month report + YTD ---- */
+var mode='entry',yearDays=[];
 function switchMode(m){
   mode=m;
   document.getElementById('mEntry').classList.toggle('active',m==='entry');
   document.getElementById('mReport').classList.toggle('active',m==='report');
+  document.getElementById('mYtd').classList.toggle('active',m==='ytd');
   document.getElementById('entryView').style.display=(m==='entry')?'':'none';
-  document.getElementById('reportView').style.display=(m==='report')?'':'none';
+  document.getElementById('reportView').style.display=(m==='entry')?'none':'';
   var sb=document.querySelector('.save-bar');if(sb)sb.style.display=(m==='entry')?'':'none';
-  if(m==='report'){updateMonthDisplay();if(monthKey(currentDate)!==loadedMonthKey)loadMonth(renderReport);else renderReport();}
-  else{updateDateDisplay();render();}
+  document.getElementById('exportBtn').style.display=(m==='report')?'':'none';
+  document.getElementById('reportKind').textContent=(m==='ytd')?'Year to date':'Month report';
+  if(m==='entry'){updateDateDisplay();render();}
+  else if(m==='report'){updateMonthDisplay();if(monthKey(currentDate)!==loadedMonthKey)loadMonth(renderReport);else renderReport();}
+  else{updateMonthDisplay();loadYear(renderYTD);}
 }
 function updateMonthDisplay(){
   var mn=['January','February','March','April','May','June','July','August','September','October','November','December'];
-  document.getElementById('monthDisplay').textContent=mn[currentDate.getMonth()]+' '+currentDate.getFullYear();
+  document.getElementById('monthDisplay').textContent=(mode==='ytd')?(''+currentDate.getFullYear()):(mn[currentDate.getMonth()]+' '+currentDate.getFullYear());
 }
 function changeMonth(dir){
-  currentDate=new Date(currentDate.getFullYear(),currentDate.getMonth()+dir,1);
-  updateMonthDisplay();loadMonth(renderReport);
+  if(mode==='ytd'){currentDate=new Date(currentDate.getFullYear()+dir,currentDate.getMonth(),1);updateMonthDisplay();loadYear(renderYTD);}
+  else{currentDate=new Date(currentDate.getFullYear(),currentDate.getMonth()+dir,1);updateMonthDisplay();loadMonth(renderReport);}
+}
+function loadYear(cb){
+  var y=currentDate.getFullYear();
+  api('GET','flash_days','location=eq.'+encodeURIComponent(LOCATION)+'&report_date=gte.'+y+'-01-01&report_date=lte.'+y+'-12-31&order=report_date.asc',null,function(r){
+    yearDays=Array.isArray(r)?r:[];if(cb)cb();
+  });
+}
+function renderYTD(){
+  var mnFull=['January','February','March','April','May','June','July','August','September','October','November','December'],i,y=currentDate.getFullYear();
+  var months={},vtot={},totP=0,totS=0,daysWithSales=0;
+  for(i=0;i<vendors.length;i++)vtot[vendors[i].id]={sum:0,deliv:0};
+  for(var k=0;k<yearDays.length;k++){
+    var row=yearDays[k],pur=row.purchases||{},g=0,vid,a;
+    for(vid in pur){if(!pur.hasOwnProperty(vid))continue;a=num(pur[vid]);g+=a;if(a>0){if(!vtot[vid])vtot[vid]={sum:0,deliv:0};vtot[vid].sum+=a;vtot[vid].deliv++;}}
+    var s=num(row.food_sales),mo=parseInt(row.report_date.slice(5,7),10)-1;
+    if(!months[mo])months[mo]={p:0,s:0};months[mo].p+=g;months[mo].s+=s;
+    totP+=g;totS+=s;if(s>0)daysWithSales++;
+  }
+  var moKeys=[];for(var mk in months)if(months.hasOwnProperty(mk))moKeys.push(parseInt(mk,10));moKeys.sort(function(a,b){return a-b;});
+  var nMonths=moKeys.length,body=document.getElementById('reportBody');
+  if(nMonths===0){body.innerHTML='<div class="rempty">No entries for '+y+' yet.</div>';return;}
+  var h='<div class="rmonth-kpi">'+
+    '<div class="stat"><div class="stat-label">YTD Purchases</div><div class="stat-val">'+money0(totP)+'</div></div>'+
+    '<div class="stat"><div class="stat-label">YTD Sales</div><div class="stat-val">'+money0(totS)+'</div></div>'+
+    '<div class="stat"><div class="stat-label">YTD Food Cost %</div><div class="stat-val run">'+(totS>0?pct(totP/totS):'—')+'</div></div>'+
+    '</div>';
+  h+='<div class="rmonth-kpi">'+
+    '<div class="stat"><div class="stat-label">Avg Mo. Sales</div><div class="stat-val">'+money0(totS/nMonths)+'</div></div>'+
+    '<div class="stat"><div class="stat-label">Avg Mo. Purch</div><div class="stat-val">'+money0(totP/nMonths)+'</div></div>'+
+    '<div class="stat"><div class="stat-label">Avg Daily Sales</div><div class="stat-val">'+(daysWithSales>0?money0(totS/daysWithSales):'—')+'</div></div>'+
+    '</div>';
+  h+='<div class="rsection"><div class="rsection-title">By month</div><div class="rscroll"><table class="rtable"><thead><tr><th class="l">Month</th><th>Purchases</th><th>Food Sales</th><th>Food Cost %</th></tr></thead><tbody>';
+  for(i=0;i<moKeys.length;i++){var mo=moKeys[i],m=months[mo];h+='<tr><td class="l">'+mnFull[mo]+'</td><td>'+money0(m.p)+'</td><td>'+money0(m.s)+'</td><td>'+(m.s>0?pct(m.p/m.s):'—')+'</td></tr>';}
+  h+='<tr class="total"><td class="l">YTD</td><td>'+money0(totP)+'</td><td>'+money0(totS)+'</td><td>'+(totS>0?pct(totP/totS):'—')+'</td></tr></tbody></table></div></div>';
+  var shown=[];for(i=0;i<vendors.length;i++){if(vendors[i].active||(vtot[vendors[i].id]&&vtot[vendors[i].id].sum>0))shown.push(vendors[i]);}
+  h+='<div class="rsection"><div class="rsection-title">Vendor spend — year to date</div><div class="rscroll"><table class="rtable"><thead><tr><th class="l">Vendor</th><th>Total Spend</th><th>% of Purch</th><th>Deliveries</th><th>Avg Delivery</th></tr></thead><tbody>';
+  for(i=0;i<shown.length;i++){var t=vtot[shown[i].id].sum,dv=vtot[shown[i].id].deliv;h+='<tr><td class="l">'+esc(shown[i].name)+(shown[i].active?'':' <span style="color:var(--dim)">(retired)</span>')+'</td><td>'+money0(t)+'</td><td>'+(totP>0?pct(t/totP):'—')+'</td><td>'+dv+'</td><td>'+(dv>0?money0(t/dv):'—')+'</td></tr>';}
+  h+='</tbody></table></div></div>';
+  body.innerHTML=h;
 }
 function money0(v){return '$'+Math.round(Number(v)||0).toLocaleString('en-US');}
 function computeMonth(){
