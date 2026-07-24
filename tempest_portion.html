@@ -187,15 +187,21 @@ var MANAGER_PIN='4316',mgr=false,editId=null;
 
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 
-function api(m,t,q,d,cb){var x=new XMLHttpRequest();x.open(m,SB+'/rest/v1/'+t+(q?'?'+q:''));x.setRequestHeader('apikey',SK);x.setRequestHeader('Authorization','Bearer '+SK);if(d){x.setRequestHeader('Content-Type','application/json');x.setRequestHeader('Prefer','return=representation');}x.onload=function(){var r=null;try{r=JSON.parse(x.responseText);}catch(e){}if(cb)cb(r);};x.onerror=function(){if(cb)cb(null);};x.send(d?JSON.stringify(d):null);}
+function api(m,t,q,d,cb){var x=new XMLHttpRequest();x.open(m,SB+'/rest/v1/'+t+(q?'?'+q:''));x.setRequestHeader('apikey',SK);x.setRequestHeader('Authorization','Bearer '+SK);if(d){x.setRequestHeader('Content-Type','application/json');x.setRequestHeader('Prefer','return=representation');}x.onload=function(){var r=null;try{r=JSON.parse(x.responseText);}catch(e){}if(cb)cb(r,x.status);};x.onerror=function(){if(cb)cb(null);};x.send(d?JSON.stringify(d):null);}
+
+function curDateStr(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 
 function init(){
   var d=new Date(),mn=['January','February','March','April','May','June','July','August','September','October','November','December'];
   var dn=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-  todayStr=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  todayStr=curDateStr();
   document.getElementById('dateDisplay').textContent=dn[d.getDay()]+', '+mn[d.getMonth()]+' '+d.getDate();
   loadData();
 }
+
+// Always-on kitchen tablets: when the page wakes on a NEW day, reload as a
+// fresh sheet so counts can't silently land on yesterday's date.
+document.addEventListener('visibilitychange',function(){if(!document.hidden&&curDateStr()!==todayStr)init();});
 
 function loadData(){
   api('GET','portion_items','location=eq.Tempest&active=eq.true&order=sort_order.asc',null,function(r){
@@ -324,6 +330,9 @@ function showToast(msg,type){
 function saveCounts(){
   var name=document.getElementById('countedBy').value;
   if(!name){showToast('Select who is counting','error');return;}
+  // Midnight guard: if the date rolled while this sheet was open, these counts
+  // belong to the NEW day — never patch yesterday's rows.
+  if(curDateStr()!==todayStr){todayStr=curDateStr();byItem={};}
   var inputs=document.querySelectorAll('.count-input'),changed=[];
   for(var i=0;i<inputs.length;i++){
     var el=inputs[i],val=el.value.trim(),orig=(el.getAttribute('data-orig')||'').trim();
@@ -337,8 +346,10 @@ function saveCounts(){
   var pending=changed.length,done=0,fails=0;
   changed.forEach(function(c){
     var cb=function(r){
-      if(Array.isArray(r)){
-        if(r.length){byItem[c.itemId]={id:r[0].id,on_hand_text:r[0].on_hand_text||''};}
+      // Success ONLY when a row actually came back — a PATCH that matched 0
+      // rows returns [] with a 2xx and must count as a failure, not a save.
+      if(Array.isArray(r)&&r.length){
+        byItem[c.itemId]={id:r[0].id,on_hand_text:r[0].on_hand_text||''};
         c.el.setAttribute('data-orig',c.val);
       }else{fails++;}
       done++;
@@ -349,7 +360,15 @@ function saveCounts(){
       }
     };
     if(c.existingId){api('PATCH','portion_counts','id=eq.'+c.existingId,{on_hand_text:c.val,counted_by:name},cb);}
-    else{api('POST','portion_counts',null,{portion_item_id:c.itemId,count_date:todayStr,on_hand_text:c.val,counted_by:name,location:'Tempest'},cb);}
+    else{api('POST','portion_counts',null,{portion_item_id:c.itemId,count_date:todayStr,on_hand_text:c.val,counted_by:name,location:'Tempest'},function(r,status){
+      if(Array.isArray(r)&&r.length){cb(r);return;}
+      if(status!==409){cb(null);return;}
+      // 409: another device already created this item's row today — adopt + PATCH.
+      api('GET','portion_counts','location=eq.Tempest&count_date=eq.'+todayStr+'&portion_item_id=eq.'+c.itemId,null,function(rows){
+        if(!rows||!rows.length){cb(null);return;}
+        api('PATCH','portion_counts','id=eq.'+rows[0].id,{on_hand_text:c.val,counted_by:name},cb);
+      });
+    });}
   });
 }
 
