@@ -239,7 +239,7 @@ var loadedMonthKey='';        // 'YYYY-MM' currently loaded
 var st=null;
 
 function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
-function api(m,t,q,d,cb){var x=new XMLHttpRequest();x.open(m,SB+'/rest/v1/'+t+(q?'?'+q:''));x.setRequestHeader('apikey',SK);x.setRequestHeader('Authorization','Bearer '+SK);if(d){x.setRequestHeader('Content-Type','application/json');x.setRequestHeader('Prefer','return=representation');}x.onload=function(){var r=null;try{r=JSON.parse(x.responseText);}catch(e){}if(cb)cb(r);};x.onerror=function(){if(cb)cb(null);};x.send(d?JSON.stringify(d):null);}
+function api(m,t,q,d,cb){var x=new XMLHttpRequest();x.open(m,SB+'/rest/v1/'+t+(q?'?'+q:''));x.setRequestHeader('apikey',SK);x.setRequestHeader('Authorization','Bearer '+SK);if(d){x.setRequestHeader('Content-Type','application/json');x.setRequestHeader('Prefer','return=representation');}x.onload=function(){var r=null;try{r=JSON.parse(x.responseText);}catch(e){}if(cb)cb(r,x.status);};x.onerror=function(){if(cb)cb(null);};x.send(d?JSON.stringify(d):null);}
 
 function fmtDate(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function monthKey(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');}
@@ -383,7 +383,23 @@ function saveDay(){
     else{showToast('Save failed — try again',true);}
   }
   if(existing&&existing.id){api('PATCH','flash_days','id=eq.'+existing.id,payload,done);}
-  else{payload.location=LOCATION;payload.report_date=dateStr;api('POST','flash_days',null,payload,done);}
+  else{
+    payload.location=LOCATION;payload.report_date=dateStr;
+    api('POST','flash_days',null,payload,function(r,status){
+      if(r&&r.length){done(r);return;}
+      if(status!==409){done(null);return;}
+      // 409: another device/person already created this day's row while this page
+      // was open. Adopt their row, keep their amounts for vendors not shown here,
+      // and re-save as a PATCH — otherwise "Save failed" loops until a reload.
+      api('GET','flash_days','location=eq.'+encodeURIComponent(LOCATION)+'&report_date=eq.'+dateStr,null,function(rows){
+        if(!rows||!rows.length){done(null);return;}
+        var row=rows[0];daysByDate[dateStr]=row;
+        var pv=row.purchases||{};
+        for(var k in pv)if(!shown[k]&&payload.purchases[k]==null)payload.purchases[k]=pv[k];
+        api('PATCH','flash_days','id=eq.'+row.id,payload,done);
+      });
+    });
+  }
 }
 
 function showToast(msg,isErr){var t=document.getElementById('toast');t.textContent=(isErr?'⚠ ':'✓ ')+msg;t.classList.toggle('err',!!isErr);t.classList.add('show');clearTimeout(st);st=setTimeout(function(){t.classList.remove('show');},1600);}
