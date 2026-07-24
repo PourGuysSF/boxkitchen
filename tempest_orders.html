@@ -106,6 +106,13 @@
   .manager-mode .mgr-controls{display:flex}
   .move-btn{width:20px;height:14px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:0.55rem;cursor:pointer;border-radius:3px;display:flex;align-items:center;justify-content:center;padding:0}
   .move-btn:active{background:var(--accent);color:#fff}
+  /* DRAG-TO-REORDER (manager mode) */
+  .drag-handle{display:flex;align-items:center;justify-content:center;width:22px;height:30px;color:var(--muted);cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none}
+  .drag-handle:active{cursor:grabbing;color:var(--accent)}
+  .drag-handle svg{display:block;pointer-events:none}
+  .item-row.sortable-ghost{opacity:0.35}
+  .item-row.sortable-chosen{background:var(--surface2)}
+  .item-row.sortable-drag{background:var(--surface2);box-shadow:0 6px 20px rgba(0,0,0,0.5)}
   .delete-btn{display:none;width:22px;height:22px;border-radius:5px;border:1px solid var(--border);background:transparent;color:var(--red);font-size:0.8rem;cursor:pointer;align-items:center;justify-content:center;flex-shrink:0;margin-left:4px}
   .manager-mode .delete-btn{display:flex}
   .manager-mode .item-name{cursor:pointer}
@@ -175,6 +182,7 @@
   .nb-toast{position:fixed;left:50%;bottom:160px;transform:translateX(-50%);background:var(--green);color:#fff;padding:10px 24px;border-radius:10px;font-size:0.85rem;font-weight:600;opacity:0;transition:opacity 0.3s;pointer-events:none;z-index:400;box-shadow:0 4px 20px rgba(0,0,0,0.4)}
   .nb-toast.show{opacity:1}
 </style>
+<script src="vendor/sortablejs-1.15.7.min.js"></script>
 </head>
 <body>
 <div class="header">
@@ -399,7 +407,9 @@ function render(){
       var cat=catOrder[ci],catItems=catMap[cat];
       h+='<div class="cat-header"><span class="cat-label">'+esc(cat)+'</span></div>';
       h+='<div class="item-header"><span class="ih-name">Item</span><span class="ih-par">Par</span><span class="ih-unit">Unit</span><span class="ih-qty">Need</span></div>';
+      h+='<div class="shelf-body" data-vendor="'+esc(v)+'" data-cat="'+esc(cat)+'">';
       for(var i=0;i<catItems.length;i++)h+=buildItem(catItems[i]);
+      h+='</div>';
     }
 
     h+='<button class="add-btn" onclick="openAdd(\''+v.replace(/'/g,"\\'")+'\')">+ Add item</button>';
@@ -407,6 +417,7 @@ function render(){
   }
   h+='</div>';
   document.getElementById('appBody').innerHTML=h;
+  initSortables();
   syncNameBar();
   updateSummary();
 }
@@ -428,7 +439,7 @@ function buildItem(it){
   var inpCls='qty-input'+(hasQ?' filled':'')+(locked?' locked':'');
   var inpAttrs=locked?' readonly':'';
   var h='<div class="item-row '+(hasQ?'has-qty':'')+'" data-id="'+it.id+'">';
-  h+='<div class="mgr-controls"><button class="move-btn" onclick="event.stopPropagation();moveItem('+it.id+',-1)">▲</button><button class="move-btn" onclick="event.stopPropagation();moveItem('+it.id+',1)">▼</button></div>';
+  h+='<div class="mgr-controls"><div class="drag-handle" aria-label="Drag to reorder"><svg width="10" height="16" viewBox="0 0 10 16" fill="currentColor"><circle cx="2" cy="2" r="1.4"/><circle cx="8" cy="2" r="1.4"/><circle cx="2" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="2" cy="14" r="1.4"/><circle cx="8" cy="14" r="1.4"/></svg></div></div>';
   h+='<div class="item-name" onclick="editName('+it.id+',this)">'+esc(it.name)+'</div>';
   h+= mgr
     ? '<div class="item-par mgr-edit" onclick="editPar('+it.id+',this)">'+esc(String(it.par_level||'-'))+'</div>'
@@ -840,18 +851,82 @@ function delItem(id){
     showToast('Deleted','success');render();
   });
 }
-function moveItem(id,dir){
-  var item=null;for(var i=0;i<items.length;i++)if(items[i].id===id){item=items[i];break;}
-  if(!item)return;
-  var same=items.filter(function(x){return x.vendor===item.vendor&&x.category===item.category;});
-  var ci=-1;for(var i=0;i<same.length;i++)if(same[i].id===id){ci=i;break;}
-  var si=ci+dir;if(si<0||si>=same.length)return;
-  var other=same[si],tmp=item.sort_order;
-  item.sort_order=other.sort_order;other.sort_order=tmp;
-  api('PATCH','order_items','id=eq.'+item.id,{sort_order:item.sort_order},null);
-  api('PATCH','order_items','id=eq.'+other.id,{sort_order:other.sort_order},null);
+// ── DRAG-TO-REORDER (manager mode, replaces up/down arrows) ──
+// One Sortable per shelf (.shelf-body = one vendor + one category), so items can
+// never be dragged across shelves or vendors. Mirrors tempest_prep/line.
+var sortables=[];
+function initSortables(){
+  for(var i=0;i<sortables.length;i++){try{sortables[i].destroy();}catch(e){}}
+  sortables=[];
+  if(!mgr)return;
+  if(typeof Sortable==='undefined'){showToast('Drag unavailable — reload page','error');return;}
+  var lists=document.querySelectorAll('.shelf-body');
+  for(var i=0;i<lists.length;i++){
+    (function(listEl){
+      sortables.push(Sortable.create(listEl,{
+        handle:'.drag-handle',
+        draggable:'.item-row',
+        animation:150,
+        delay:0,
+        ghostClass:'sortable-ghost',
+        chosenClass:'sortable-chosen',
+        dragClass:'sortable-drag',
+        onEnd:function(evt){persistOrder(listEl,evt);}
+      }));
+    })(lists[i]);
+  }
+}
+
+// Persist a drag: renumber the dragged shelf (one vendor + one category) with clean,
+// unique, increasing sort_order values (10,20,30,...) so the reload order
+// (order=sort_order.asc, then bucketed by category) is deterministic even if legacy
+// rows carried duplicate/zero/tied values. PATCH only the changed order_items rows.
+function persistOrder(listEl,evt){
+  if(evt.oldIndex===evt.newIndex)return;
+  var draggedId=parseInt(evt.item.getAttribute('data-id'),10);
+  var dragItem=null;for(var i=0;i<items.length;i++)if(items[i].id===draggedId){dragItem=items[i];break;}
+  if(!dragItem)return;
+  var vend=dragItem.vendor,cat=dragItem.category||'Other';
+  var snap={};for(var i=0;i<items.length;i++)snap[items[i].id]=items[i].sort_order;
+  var rows=listEl.querySelectorAll('.item-row'),visIds=[];
+  for(var i=0;i<rows.length;i++)visIds.push(parseInt(rows[i].getAttribute('data-id'),10));
+  // FULL shelf = every item with this vendor+category, kept in the rendered order
+  // (items[] order). Do NOT re-sort on raw sort_order: legacy ties/NULLs would
+  // disagree with what's on screen and scramble the result.
+  var group=[];for(var i=0;i<items.length;i++){var gi=items[i];if(gi.vendor!==vend)continue;if((gi.category||'Other')!==cat)continue;group.push(gi);}
+  var dragged=null,rest=[];
+  for(var i=0;i<group.length;i++){if(group[i].id===draggedId)dragged=group[i];else rest.push(group[i]);}
+  if(!dragged)return;
+  function idxOf(arr,id){for(var k=0;k<arr.length;k++)if(arr[k].id===id)return k;return -1;}
+  var vi=visIds.indexOf(draggedId),at,newGroup;
+  if(vi<=0){
+    var nextId=visIds[1];
+    at=nextId!=null?idxOf(rest,nextId):rest.length;if(at<0)at=rest.length;
+  }else{
+    var prevId=visIds[vi-1];at=idxOf(rest,prevId);at=at<0?rest.length:at+1;
+  }
+  newGroup=rest.slice(0,at).concat([dragged]).concat(rest.slice(at));
+  var changed=[];
+  for(var i=0;i<newGroup.length;i++){
+    var nv=(i+1)*10;
+    if(newGroup[i].sort_order!==nv){newGroup[i].sort_order=nv;changed.push(newGroup[i]);}
+  }
   items.sort(function(a,b){return a.sort_order-b.sort_order;});
-  render();showToast('Moved','success');
+  render(); // optimistic
+  if(changed.length===0)return;
+  var pending=changed.length,failed=false;
+  changed.forEach(function(it){
+    api('PATCH','order_items','id=eq.'+it.id,{sort_order:it.sort_order},function(r){
+      if(!r||!r.length)failed=true;
+      if(--pending===0){
+        if(failed){
+          for(var j=0;j<items.length;j++)if(snap[items[j].id]!=null)items[j].sort_order=snap[items[j].id];
+          items.sort(function(a,b){return a.sort_order-b.sort_order;});
+          render();showToast('Could not save order','error');
+        }else{showToast('Moved','success');}
+      }
+    });
+  });
 }
 
 function openAdd(vendor){
