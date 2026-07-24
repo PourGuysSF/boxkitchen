@@ -528,7 +528,8 @@ function delItem(id){
     // Confirm the row is actually gone before claiming success (a blocked
     // delete returns no error but deletes 0 rows — see the old notes bug).
     api('GET','prep_items','id=eq.'+id+'&select=id',null,function(chk){
-      if(chk&&chk.length){toastErr("Delete didn't save — check permissions");return;}
+      if(!chk){toastErr("Couldn't confirm delete — reload to check");return;}
+      if(chk.length){toastErr("Delete didn't save — check permissions");return;}
       items=items.filter(function(x){return x.id!==id;});toast();render();
     });
   });

@@ -861,7 +861,8 @@ function delItem(id){
     // Confirm the row is actually gone before claiming success (a blocked
     // delete returns no error but deletes 0 rows — see the old notes bug).
     api('GET','order_items','id=eq.'+id+'&select=id',null,function(chk){
-      if(chk&&chk.length){showToast("Delete didn't save — check permissions",'error');return;}
+      if(!chk){showToast("Couldn't confirm delete — reload to check",'error');return;}
+      if(chk.length){showToast("Delete didn't save — check permissions",'error');return;}
       items=items.filter(function(x){return x.id!==id;});delete quantities[id];
       scheduleSave(guide);
       showToast('Deleted','success');render();
@@ -989,7 +990,7 @@ function saveMove(){
   var id=moveItemId,cat=document.getElementById('moveShelf').value;
   if(!id||!cat)return;
   var item=null;for(var i=0;i<items.length;i++)if(items[i].id===id){item=items[i];break;}
-  if(!item)return;
+  if(!item){closeMove();return;}
   // land at the end of the target shelf
   var mx=0;for(var i=0;i<items.length;i++){var t=items[i];if(t.vendor===item.vendor&&(t.category||'Other')===cat&&t.sort_order>mx)mx=t.sort_order;}
   api('PATCH','order_items','id=eq.'+id,{category:cat,sort_order:mx+10},function(r){
