@@ -369,6 +369,12 @@ function saveDay(){
   var salesEl=document.getElementById('foodSales'),foodSales=(salesEl&&salesEl.value.trim()!=='')?num(salesEl.value):null;
   var enteredBy=document.getElementById('enteredBy').value.trim()||null;
   var dateStr=fmtDate(currentDate),existing=daysByDate[dateStr];
+  // Preserve amounts for vendors NOT rendered on this screen (e.g. retired vendors
+  // with history on this day) — only a rendered field can change or clear its amount.
+  // Without this, re-saving a past day would silently erase a retired vendor's spend.
+  var prev=(existing&&existing.purchases)||{},shown={};
+  for(var i=0;i<ins.length;i++)shown[ins[i].getAttribute('data-vid')]=true;
+  for(var k in prev)if(!shown[k])purchases[k]=prev[k];
   var payload={purchases:purchases,food_sales:foodSales,entered_by:enteredBy};
   var btn=document.getElementById('saveBtn');btn.disabled=true;
   function done(r){
