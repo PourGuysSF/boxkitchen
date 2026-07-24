@@ -745,9 +745,21 @@ function confirmDelete() {
   btn.disabled = true;
   api('DELETE', 'Recipes', 'id=eq.' + id, null, function(_, status) {
     if (status >= 200 && status < 300) {
-      closeDelete();
-      showToast('Recipe deleted', 'success');
-      fetchRecipes();
+      // Confirm the row is actually gone before claiming success — a delete
+      // that matches 0 rows also returns 2xx (see the old notes-page bug).
+      api('GET', 'Recipes', 'id=eq.' + id + '&select=id', null, function(chk) {
+        if (chk && chk.length) {
+          var err2 = document.getElementById('deleteErr');
+          err2.textContent = "Delete didn't save — try again";
+          err2.classList.add('show');
+          showToast('Delete failed', 'error');
+          btn.disabled = false;
+          return;
+        }
+        closeDelete();
+        showToast('Recipe deleted', 'success');
+        fetchRecipes();
+      });
     } else {
       var err = document.getElementById('deleteErr');
       err.textContent = 'Delete failed — try again';
