@@ -858,9 +858,14 @@ function saveName(id,inp){
 function delItem(id){
   if(!confirm('Delete this item?'))return;
   api('DELETE','order_items','id=eq.'+id,null,function(){
-    items=items.filter(function(x){return x.id!==id;});delete quantities[id];
-    scheduleSave(guide);
-    showToast('Deleted','success');render();
+    // Confirm the row is actually gone before claiming success (a blocked
+    // delete returns no error but deletes 0 rows — see the old notes bug).
+    api('GET','order_items','id=eq.'+id+'&select=id',null,function(chk){
+      if(chk&&chk.length){showToast("Delete didn't save — check permissions",'error');return;}
+      items=items.filter(function(x){return x.id!==id;});delete quantities[id];
+      scheduleSave(guide);
+      showToast('Deleted','success');render();
+    });
   });
 }
 // ── DRAG-TO-REORDER (manager mode, replaces up/down arrows) ──
