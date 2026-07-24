@@ -520,9 +520,9 @@ function togDone(id){
   var l=logs[id],v=!(l&&l.completed);
   if(v)celebrateArmed=true; // A8: only a check-ON can trigger a celebration
   if(l&&l.id){
-    api('PATCH','prep_logs','id=eq.'+l.id,{completed:v},function(r){if(r&&r.length)logs[id]=r[0];toast();render();});
+    api('PATCH','prep_logs','id=eq.'+l.id,{completed:v},function(r){if(r&&r.length){logs[id]=r[0];toast();}else{toastErr('Could not save — try again');}render();});
   }else{
-    api('POST','prep_logs',null,{prep_item_id:id,date:dateStr,completed:v,assigned_to:'',quantity:'',notes:''},function(r){if(r&&r.length)logs[id]=r[0];toast();render();});
+    api('POST','prep_logs',null,{prep_item_id:id,date:dateStr,completed:v,assigned_to:'',quantity:'',notes:''},function(r){if(r&&r.length){logs[id]=r[0];toast();}else{toastErr('Could not save — try again');}render();});
   }
 }
 
@@ -530,25 +530,35 @@ function uLog(id,f,v){
   var dateStr=fmtDate(currentDate);
   var l=logs[id],d={};d[f]=v;
   if(l&&l.id){
-    api('PATCH','prep_logs','id=eq.'+l.id,d,function(r){if(r&&r.length)logs[id]=r[0];toast();if(f==='assigned_to')render();});
+    api('PATCH','prep_logs','id=eq.'+l.id,d,function(r){if(r&&r.length){logs[id]=r[0];toast();if(f==='assigned_to')render();}else{toastErr('Could not save — try again');render();}});
   }else{
     var o={prep_item_id:id,date:dateStr,completed:false,assigned_to:'',quantity:'',notes:''};o[f]=v;
-    api('POST','prep_logs',null,o,function(r){if(r&&r.length)logs[id]=r[0];toast();if(f==='assigned_to')render();});
+    api('POST','prep_logs',null,o,function(r){if(r&&r.length){logs[id]=r[0];toast();if(f==='assigned_to')render();}else{toastErr('Could not save — try again');render();}});
   }
 }
 
 // Kit/Make: flip a kit item's per-day mode (kit <-> make). Any cook; resets daily.
 function toggleMode(id){
   var l=logs[id],cur=(l&&l.mode)||'kit',v=(cur==='kit')?'make':'kit',dateStr=fmtDate(currentDate);
-  if(l&&l.id){api('PATCH','prep_logs','id=eq.'+l.id,{mode:v},function(r){if(r&&r.length)logs[id]=r[0];toast();render();});}
-  else{api('POST','prep_logs',null,{prep_item_id:id,date:dateStr,completed:false,assigned_to:'',quantity:'',notes:'',mode:v},function(r){if(r&&r.length)logs[id]=r[0];toast();render();});}
+  if(l&&l.id){api('PATCH','prep_logs','id=eq.'+l.id,{mode:v},function(r){if(r&&r.length){logs[id]=r[0];toast();}else{toastErr('Could not save — try again');}render();});}
+  else{api('POST','prep_logs',null,{prep_item_id:id,date:dateStr,completed:false,assigned_to:'',quantity:'',notes:'',mode:v},function(r){if(r&&r.length){logs[id]=r[0];toast();}else{toastErr('Could not save — try again');}render();});}
 }
 function togNote(id){openNotes[id]=!openNotes[id];var r=document.getElementById('nr'+id);if(r)r.classList.toggle('show');}
 
 function editN(id,el){if(!mgr)return;var inp=document.getElementById('ni'+id);el.style.display='none';inp.style.display='block';inp.focus();}
 function saveN(id,inp){var v=inp.value.trim();if(!v)return;inp.style.display='none';inp.previousElementSibling.style.display='block';api('PATCH','prep_items','id=eq.'+id,{name:v},function(r){if(r&&r.length){for(var i=0;i<items.length;i++)if(items[i].id===id)items[i].name=v;toast();render();}});}
 
-function delItem(id){if(!confirm('Delete this task?'))return;api('DELETE','prep_items','id=eq.'+id,null,function(){items=items.filter(function(x){return x.id!==id;});toast();render();});}
+function delItem(id){
+  if(!confirm('Delete this task?'))return;
+  api('DELETE','prep_items','id=eq.'+id,null,function(){
+    // Confirm the row is actually gone before claiming success (a blocked
+    // delete returns no error but deletes 0 rows — see the old notes bug).
+    api('GET','prep_items','id=eq.'+id+'&select=id',null,function(chk){
+      if(chk&&chk.length){toastErr("Delete didn't save — check permissions");return;}
+      items=items.filter(function(x){return x.id!==id;});toast();render();
+    });
+  });
+}
 
 // ── DRAG-TO-REORDER (manager mode, replaces up/down arrows) ──
 var sortables=[];
