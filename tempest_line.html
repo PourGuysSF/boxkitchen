@@ -489,14 +489,25 @@ function togDone(id){
   }
 }
 
+// Revert just the failed field's input. A full render() here would wipe text a
+// cook is mid-typing on another row (inputs only persist on blur/change).
+function revertField(id,f){
+  var l=logs[id]||{},row=document.querySelector('.task[data-id="'+id+'"]');
+  if(!row){render();return;}
+  if(f==='quantity'){var q=row.querySelector('.task-input.qty');if(q)q.value=l.quantity||'';}
+  else if(f==='notes'){var nr=document.getElementById('nr'+id),ni=nr?nr.querySelector('.note-input'):null;if(ni)ni.value=l.notes||'';}
+  else if(f==='assigned_to'){var w=row.querySelector('.who-select');if(w){w.value=l.assigned_to||'';w.className='who-select '+(l.assigned_to?'assigned':'');}}
+  else render();
+}
+
 function uLog(id,f,v){
   var dateStr=fmtDate(currentDate);
   var l=logs[id],d={};d[f]=v;
   if(l&&l.id){
-    api('PATCH','prep_logs','id=eq.'+l.id,d,function(r){if(r&&r.length){logs[id]=r[0];toast();if(f==='assigned_to')render();}else{toastErr('Could not save — try again');render();}});
+    api('PATCH','prep_logs','id=eq.'+l.id,d,function(r){if(r&&r.length){logs[id]=r[0];toast();if(f==='assigned_to')render();}else{toastErr('Could not save — try again');revertField(id,f);}});
   }else{
     var o={prep_item_id:id,date:dateStr,completed:false,assigned_to:'',quantity:'',notes:''};o[f]=v;
-    api('POST','prep_logs',null,o,function(r){if(r&&r.length){logs[id]=r[0];toast();if(f==='assigned_to')render();}else{toastErr('Could not save — try again');render();}});
+    api('POST','prep_logs',null,o,function(r){if(r&&r.length){logs[id]=r[0];toast();if(f==='assigned_to')render();}else{toastErr('Could not save — try again');revertField(id,f);}});
   }
 }
 
