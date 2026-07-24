@@ -115,6 +115,8 @@
   .item-row.sortable-drag{background:var(--surface2);box-shadow:0 6px 20px rgba(0,0,0,0.5)}
   .delete-btn{display:none;width:22px;height:22px;border-radius:5px;border:1px solid var(--border);background:transparent;color:var(--red);font-size:0.8rem;cursor:pointer;align-items:center;justify-content:center;flex-shrink:0;margin-left:4px}
   .manager-mode .delete-btn{display:flex}
+  .shelf-btn{display:none;width:22px;height:22px;border-radius:5px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:0.8rem;cursor:pointer;align-items:center;justify-content:center;flex-shrink:0;margin-left:4px}
+  .manager-mode .shelf-btn{display:flex}
   .manager-mode .item-name{cursor:pointer}
   .add-btn{display:none;padding:10px 20px;color:var(--accent);font-size:0.85rem;font-weight:600;cursor:pointer;background:transparent;border:none;font-family:'DM Sans',sans-serif;width:100%;text-align:left}
   .manager-mode .add-btn{display:block}
@@ -224,6 +226,15 @@
     <select id="addItemCat"><option value="">Select category...</option></select>
     <select id="addItemVendor" onchange="refreshCatDropdown()"></select>
     <div class="modal-btns"><button class="modal-btn cancel" onclick="closeAdd()">Cancel</button><button class="modal-btn save" onclick="saveAdd()">Add</button></div>
+  </div>
+</div>
+
+<div class="modal-bg" id="moveModal">
+  <div class="modal">
+    <h3>Move Item to Shelf</h3>
+    <div id="moveItemName" style="color:var(--muted);font-size:0.85rem;margin-bottom:10px"></div>
+    <select id="moveShelf"></select>
+    <div class="modal-btns"><button class="modal-btn cancel" onclick="closeMove()">Cancel</button><button class="modal-btn save" onclick="saveMove()">Move</button></div>
   </div>
 </div>
 <div class="modal-bg" id="unitsModal">
@@ -448,6 +459,7 @@ function buildItem(it){
     ? '<div class="item-unit"><select class="unit-select" onchange="setUnit('+it.id+',this.value)">'+buildUnitOptions(it)+'</select></div>'
     : '<div class="item-unit">'+esc(unitLabel(it))+'</div>';
   h+='<div class="item-qty"><input class="'+inpCls+'"'+inpAttrs+' value="'+esc(q)+'" placeholder="—" onchange="setQty('+it.id+',this.value)" onfocus="this.select()"></div>';
+  h+='<button class="shelf-btn" title="Move to another shelf" onclick="event.stopPropagation();openMove('+it.id+')">⇄</button>';
   h+='<button class="delete-btn" onclick="event.stopPropagation();delItem('+it.id+')">✕</button>';
   h+='</div>';
   return h;
@@ -942,6 +954,48 @@ function openAdd(vendor){
 }
 function refreshCatDropdown(){fillCatSelect(document.getElementById('addItemVendor').value);}
 function closeAdd(){document.getElementById('addModal').classList.remove('show')}
+
+// ── MOVE ITEM TO ANOTHER SHELF (manager mode) ──
+var moveItemId=null;
+function openMove(id){
+  var item=null;for(var i=0;i<items.length;i++)if(items[i].id===id){item=items[i];break;}
+  if(!item)return;
+  moveItemId=id;
+  var cur=item.category||'Other';
+  document.getElementById('moveItemName').textContent=item.name+' — now on "'+cur+'"';
+  var sel=document.getElementById('moveShelf');sel.innerHTML='<option value="">Select shelf...</option>';
+  var list=(catByVendor[item.vendor]||[]).filter(function(c){return c.active&&c.label!==cur;});
+  if(list.length){
+    for(var i=0;i<list.length;i++){var o=document.createElement('option');o.value=list[i].label;o.textContent=list[i].label;sel.appendChild(o);}
+  }else{
+    // Fallback (registry empty/failed): offer this vendor's other existing shelves.
+    var seen={};
+    for(var i=0;i<items.length;i++){
+      if(items[i].vendor!==item.vendor)continue;
+      var c=items[i].category||'Other';
+      if(c===cur||seen[c])continue;
+      seen[c]=true;var o2=document.createElement('option');o2.value=c;o2.textContent=c;sel.appendChild(o2);
+    }
+  }
+  document.getElementById('moveModal').classList.add('show');
+}
+function closeMove(){document.getElementById('moveModal').classList.remove('show');moveItemId=null;}
+function saveMove(){
+  var id=moveItemId,cat=document.getElementById('moveShelf').value;
+  if(!id||!cat)return;
+  var item=null;for(var i=0;i<items.length;i++)if(items[i].id===id){item=items[i];break;}
+  if(!item)return;
+  // land at the end of the target shelf
+  var mx=0;for(var i=0;i<items.length;i++){var t=items[i];if(t.vendor===item.vendor&&(t.category||'Other')===cat&&t.sort_order>mx)mx=t.sort_order;}
+  api('PATCH','order_items','id=eq.'+id,{category:cat,sort_order:mx+10},function(r){
+    if(r&&r.length){
+      item.category=r[0].category;item.sort_order=r[0].sort_order;
+      items.sort(function(a,b){return a.sort_order-b.sort_order;});
+      showToast('Moved to '+cat,'success');render();
+    }else{showToast('Move failed','error');}
+    closeMove();
+  });
+}
 function saveAdd(){
   var name=document.getElementById('addItemName').value.trim();
   var unitVal=document.getElementById('addItemUnit').value;
