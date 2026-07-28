@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<script>
+  // Site-password gate (same as every inner page): bounce to hub if not authed.
+  (function(){
+    var raw = localStorage.getItem('boxkitchen_auth');
+    var ts = raw ? parseInt(raw, 10) : 0;
+    var TTL = 30 * 24 * 60 * 60 * 1000; // 30 days
+    if (!ts || isNaN(ts) || (Date.now() - ts) > TTL) {
+      window.location.replace('index.html');
+    }
+  })();
+</script>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Tempest Ingredient Costs</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@700;900&display=swap');
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  :root{--bg:#0f1115;--surface:#1a1d24;--surface2:#22262f;--border:#2a2d35;--accent:#e85d3a;--accent-dim:rgba(232,93,58,0.15);--green:#22c55e;--green-dim:rgba(34,197,94,0.12);--yellow:#f59e0b;--blue:#3b82f6;--red:#ef4444;--text:#e8e6e3;--muted:#8a8a8a;--dim:#555}
+  body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding-bottom:40px}
+
+  .header{position:sticky;top:0;z-index:100;background:rgba(15,17,21,0.95);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-bottom:1px solid var(--border);padding:14px 20px 12px}
+  .header-row{display:flex;justify-content:space-between;align-items:center}
+  .header h1{font-family:'Playfair Display',serif;font-size:1.4rem;font-weight:900}
+  .header h1 span{color:var(--accent)}
+  .home-link{display:inline-flex;align-items:center;justify-content:center;min-height:44px;min-width:44px;padding:0 10px;margin-left:-10px;font-family:'DM Sans',sans-serif;font-size:0.85rem;font-weight:500;color:rgba(232,230,227,0.75);text-decoration:none;transition:color 0.15s}
+  .home-link:hover,.home-link:active{color:var(--accent)}
+  .lock-tag{font-size:0.7rem;color:var(--muted);display:flex;align-items:center;gap:5px}
+
+  /* TOOLBAR */
+  .toolbar{display:flex;gap:8px;align-items:center;margin-top:10px}
+  .search{flex:1;background:var(--surface);border:1px solid var(--border);border-radius:9px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:0.88rem;padding:10px 12px;min-height:44px;outline:none}
+  .search:focus{border-color:var(--accent)}
+  .add-btn{flex:0 0 auto;background:var(--accent);color:#fff;border:none;border-radius:9px;font-family:'DM Sans',sans-serif;font-size:0.86rem;font-weight:700;padding:10px 14px;cursor:pointer;min-height:44px}
+  .subrow{display:flex;justify-content:space-between;align-items:center;margin-top:9px}
+  .count-tag{font-size:0.72rem;color:var(--muted)}
+  .count-tag b{color:var(--text)}
+  .toggle{font-size:0.72rem;color:var(--accent);background:transparent;border:none;cursor:pointer;font-family:'DM Sans',sans-serif;font-weight:600;padding:6px 2px;min-height:32px}
+
+  .intro{padding:10px 20px 2px;color:var(--muted);font-size:0.78rem}
+
+  /* INGREDIENT LIST */
+  .vhead{padding:14px 20px 6px;font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--accent)}
+  .ing-row{display:flex;align-items:center;gap:12px;padding:11px 20px;border-bottom:1px solid rgba(42,45,53,0.6);cursor:pointer}
+  .ing-row:active{background:var(--surface)}
+  .ing-row.retired{opacity:0.45}
+  .ing-main{flex:1;min-width:0}
+  .ing-name{font-size:0.9rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ing-alias{color:var(--dim);font-weight:400;font-size:0.8rem}
+  .ing-pack{font-size:0.74rem;color:var(--muted);margin-top:2px}
+  .ing-pack.unset{color:var(--yellow)}
+  .ing-cost{flex:0 0 auto;text-align:right;font-variant-numeric:tabular-nums}
+  .uc{font-size:1rem;font-weight:700;color:var(--green)}
+  .uc-unit{font-size:0.66rem;color:var(--muted);margin-top:1px}
+  .uc.none{color:var(--dim);font-size:0.82rem;font-weight:600}
+
+  .empty{padding:50px 24px;color:var(--muted);font-style:italic;text-align:center;line-height:1.5}
+  .loading{display:flex;flex-direction:column;align-items:center;padding:80px 20px;color:var(--muted)}
+  .spinner{width:30px;height:30px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;margin-bottom:14px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  .toast{position:fixed;bottom:30px;left:50%;transform:translateX(-50%);background:var(--green);color:#fff;padding:8px 22px;border-radius:10px;font-size:0.82rem;font-weight:600;opacity:0;transition:opacity 0.3s;pointer-events:none;z-index:400;box-shadow:0 4px 20px rgba(0,0,0,0.4)}
+  .toast.show{opacity:1}
+  .toast.err{background:var(--red)}
+
+  /* MODAL */
+  .modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:600;align-items:center;justify-content:center;padding:16px}
+  .modal-bg.show{display:flex}
+  .modal{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:22px;width:100%;max-width:440px;max-height:88vh;overflow-y:auto}
+  .modal h3{font-size:1.05rem;margin-bottom:4px}
+  .modal .msub{font-size:0.76rem;color:var(--muted);margin-bottom:14px}
+  .nb-label{font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin:14px 0 7px}
+  .modal input,.modal select{width:100%;padding:11px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:0.9rem;outline:none}
+  .modal input:focus,.modal select:focus{border-color:var(--accent)}
+  .field-row{display:flex;gap:10px}
+  .field-row>div{flex:1}
+  .hint{font-size:0.7rem;color:var(--dim);margin-top:5px}
+  .uc-preview{margin-top:14px;padding:11px 14px;background:var(--green-dim);border:1px solid var(--green);border-radius:9px;font-size:0.86rem;font-weight:600;color:var(--green);text-align:center}
+  .uc-preview.none{background:var(--surface2);border-color:var(--border);color:var(--muted)}
+  .modal-btns{display:flex;gap:10px;margin-top:18px}
+  .modal-btn{flex:1;padding:12px;border:none;border-radius:9px;font-family:'DM Sans',sans-serif;font-size:0.9rem;font-weight:600;cursor:pointer;min-height:46px}
+  .modal-btn.cancel{background:var(--border);color:var(--text)}
+  .modal-btn.save{background:var(--accent);color:#fff}
+  .row-actions{display:flex;gap:10px;margin-top:12px;align-items:center}
+  .link-btn{background:transparent;border:1px solid var(--border);border-radius:8px;font-family:'DM Sans',sans-serif;font-size:0.76rem;font-weight:600;padding:9px 11px;cursor:pointer;min-height:40px}
+  .link-btn.hist{color:var(--blue)}
+  .link-btn.retire{color:var(--red);margin-left:auto}
+  .link-btn.retire.restore{color:var(--green)}
+
+  /* HISTORY */
+  .hist-row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);font-size:0.84rem}
+  .hist-row .hdate{color:var(--muted);font-size:0.76rem}
+  .hist-row .hprice{font-weight:600;font-variant-numeric:tabular-nums}
+  .hist-row .hsrc{font-size:0.64rem;color:var(--dim);text-transform:uppercase;letter-spacing:0.5px;margin-left:8px}
+  .hist-empty{padding:18px 0;color:var(--muted);font-style:italic;text-align:center;font-size:0.84rem}
+
+  /* PIN GATE */
+  .gate{position:fixed;inset:0;z-index:1000;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:30px;text-align:center}
+  .gate.hide{display:none}
+  .gate h2{font-family:'Playfair Display',serif;font-size:1.5rem;margin-bottom:6px}
+  .gate p{color:var(--muted);font-size:0.85rem;margin-bottom:22px}
+  .gate .pin-input{width:180px;text-align:center;letter-spacing:0.5em;font-size:1.5rem;font-weight:700;background:var(--surface);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:12px;outline:none;font-family:'DM Sans',sans-serif}
+  .gate .pin-input:focus{border-color:var(--accent)}
+  .gate-err{display:none;color:var(--red);font-size:0.83rem;font-weight:600;margin-top:14px}
+  .gate-err.show{display:block}
+  .gate-btns{display:flex;gap:10px;margin-top:20px}
+  .gate-btn{padding:11px 20px;border:none;border-radius:9px;font-family:'DM Sans',sans-serif;font-size:0.9rem;font-weight:600;cursor:pointer;min-height:48px}
+  .gate-btn.go{background:var(--accent);color:#fff}
+  .gate-btn.back{background:var(--border);color:var(--text);text-decoration:none;display:inline-flex;align-items:center;justify-content:center}
+</style>
+</head>
+<body>
+
+<!-- PIN gate — shown until unlocked; hides costs -->
+<div class="gate" id="gate">
+  <h2>Ingredient Costs</h2>
+  <p>Manager PIN required — this page shows what you pay.</p>
+  <input class="pin-input" type="tel" inputmode="numeric" pattern="[0-9]*" maxlength="4" id="gateInput" autocomplete="off">
+  <div class="gate-err" id="gateErr">Incorrect PIN</div>
+  <div class="gate-btns">
+    <a class="gate-btn back" href="index.html">← Home</a>
+    <button class="gate-btn go" onclick="submitGate()">Unlock</button>
+  </div>
+</div>
+
+<div class="header">
+  <div class="header-row">
+    <a class="home-link" href="index.html">← Home</a>
+    <h1>Ingredient <span>Costs</span></h1>
+    <div class="lock-tag">🔒 Manager</div>
+  </div>
+  <div class="toolbar">
+    <input class="search" id="search" type="text" placeholder="Search items…" autocomplete="off" oninput="render()">
+    <button class="add-btn" onclick="openAdd()">＋ Add</button>
+  </div>
+  <div class="subrow">
+    <div class="count-tag" id="countTag">—</div>
+    <button class="toggle" id="retiredToggle" onclick="toggleRetired()">Show retired</button>
+  </div>
+</div>
+
+<div class="intro">Set the pack size &amp; price you pay for each item — the per-unit cost feeds recipe costing. Prices update as invoices come in.</div>
+
+<div id="listBody"><div class="loading"><div class="spinner"></div><p>Loading…</p></div></div>
+
+<!-- Add / Edit modal -->
+<div class="modal-bg" id="editModal">
+  <div class="modal">
+    <h3 id="editTitle">Add costed item</h3>
+    <div class="msub" id="editSub">Price what you buy.</div>
+
+    <div id="pickWrap">
+      <div class="nb-label">Order-guide item</div>
+      <select id="orderPick" onchange="onPick()"></select>
+      <div class="hint">Pick an item from your order guide, or choose “Custom” for something you don’t order-guide.</div>
+    </div>
+
+    <div class="nb-label">Item name</div>
+    <input type="text" id="fName" placeholder="e.g. Chicken Breast" autocomplete="off">
+
+    <div class="nb-label">Invoice name <span style="color:var(--dim);text-transform:none;letter-spacing:0">(optional — how it reads on the invoice)</span></div>
+    <input type="text" id="fAlias" placeholder="e.g. CHKN BRST BNLS 40#" autocomplete="off">
+
+    <div class="field-row">
+      <div>
+        <div class="nb-label">Pack qty</div>
+        <input type="text" id="fQty" inputmode="decimal" placeholder="40" autocomplete="off" oninput="ucPreview()">
+      </div>
+      <div>
+        <div class="nb-label">Unit</div>
+        <input type="text" id="fUnit" list="unitList" placeholder="lb" autocomplete="off" oninput="ucPreview()">
+        <datalist id="unitList">
+          <option value="lb"><option value="oz"><option value="each"><option value="case"><option value="dozen"><option value="bunch"><option value="gal"><option value="qt"><option value="pt"><option value="cup"><option value="fl oz"><option value="g"><option value="kg"><option value="ml"><option value="L"><option value="bag"><option value="box"><option value="can"><option value="bottle">
+        </datalist>
+      </div>
+      <div>
+        <div class="nb-label">Pack price</div>
+        <input type="text" id="fPrice" inputmode="decimal" placeholder="120.00" autocomplete="off" oninput="ucPreview()">
+      </div>
+    </div>
+    <div class="uc-preview none" id="ucPreview">Enter pack qty &amp; price to see unit cost</div>
+
+    <div class="row-actions" id="editActions" style="display:none">
+      <button class="link-btn hist" onclick="openHist()">📈 Price history</button>
+      <button class="link-btn retire" id="retireBtn" onclick="toggleActive()">Retire</button>
+    </div>
+
+    <div class="modal-btns">
+      <button class="modal-btn cancel" onclick="closeEdit()">Cancel</button>
+      <button class="modal-btn save" id="saveBtn" onclick="saveItem()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Price history modal -->
+<div class="modal-bg" id="histModal">
+  <div class="modal">
+    <h3>Price history</h3>
+    <div class="msub" id="histName"></div>
+    <div id="histBody"></div>
+    <div class="modal-btns"><button class="modal-btn cancel" onclick="closeHist()">Done</button></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+var SB='https://sxppuyarecqkgkrsrefc.supabase.co',SK='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN4cHB1eWFyZWNxa2drcnNyZWZjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczOTA4MzAsImV4cCI6MjA5Mjk2NjgzMH0.GM8OfcR68_JjdPeQ3k7j6L3ulJFaeS1xnSLBcdtYXtU';
+var MANAGER_PIN='4316';
+var LOCATION='Tempest';
+
+var items=[];                 // ingredient_costs rows
+var orderItems=[];            // active order_items (for the Add picker)
+var orderById={};             // id -> order_items row
+var showRetired=false;
+var editId=null;              // ingredient_costs id being edited, or null for add
+var st=null;
+
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+function api(m,t,q,d,cb){var x=new XMLHttpRequest();x.open(m,SB+'/rest/v1/'+t+(q?'?'+q:''));x.setRequestHeader('apikey',SK);x.setRequestHeader('Authorization','Bearer '+SK);if(d){x.setRequestHeader('Content-Type','application/json');x.setRequestHeader('Prefer','return=representation');}x.onload=function(){var r=null;try{r=JSON.parse(x.responseText);}catch(e){}if(cb)cb(r,x.status);};x.onerror=function(){if(cb)cb(null);};x.send(d?JSON.stringify(d):null);}
+function num(v){var n=parseFloat(String(v==null?'':v).replace(/[^0-9.\-]/g,''));return isNaN(n)?0:n;}
+function money(n){var v=Number(n)||0;return '$'+v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function ucFmt(n){var v=Number(n)||0;return '$'+v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:(v<1?3:2)});}
+
+/* Per-unit cost of a costed item, or null if pack not set. */
+function unitCost(it){var q=num(it.pack_qty),p=num(it.pack_price);return (q>0&&p>0)?p/q:null;}
+/* Display name: prefer the linked order-guide item's live name, else the stored name. */
+function nameOf(it){var o=it.order_item_id!=null?orderById[it.order_item_id]:null;return o?o.name:(it.name||'(unnamed)');}
+function vendorOf(it){var o=it.order_item_id!=null?orderById[it.order_item_id]:null;return o&&o.vendor?o.vendor:'Off-guide items';}
+
+/* ---- PIN gate ---- */
+function revealApp(){document.getElementById('gate').classList.add('hide');init();}
+function submitGate(){
+  var v=(document.getElementById('gateInput').value||'').trim();
+  if(v===MANAGER_PIN){try{sessionStorage.setItem('boxkitchen_mgr','1');}catch(e){}revealApp();}
+  else{document.getElementById('gateErr').classList.add('show');var inp=document.getElementById('gateInput');inp.value='';inp.focus();}
+}
+document.getElementById('gateInput').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();submitGate();}});
+function boot(){
+  var already=false;try{already=sessionStorage.getItem('boxkitchen_mgr')==='1';}catch(e){}
+  if(already){revealApp();}
+  else{document.getElementById('gate').classList.remove('hide');setTimeout(function(){document.getElementById('gateInput').focus();},120);}
+}
+
+/* ---- Load ---- */
+function init(){
+  api('GET','order_items','location=eq.'+encodeURIComponent(LOCATION)+'&active=eq.true&order=vendor.asc,sort_order.asc',null,function(r){
+    orderItems=Array.isArray(r)?r:[];orderById={};
+    for(var i=0;i<orderItems.length;i++)orderById[orderItems[i].id]=orderItems[i];
+    api('GET','ingredient_costs','location=eq.'+encodeURIComponent(LOCATION)+'&order=name.asc',null,function(r2){
+      items=Array.isArray(r2)?r2:[];render();
+    });
+  });
+}
+
+/* ---- Render list (grouped by vendor) ---- */
+function toggleRetired(){showRetired=!showRetired;document.getElementById('retiredToggle').textContent=showRetired?'Hide retired':'Show retired';render();}
+function render(){
+  var q=(document.getElementById('search').value||'').trim().toLowerCase();
+  var vis=items.filter(function(it){
+    if(!showRetired&&!it.active)return false;
+    if(q){var hay=(nameOf(it)+' '+(it.invoice_alias||'')+' '+vendorOf(it)).toLowerCase();if(hay.indexOf(q)<0)return false;}
+    return true;
+  });
+  var activeCount=items.filter(function(it){return it.active;}).length;
+  var priced=items.filter(function(it){return it.active&&unitCost(it)!=null;}).length;
+  document.getElementById('countTag').innerHTML='<b>'+activeCount+'</b> item'+(activeCount===1?'':'s')+' · <b>'+priced+'</b> priced';
+
+  var body=document.getElementById('listBody');
+  if(!items.length){body.innerHTML='<div class="empty">No costed items yet.<br>Tap <b>＋ Add</b> to price your first item.</div>';return;}
+  if(!vis.length){body.innerHTML='<div class="empty">No items match.</div>';return;}
+
+  // group by vendor, vendor order following the order guide, off-guide last
+  var groups={},order=[];
+  for(var i=0;i<vis.length;i++){var v=vendorOf(vis[i]);if(!groups[v]){groups[v]=[];order.push(v);}groups[v].push(vis[i]);}
+  order.sort(function(a,b){if(a==='Off-guide items')return 1;if(b==='Off-guide items')return -1;return a.localeCompare(b);});
+
+  var h='';
+  for(var g=0;g<order.length;g++){
+    var vn=order[g],rows=groups[vn];
+    rows.sort(function(a,b){return nameOf(a).toLowerCase().localeCompare(nameOf(b).toLowerCase());});
+    h+='<div class="vhead">'+esc(vn)+'</div>';
+    for(var j=0;j<rows.length;j++){
+      var it=rows[j],uc=unitCost(it),alias=it.invoice_alias?' <span class="ing-alias">· '+esc(it.invoice_alias)+'</span>':'';
+      var packTxt,packCls='';
+      if(uc!=null){packTxt=num(it.pack_qty)+' '+esc(it.pack_unit||'')+' · '+money(it.pack_price)+'/pack';}
+      else{packTxt='Tap to set price';packCls=' unset';}
+      var costCell=(uc!=null)?('<div class="uc">'+ucFmt(uc)+'</div><div class="uc-unit">/'+esc(it.pack_unit||'unit')+'</div>'):'<div class="uc none">— set —</div>';
+      h+='<div class="ing-row'+(it.active?'':' retired')+'" onclick="openEdit('+it.id+')">'+
+           '<div class="ing-main"><div class="ing-name">'+esc(nameOf(it))+alias+(it.active?'':' <span class="ing-alias">(retired)</span>')+'</div>'+
+           '<div class="ing-pack'+packCls+'">'+packTxt+'</div></div>'+
+           '<div class="ing-cost">'+costCell+'</div>'+
+         '</div>';
+    }
+  }
+  body.innerHTML=h;
+}
+
+/* ---- Add / Edit modal ---- */
+function findItem(id){for(var i=0;i<items.length;i++)if(items[i].id===id)return items[i];return null;}
+function costedOrderIds(){var s={};for(var i=0;i<items.length;i++)if(items[i].order_item_id!=null)s[items[i].order_item_id]=true;return s;}
+
+function openAdd(){
+  editId=null;
+  document.getElementById('editTitle').textContent='Add costed item';
+  document.getElementById('editSub').textContent='Price what you buy.';
+  document.getElementById('pickWrap').style.display='';
+  // build picker: unpriced order-guide items + custom
+  var used=costedOrderIds(),opts='<option value="custom">✎ Custom (not on order guide)</option>';
+  var curV='';
+  for(var i=0;i<orderItems.length;i++){var o=orderItems[i];if(used[o.id])continue;if(o.vendor!==curV){curV=o.vendor;}opts+='<option value="'+o.id+'">'+esc(o.vendor)+' » '+esc(o.name)+'</option>';}
+  document.getElementById('orderPick').innerHTML=opts;
+  document.getElementById('orderPick').value='custom';
+  document.getElementById('fName').value='';document.getElementById('fName').disabled=false;
+  document.getElementById('fAlias').value='';
+  document.getElementById('fQty').value='';document.getElementById('fUnit').value='';document.getElementById('fPrice').value='';
+  document.getElementById('editActions').style.display='none';
+  ucPreview();
+  document.getElementById('editModal').classList.add('show');
+  setTimeout(function(){document.getElementById('fName').focus();},120);
+}
+function onPick(){
+  var v=document.getElementById('orderPick').value;
+  if(v==='custom'){document.getElementById('fName').value='';document.getElementById('fName').disabled=false;document.getElementById('fName').focus();return;}
+  var o=orderById[parseInt(v,10)];
+  if(o){document.getElementById('fName').value=o.name;document.getElementById('fName').disabled=true;
+    if(!document.getElementById('fUnit').value&&o.unit)document.getElementById('fUnit').value=o.unit;}
+}
+function openEdit(id){
+  var it=findItem(id);if(!it)return;
+  editId=id;
+  document.getElementById('editTitle').textContent='Edit item';
+  document.getElementById('editSub').textContent=it.active?'Update pack size or price.':'This item is retired.';
+  document.getElementById('pickWrap').style.display='none';
+  document.getElementById('fName').value=nameOf(it);document.getElementById('fName').disabled=(it.order_item_id!=null);
+  document.getElementById('fAlias').value=it.invoice_alias||'';
+  document.getElementById('fQty').value=(it.pack_qty==null?'':it.pack_qty);
+  document.getElementById('fUnit').value=it.pack_unit||'';
+  document.getElementById('fPrice').value=(it.pack_price==null?'':it.pack_price);
+  document.getElementById('editActions').style.display='';
+  var rb=document.getElementById('retireBtn');
+  rb.textContent=it.active?'Retire':'Restore';rb.className='link-btn retire'+(it.active?'':' restore');
+  ucPreview();
+  document.getElementById('editModal').classList.add('show');
+}
+function closeEdit(){document.getElementById('editModal').classList.remove('show');}
+function ucPreview(){
+  var q=num(document.getElementById('fQty').value),p=num(document.getElementById('fPrice').value),u=document.getElementById('fUnit').value.trim()||'unit';
+  var el=document.getElementById('ucPreview');
+  if(q>0&&p>0){el.className='uc-preview';el.textContent='Unit cost: '+ucFmt(p/q)+' / '+u;}
+  else{el.className='uc-preview none';el.textContent='Enter pack qty & price to see unit cost';}
+}
+
+function saveItem(){
+  var name=document.getElementById('fName').value.trim();
+  if(!name){showToast('Name is required',true);document.getElementById('fName').focus();return;}
+  var qtyRaw=document.getElementById('fQty').value.trim(),priceRaw=document.getElementById('fPrice').value.trim();
+  var alias=document.getElementById('fAlias').value.trim()||null;
+  var unit=document.getElementById('fUnit').value.trim()||null;
+  var packQty=qtyRaw!==''?num(qtyRaw):null,packPrice=priceRaw!==''?num(priceRaw):null;
+  var btn=document.getElementById('saveBtn');btn.disabled=true;
+  var nowIso=new Date().toISOString();
+
+  if(editId==null){
+    // ADD
+    var pick=document.getElementById('orderPick').value;
+    var orderItemId=(pick!=='custom')?parseInt(pick,10):null;
+    // guard against a duplicate on the same order-guide item
+    if(orderItemId!=null){var used=costedOrderIds();if(used[orderItemId]){btn.disabled=false;showToast('That order-guide item is already costed',true);return;}}
+    var payload={location:LOCATION,order_item_id:orderItemId,name:name,invoice_alias:alias,pack_qty:packQty,pack_unit:unit,pack_price:packPrice,active:true,updated_at:nowIso};
+    api('POST','ingredient_costs',null,payload,function(r,status){
+      btn.disabled=false;
+      if(r&&r.length){var row=r[0];items.push(row);if(packPrice!=null)logPrice(row.id,packPrice,packQty,unit,null);closeEdit();render();showToast('Item added',false);}
+      else{showToast('Add failed — try again',true);}
+    });
+  }else{
+    // EDIT
+    var it=findItem(editId);if(!it){btn.disabled=false;return;}
+    var priceChanged=(num(it.pack_price)!==num(packPrice))||(num(it.pack_qty)!==num(packQty));
+    var patch={name:(it.order_item_id!=null?it.name:name),invoice_alias:alias,pack_qty:packQty,pack_unit:unit,pack_price:packPrice,updated_at:nowIso};
+    api('PATCH','ingredient_costs','id=eq.'+editId,patch,function(r){
+      btn.disabled=false;
+      if(r&&r.length){var row=r[0];for(var i=0;i<items.length;i++)if(items[i].id===editId)items[i]=row;
+        if(priceChanged&&packPrice!=null)logPrice(editId,packPrice,packQty,unit,null);
+        closeEdit();render();showToast('Saved',false);}
+      else{showToast('Save failed — try again',true);}
+    });
+  }
+}
+/* Append a price-history row (fire-and-forget; the master already holds current price). */
+function logPrice(icId,price,qty,unit,invoiceRef){
+  api('POST','ingredient_price_history',null,{ingredient_cost_id:icId,pack_price:price,pack_qty:qty,pack_unit:unit,source:'manual',invoice_ref:invoiceRef},null);
+}
+function toggleActive(){
+  var it=findItem(editId);if(!it)return;
+  var toActive=!it.active;
+  if(!toActive&&!confirm('Retire this item? It keeps its price history but drops off the active list.'))return;
+  api('PATCH','ingredient_costs','id=eq.'+editId,{active:toActive,updated_at:new Date().toISOString()},function(r){
+    if(r&&r.length){it.active=toActive;closeEdit();render();showToast(toActive?'Restored':'Retired',false);}
+    else showToast('Update failed — try again',true);
+  });
+}
+
+/* ---- Price history ---- */
+function openHist(){
+  var it=findItem(editId);if(!it)return;
+  document.getElementById('histName').textContent=nameOf(it);
+  document.getElementById('histBody').innerHTML='<div class="hist-empty">Loading…</div>';
+  document.getElementById('histModal').classList.add('show');
+  api('GET','ingredient_price_history','ingredient_cost_id=eq.'+it.id+'&order=effective_date.desc,id.desc',null,function(r){
+    var rows=Array.isArray(r)?r:[];
+    if(!rows.length){document.getElementById('histBody').innerHTML='<div class="hist-empty">No price changes logged yet.</div>';return;}
+    var h='';
+    for(var i=0;i<rows.length;i++){
+      var x=rows[i],uc=(num(x.pack_qty)>0&&num(x.pack_price)>0)?ucFmt(num(x.pack_price)/num(x.pack_qty))+' / '+esc(x.pack_unit||'unit'):'';
+      h+='<div class="hist-row"><div><span class="hprice">'+money(x.pack_price)+'</span>'+(x.pack_qty?' <span class="hdate">('+num(x.pack_qty)+' '+esc(x.pack_unit||'')+' → '+uc+')</span>':'')+'<span class="hsrc">'+esc(x.source||'')+'</span></div><div class="hdate">'+esc(x.effective_date||'')+'</div></div>';
+    }
+    document.getElementById('histBody').innerHTML=h;
+  });
+}
+function closeHist(){document.getElementById('histModal').classList.remove('show');}
+
+function showToast(msg,isErr){var t=document.getElementById('toast');t.textContent=(isErr?'⚠ ':'✓ ')+msg;t.classList.toggle('err',!!isErr);t.classList.add('show');clearTimeout(st);st=setTimeout(function(){t.classList.remove('show');},1600);}
+document.getElementById('editModal').addEventListener('click',function(e){if(e.target===this)closeEdit();});
+document.getElementById('histModal').addEventListener('click',function(e){if(e.target===this)closeHist();});
+
+boot();
+</script>
+</body>
+</html>
