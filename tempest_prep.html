@@ -816,9 +816,20 @@ function saveStaff(){
 function removeStaff(id){
   if(!confirm('Remove this staff member from this shift?'))return;
   api('PATCH','staff','id=eq.'+id,{active:false},function(r){
+    // Verify the write landed before claiming success. A blocked PATCH returns
+    // no error and updates 0 rows — the shape of the old notes-delete bug.
+    if(!r||!r.length){toastErr("Couldn't remove — reload to check");return;}
     staff=staff.filter(function(x){return x.id!==id;});toast();render();
   });
 }
+
+// Cheap half-fix for two managers on two tablets: prep and line render the same
+// staff bar off the same table, so a stale tab can overwrite the other's reorder.
+// Re-read staff when the tab regains focus. Silent — no toast for a background
+// refresh, and refetchStaff() leaves staff[] intact if the GET fails.
+document.addEventListener('visibilitychange',function(){
+  if(!document.hidden)refetchStaff();
+});
 
 function toast(){var t=document.getElementById('toast');t.textContent='✓ Saved';t.classList.remove('err');t.classList.add('show');clearTimeout(st);st=setTimeout(function(){t.classList.remove('show');},1200);}
 function toastErr(msg){var t=document.getElementById('toast');t.textContent='⚠ '+msg;t.classList.add('err','show');clearTimeout(st);st=setTimeout(function(){t.classList.remove('show');},2200);}

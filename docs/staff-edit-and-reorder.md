@@ -350,6 +350,42 @@ Recorded as the owner's verdict on the gesture. The detailed §5 checklist items
 individually re-reported here.
 
 
+## 7f. Slice 7 — optional smalls (2026-08-19)
+
+Closes **N5**; half-closes **R2**.
+
+**`removeStaff()` now verifies its write (N5).** It used to toast success inside the PATCH
+callback without checking the response — the exact pattern the new reorder code three
+functions away was careful to avoid, and the shape of the old notes-delete bug. It now
+requires a returned row before dropping the chip, and otherwise leaves the person on screen
+and says "Couldn't remove — reload to check."
+
+**Staff list re-reads on tab focus (R2, common case).** prep and line render the same staff
+bar off the same table, so a manager returning to a stale tab could renumber from a stale
+`staff[]` and silently overwrite the other tablet's reorder. A `visibilitychange` listener now
+calls `refetchStaff()` when the tab becomes visible. Deliberately silent — no toast for a
+background refresh — and `refetchStaff()` already leaves `staff[]` intact if the GET fails.
+
+This is a *half* fix and is not a substitute for optimistic locking: it closes the window
+where a tab sat idle, not two managers dragging within the same minute. Full R2 remains
+unscheduled (§8).
+
+### Local test results (prep and line, real browser)
+- **Blocked write** (PATCH returns 0 rows): error toast, and the person stays on screen —
+  no false success. Verified on both pages.
+- **Successful write**: normal toast, chip removed, count 24 → 23.
+- **Focus refetch**: with `staff[]` deliberately stale at 23, firing `visibilitychange` while
+  visible restored it to 24 from the server, silently, with no toast.
+  (Note: automation tabs report `document.hidden === true`, so the listener correctly skipped
+  until `hidden` was forced false — worth knowing if this is ever retested.)
+- No console errors on either page.
+
+**Incidental confirmation that Slice 4 was real.** The live AM order is now
+`Rubi 10, Isaac 20, Jose V. 30, Chepe 40, Ismael 50, Everyone 60, Isaac & Jose 70,
+Rubi Jose & Isaac 80, Ismael & Chepe 90` — a clean 10..90 renumber, neither alphabetical nor
+the original backfill (which had gaps at 20, 100). That is `persistStaffOrder()`'s own
+renumbering, written by the owner's finger on the tablet. The drag persists for real.
+
 ## 8. Risks — what is still open
 
 Rewritten 2026-08-19 to list only live risks. Closed items are recorded where they were
@@ -704,7 +740,7 @@ in the doc.
 
 ---
 
-### Slice 7 — Optional smalls — open, skippable
+### Slice 7 — Optional smalls ✅ DONE (§7f)
 **Delivers:** two loose ends, only worth doing if you're already in these files.
 **Closes:** N5 — `removeStaff()` (`tempest_prep.html:790`) toasts success without checking
 the write landed, three functions away from the new code that was careful to check.
