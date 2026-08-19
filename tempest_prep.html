@@ -58,10 +58,15 @@
   .staff-bar{display:none;padding:10px 20px;border-bottom:1px solid var(--border);background:var(--surface)}
   .manager-mode .staff-bar{display:block}
   .staff-bar-title{font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:8px}
+  .staff-row{display:flex;flex-wrap:wrap;gap:6px;align-items:flex-start}
   .staff-chips{display:flex;flex-wrap:wrap;gap:6px}
-  .staff-chip{display:flex;align-items:center;gap:4px;padding:4px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;font-size:0.78rem;color:var(--text)}
-  .staff-bar .staff-chip{cursor:grab;touch-action:none}
-  .staff-bar .staff-chip:active{cursor:grabbing}
+  .staff-chip{display:flex;align-items:center;gap:4px;padding:4px 6px 4px 4px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;font-size:0.78rem;color:var(--text)}
+  /* touch-action:none lives on the grip ONLY — putting it on the chip made the
+     whole staff bar a scroll dead zone. Same discipline as .drag-handle below. */
+  .staff-grip{display:none;align-items:center;justify-content:center;width:20px;align-self:stretch;min-height:20px;color:var(--muted);cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none;flex:none}
+  .manager-mode .staff-grip{display:flex}
+  .staff-grip:active{cursor:grabbing;color:var(--accent)}
+  .staff-grip svg{display:block;pointer-events:none}
   .staff-chip.sortable-ghost{opacity:.4}
   .staff-chip.sortable-chosen{border-color:var(--accent)}
   .staff-chip .remove{color:var(--red);cursor:pointer;font-weight:700;margin-left:2px}
@@ -418,11 +423,13 @@ function render(){
 
   var cls=mgr?'manager-mode':'';
   // Staff bar
-  var sb='<div class="staff-bar"><div class="staff-bar-title">'+shift+' Staff</div><div class="staff-chips">';
+  var sb='<div class="staff-bar"><div class="staff-bar-title">'+shift+' Staff</div><div class="staff-row"><div class="staff-chips">';
   var shiftStaff=getStaffForShift();
   for(var i=0;i<shiftStaff.length;i++){
-    sb+='<div class="staff-chip" data-sid="'+shiftStaff[i].id+'">'+esc(shiftStaff[i].name)+'<span class="remove" onclick="removeStaff('+shiftStaff[i].id+')">✕</span></div>';
+    sb+='<div class="staff-chip" data-sid="'+shiftStaff[i].id+'"><span class="staff-grip" aria-label="Drag to reorder"><svg width="8" height="14" viewBox="0 0 10 16" fill="currentColor"><circle cx="2" cy="2" r="1.4"/><circle cx="8" cy="2" r="1.4"/><circle cx="2" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="2" cy="14" r="1.4"/><circle cx="8" cy="14" r="1.4"/></svg></span>'+esc(shiftStaff[i].name)+'<span class="remove" onclick="removeStaff('+shiftStaff[i].id+')">✕</span></div>';
   }
+  sb+='</div>';
+  // + Add sits OUTSIDE .staff-chips so Sortable can't strand it mid-row.
   sb+='<button class="add-staff-btn" onclick="openStaffModal()">+ Add</button>';
   sb+='</div></div>';
 
@@ -594,12 +601,12 @@ function initSortables(){
   var chipList=document.querySelector('.staff-bar .staff-chips');
   if(chipList){
     sortables.push(Sortable.create(chipList,{
+      handle:'.staff-grip',       // drag starts on the grip only, so chips still scroll
       draggable:'.staff-chip',
       filter:'.remove',           // tapping the X must stay a click, not a drag
       preventOnFilter:false,
       animation:150,
-      delay:120,                  // guards against accidental drags while scrolling
-      delayOnTouchOnly:true,
+      delay:0,
       ghostClass:'sortable-ghost',
       chosenClass:'sortable-chosen',
       onEnd:function(evt){persistStaffOrder(chipList,evt);}

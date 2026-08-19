@@ -270,6 +270,42 @@ Still untested here: the real finger-drag gesture (Slices 3 and 4). These tests 
 flaw. It is already shipped, belongs to a different feature, and stays out of this build
 (see "Explicitly not scheduled").
 
+## 7d. Slice 3 — the drag grip D2 actually specified (2026-08-19)
+
+Closes **B3**, **N4**.
+
+D2 asked for a drag grip and the first build never made one: the whole chip was draggable and
+carried `touch-action:none`, which turned a nine-chip staff bar into a multi-row scroll dead
+zone at the top of the busiest page. Fixed by following the repo's own proven `.drag-handle`
+pattern rather than inventing a second one:
+
+- Each chip gains a **20px `.staff-grip`** (the same six-dot SVG as `.drag-handle`, at 8×14),
+  shown only in manager mode.
+- **`touch-action:none` moved off the chip and onto the grip only.** The chip now computes to
+  `touch-action:auto`, so a finger that lands on a chip scrolls the page.
+- Sortable gets `handle:'.staff-grip'`, and `delay:120 / delayOnTouchOnly:true` is replaced by
+  `delay:0` — matching the item lists. The delay existed to guard against accidental drags, a
+  job the handle now does properly. (The guard was never going to work anyway: it relies on
+  letting the browser scroll instead, which the old `touch-action:none` forbade outright.)
+- **`+ Add` moved out of `.staff-chips`** into a new `.staff-row` wrapper, so Sortable can no
+  longer shuffle a chip past it and strand it mid-row (N4).
+
+### Local test results (prep and line, real browser)
+- `touch-action`: chip = `auto`, grip = `none`. This is the whole point of the slice and it is
+  measured, not assumed.
+- 9 chips, 9 grips, grip box 20×20. Sortable config reads
+  `handle:'.staff-grip'`, `draggable:'.staff-chip'`, `filter:'.remove'`, `delay:0`.
+- ✕ still fires `removeStaff` on a plain click (dispatched a real click event; correct id).
+- Non-manager mode: grips `display:none`, staff bar `display:none`.
+- Reorder logic still parses chips correctly through the new markup — a front-of-list move
+  issued the same minimal **3** PATCHes and left the PM shift untouched. All writes stubbed;
+  live DB not modified.
+- No console errors on either page.
+
+**Still not the real gesture.** Sortable's drag cannot be synthesised in the harness, so what
+is proven here is the configuration and the scroll fix, not that a finger can perform the
+drag. That is Slice 4, and it needs a person on the tablet.
+
 ## 8. Risks
 
 1. **RLS.** No UPDATE policy on `staff` = silent no-op. Check before building.
@@ -626,3 +662,24 @@ is already open. Newest slice last.
   read better split. Not worth rewriting history; just split them next time.
 - **m0.4** The Status line (line 3) carries no branch/PR pointer now that one exists. Add
   "PR #93" alongside the W1 caveat fix.
+
+### From Slice 1 review (2026-08-19) — verdict: PASS
+- **m1.1** The whitelist check in §4 Step 3 says "expect **eight** lines." That was true at
+  `9c80fa5` and is no longer — see M2.1 below. Fix the number, not the queries.
+
+### From Slice 2 review (2026-08-19) — verdict: PASS, one major
+- **M2.1** *(major, not a minor — listed here so it isn't lost)* `refetchStaff()` adds a
+  tenth staff query (one in prep, one in line), so §4 Step 3's "expect eight lines" whitelist
+  check now reports ten and appears to fail on every run. All ten strings are correct, so
+  nothing is broken in the product — but the guard that exists to catch B1-shaped bugs now
+  cries wolf, and a check that always fails is a check that gets ignored. Update the expected
+  count to **ten** in §4 and §7b. Deferred to Slice 5 by decision.
+- **m2.2** §7c describes `refetchStaff()` as a re-render path and doesn't note that it also
+  introduced a new copy of the canonical query string — which is what causes M2.1.
+- **m2.3** Offline, the screen still shows the unsaved order until the user reloads: the
+  PATCH fails, the refetch fails too, and `staff[]` is deliberately left intact. That is the
+  right call and the toast says "reload the page," but §7c reads as though screen and DB
+  always agree after a failure. They agree after a *reload*.
+- **m2.4** The canonical query string is now hand-copied in ten places. A per-file
+  `STAFF_Q` constant would make the whitelist check trivially true. Noted only — there is no
+  shared JS here by design, and this is not the build to change that.
