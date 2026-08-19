@@ -231,6 +231,45 @@ and would empty every staff dropdown on the site at once (R4).
 
 Not deployed.
 
+## 7c. Slice 2 — a failed save now tells the truth (2026-08-19)
+
+Closes **B4**, **B5**, **N3**.
+
+**Shape: the local snapshot is gone.** `persistStaffOrder()` used to restore `staff[]` from a
+pre-drag snapshot when a PATCH failed. That was wrong in principle — the PATCHes are separate
+requests, so by the time one fails the others may already be committed, and no local snapshot
+can describe a half-written database. On *any* failure the code now calls a new
+`refetchStaff(msg)`, which re-GETs the staff list with the canonical query and re-renders from
+the server. The screen then shows what a reload would show, which is the only claim worth
+making.
+
+One change closes three findings: the partial write stops being invisible (B4), the
+NULL-skipping restore disappears with the snapshot it lived in (N3), and the
+`newGroup.length` mismatch path now refetches and toasts instead of returning silently with a
+moved chip still on screen (B5).
+
+If the refetch GET *itself* fails, `staff[]` is deliberately left alone rather than wiped, and
+the toast escalates to "Could not save staff order — reload the page."
+
+### Local test results (prep, real browser, live-read DB, all writes stubbed)
+1. **Partial failure** — 2 PATCHes succeed, 1 fails: error toast shown **and** the on-screen
+   order returned to the true server order. Both halves of the §10 "done when", not just the
+   toast. Confirmed the minimal PATCH set at the same time: moving the last of nine AM staff
+   to the front issued **3** PATCHes, not 9.
+2. **DOM/state mismatch (B5)** — refetch issued, error toast shown, nothing silent.
+3. **Refetch also fails** — `staff[]` intact (24 rows before and after, not wiped), toast
+   reads "reload the page".
+
+No console errors on prep or line. `tempest_line.html` carries the identical code and loads
+clean. **Live DB verified unchanged after testing** — every PATCH in these tests was stubbed.
+
+Still untested here: the real finger-drag gesture (Slices 3 and 4). These tests drive
+`persistStaffOrder()` directly, as before.
+
+**Not fixed, by decision:** `persistOrder()` for prep *items* has the identical partial-write
+flaw. It is already shipped, belongs to a different feature, and stays out of this build
+(see "Explicitly not scheduled").
+
 ## 8. Risks
 
 1. **RLS.** No UPDATE policy on `staff` = silent no-op. Check before building.

@@ -680,7 +680,6 @@ function persistOrder(listEl,cat,station,evt){
 // rows carried NULL or tied values.
 function persistStaffOrder(listEl,evt){
   if(evt.oldIndex===evt.newIndex)return;
-  var snap={};for(var i=0;i<staff.length;i++)snap[staff[i].id]=staff[i].sort_order;
   var chips=listEl.querySelectorAll('.staff-chip'),byId={};
   for(var i=0;i<staff.length;i++)byId[staff[i].id]=staff[i];
   var newGroup=[];
@@ -688,7 +687,12 @@ function persistStaffOrder(listEl,evt){
     var row=byId[parseInt(chips[i].getAttribute('data-sid'),10)];
     if(row)newGroup.push(row);
   }
-  if(newGroup.length!==getStaffForShift().length)return; // DOM/state disagree — do nothing
+  // DOM and state disagree. Sortable has already moved the chip, so returning
+  // quietly would leave a reorder on screen that was never saved. Fail loudly.
+  if(newGroup.length!==getStaffForShift().length){
+    refetchStaff('Could not save staff order');
+    return;
+  }
   var changed=[];
   for(var i=0;i<newGroup.length;i++){
     var nv=(i+1)*10;
@@ -702,12 +706,27 @@ function persistStaffOrder(listEl,evt){
     api('PATCH','staff','id=eq.'+row.id,{sort_order:row.sort_order},function(r){
       if(!r||!r.length)failed=true;   // verify the write landed, don't assume
       if(--pending===0){
-        if(failed){
-          for(var j=0;j<staff.length;j++)if(snap[staff[j].id]!=null)staff[j].sort_order=snap[staff[j].id];
-          sortStaff();render();toastErr('Could not save staff order');
-        }else{toast();}
+        // Any failure means some PATCHes may already be committed, so the local
+        // snapshot is not the truth any more. Re-read the server instead of
+        // guessing — the screen then matches what a reload would show.
+        if(failed)refetchStaff('Could not save staff order');
+        else toast();
       }
     });
+  });
+}
+
+// Re-read staff from the server and re-render. Used whenever a reorder fails:
+// a partial write leaves the DB in a state no local snapshot can describe.
+function refetchStaff(msg){
+  api('GET','staff','location=eq.Tempest&active=eq.true&order=shift.asc,sort_order.asc.nullslast,name.asc',null,function(r){
+    if(Array.isArray(r)){
+      staff=r;sortStaff();render();
+      if(msg)toastErr(msg);
+    }else{
+      // Couldn't reach the server either. Don't wipe staff[] — say so instead.
+      toastErr('Could not save staff order — reload the page');
+    }
   });
 }
 
