@@ -167,8 +167,15 @@ that gets ignored.
 
 ---
 
-## 6. Deferred: renaming
+## 6. Renaming — DONE by the owner (2026-08-19)
 
+**The owner ran the rename themselves, outside this build.** Post-rename verification: every
+value in `prep_logs.assigned_to`, `meat_counts.counted_by`, `portion_counts.counted_by` and
+`notes.posted_by` matches a row in `staff` — no orphans. `flash_days.entered_by` holds only
+"Isaac", which matches. The one column that did **not** come out clean is
+`orders.submitted_by` — see §6b, which also corrects a wrong premise in this section.
+
+*(Original reasoning, kept as the record of why it was scoped out:)*
 Dropped from this build by decision — there is currently one misspelled name, and it isn't
 worth the surface area.
 
@@ -193,6 +200,37 @@ instead of text (the two hand-typed ones can't have one — see above).
 That's a large migration on a live site. Logged as debt, not scheduled.
 
 ---
+
+## 6b. Correction: `orders.submitted_by` is free text, not a dropdown (2026-08-19)
+
+Found while verifying the rename. **§6's column classification is wrong**, and it matters for
+any future rename.
+
+§6 calls the seven text columns "five dropdown-fed, two hand-typed." In fact
+`orders.submitted_by` is **hand-typed too** — `tempest_orders.html:455` fills a plain text
+`<input>` from the previous value, and line 861 posts whatever is in it. So it is **three**
+free-text columns, not two, and a rename keyed on `WHERE name = '…'` will silently skip it.
+
+The evidence is already in the data. Of 86 orders, **20 (23%) carry a value matching no row in
+`staff`**:
+
+| count | value |
+|---|---|
+| 8 | `Cheffery` |
+| 5 | `Chef` |
+| 2 | `cheffery` |
+| 1 each | `Cc`, `Chepr`, `chef`, `bill`, `chf` |
+
+`Chepr` is almost certainly a mistyped `Chepe`. The `Chef`/`Cheffery`/`chef`/`chf` cluster is
+someone who was never in the `staff` table at all. Nothing is broken — these are historical
+order records and nothing joins them back to `staff` — but:
+
+- **Any future rename must include `orders.submitted_by`**, and must not assume exact match
+  finds everything. Read the distinct values first, as §6 already advises for the other two.
+- If "who submitted this order" is ever meant to be trustworthy, it needs the dropdown
+  treatment the other five columns got. Separate decision, not scheduled.
+
+Not fixed. Logged so the next rename doesn't inherit a wrong premise.
 
 ## 7. What was actually built (2026-08-19)
 
@@ -952,11 +990,9 @@ live-verified (§12). Findings were all record-keeping, not code:
   section someone reads to decide whether to roll back. Rewritten with both merges and a
   file-by-file sha1 comparison against the live URL. §10's Slice 6 heading updated from
   "PARTLY DONE" to DONE.
-- **m6.3** *(partly closed)* Slice 6's done-when included "each device has been reloaded and
-  shows the chosen order" (R6). At least one tablet is confirmed on the new build — the owner's
-  22×30 grip test could only have run against the post-#94 deploy (M6.1). Whether *every*
-  device was reloaded is still unrecorded. Pages serves `max-age=600`, so the rest self-heal
-  within ten minutes; the residual risk is a device left open on the old page.
+- **m6.3** *(closed 2026-08-19)* Slice 6's done-when included "each device has been reloaded
+  and shows the chosen order" (R6). **Owner confirmed the hard reload is done.** Combined with
+  the 22×30 grip test (M6.1), Slice 6's done-when is fully met.
 - **m6.4** *(fixed here)* Three places still said "all seven queries hard-depend on
   `sort_order`." It is ten. §4 and §8 were corrected in Slice 5; the Slice 6 card, R4's
   original text and Slice 1's card were not.
