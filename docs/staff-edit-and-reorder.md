@@ -308,8 +308,9 @@ carried `touch-action:none`, which turned a nine-chip staff bar into a multi-row
 zone at the top of the busiest page. Fixed by following the repo's own proven `.drag-handle`
 pattern rather than inventing a second one:
 
-- Each chip gains a **20px `.staff-grip`** (the same six-dot SVG as `.drag-handle`, at 8×14),
-  shown only in manager mode.
+- Each chip gains a **22×30 `.staff-grip`** (the same six-dot SVG as `.drag-handle`, at 8×14),
+  shown only in manager mode. It shipped at 20×20 and was bumped to match `.drag-handle`'s
+  22×30 — see M3.2. Earlier text in this section said 20px; corrected.
 - **`touch-action:none` moved off the chip and onto the grip only.** The chip now computes to
   `touch-action:auto`, so a finger that lands on a chip scrolls the page.
 - Sortable gets `handle:'.staff-grip'`, and `delay:120 / delayOnTouchOnly:true` is replaced by
@@ -322,7 +323,8 @@ pattern rather than inventing a second one:
 ### Local test results (prep and line, real browser)
 - `touch-action`: chip = `auto`, grip = `none`. This is the whole point of the slice and it is
   measured, not assumed.
-- 9 chips, 9 grips, grip box 20×20. Sortable config reads
+- 9 chips, 9 grips (grip box measured 20×20 at the time of this test, before the M3.2 bump
+  to 22×30). Sortable config reads
   `handle:'.staff-grip'`, `draggable:'.staff-chip'`, `filter:'.remove'`, `delay:0`.
 - ✕ still fires `removeStaff` on a plain click (dispatched a real click event; correct id).
 - Non-manager mode: grips `display:none`, staff bar `display:none`.
@@ -338,6 +340,19 @@ drag. That is Slice 4, and it needs a person on the tablet.
 ## 7e. Slice 4 — tablet verdict: PASS (2026-08-19)
 
 **Owner tested the drag on the real device and confirmed it works.**
+
+**⚠ Which build was under the finger is unresolved (M5.1) — and the likely answer is neither
+grip.** GitHub Pages serves `main`, and `main` at that moment was the squash-merge of PR #93,
+which contains **no grip at all** (verified against the live URL: zero `.staff-grip`
+occurrences, and the chip still carrying `touch-action:none`). So unless the test was run
+against a locally-served build, what passed was the **original whole-chip drag**, not the
+20×20 grip and not the shipped 22×30 one.
+
+That does not invalidate the verdict — it confirms Sortable initialises, that `evt.oldIndex/
+newIndex` mean what the code assumes, that `filter:'.remove'` keeps the ✕ clickable, and that
+the writes persist (see §7f for the live 10..90 renumber left behind by that test). It does
+mean **the grip gesture itself is still unproven by a finger**, which is the one thing Slice 3
+added. Owner to confirm which build was tested and which §5 lines were actually run.
 
 This closes the one question the build had never asked: Sortable's gesture cannot be
 synthesised in the automation harness, so every "tested" claim above §7d covers configuration
