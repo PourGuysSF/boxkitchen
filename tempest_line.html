@@ -58,10 +58,15 @@
   .staff-bar{display:none;padding:10px 20px;border-bottom:1px solid var(--border);background:var(--surface)}
   .manager-mode .staff-bar{display:block}
   .staff-bar-title{font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:8px}
+  .staff-row{display:flex;flex-wrap:wrap;gap:6px;align-items:flex-start}
   .staff-chips{display:flex;flex-wrap:wrap;gap:6px}
-  .staff-chip{display:flex;align-items:center;gap:4px;padding:4px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;font-size:0.78rem;color:var(--text)}
-  .staff-bar .staff-chip{cursor:grab;touch-action:none}
-  .staff-bar .staff-chip:active{cursor:grabbing}
+  .staff-chip{display:flex;align-items:center;gap:4px;padding:4px 6px 4px 4px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;font-size:0.78rem;color:var(--text)}
+  /* touch-action:none lives on the grip ONLY — putting it on the chip made the
+     whole staff bar a scroll dead zone. Same discipline as .drag-handle below. */
+  .staff-grip{display:none;align-items:center;justify-content:center;width:22px;align-self:stretch;min-height:30px;color:var(--muted);cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none;flex:none}
+  .manager-mode .staff-grip{display:flex}
+  .staff-grip:active{cursor:grabbing;color:var(--accent)}
+  .staff-grip svg{display:block;pointer-events:none}
   .staff-chip.sortable-ghost{opacity:.4}
   .staff-chip.sortable-chosen{border-color:var(--accent)}
   .staff-chip .remove{color:var(--red);cursor:pointer;font-weight:700;margin-left:2px}
@@ -417,11 +422,13 @@ function render(){
 
   var cls=mgr?'manager-mode':'';
   // Staff bar
-  var sb='<div class="staff-bar"><div class="staff-bar-title">'+shift+' Staff</div><div class="staff-chips">';
+  var sb='<div class="staff-bar"><div class="staff-bar-title">'+shift+' Staff</div><div class="staff-row"><div class="staff-chips">';
   var shiftStaff=getStaffForShift();
   for(var i=0;i<shiftStaff.length;i++){
-    sb+='<div class="staff-chip" data-sid="'+shiftStaff[i].id+'">'+esc(shiftStaff[i].name)+'<span class="remove" onclick="removeStaff('+shiftStaff[i].id+')">✕</span></div>';
+    sb+='<div class="staff-chip" data-sid="'+shiftStaff[i].id+'"><span class="staff-grip" aria-label="Drag to reorder"><svg width="8" height="14" viewBox="0 0 10 16" fill="currentColor"><circle cx="2" cy="2" r="1.4"/><circle cx="8" cy="2" r="1.4"/><circle cx="2" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="2" cy="14" r="1.4"/><circle cx="8" cy="14" r="1.4"/></svg></span>'+esc(shiftStaff[i].name)+'<span class="remove" onclick="removeStaff('+shiftStaff[i].id+')">✕</span></div>';
   }
+  sb+='</div>';
+  // + Add sits OUTSIDE .staff-chips so Sortable can't strand it mid-row.
   sb+='<button class="add-staff-btn" onclick="openStaffModal()">+ Add</button>';
   sb+='</div></div>';
 
@@ -593,12 +600,12 @@ function initSortables(){
   var chipList=document.querySelector('.staff-bar .staff-chips');
   if(chipList){
     sortables.push(Sortable.create(chipList,{
+      handle:'.staff-grip',       // drag starts on the grip only, so chips still scroll
       draggable:'.staff-chip',
       filter:'.remove',           // tapping the X must stay a click, not a drag
       preventOnFilter:false,
       animation:150,
-      delay:120,                  // guards against accidental drags while scrolling
-      delayOnTouchOnly:true,
+      delay:0,
       ghostClass:'sortable-ghost',
       chosenClass:'sortable-chosen',
       onEnd:function(evt){persistStaffOrder(chipList,evt);}
@@ -680,7 +687,6 @@ function persistOrder(listEl,cat,station,evt){
 // rows carried NULL or tied values.
 function persistStaffOrder(listEl,evt){
   if(evt.oldIndex===evt.newIndex)return;
-  var snap={};for(var i=0;i<staff.length;i++)snap[staff[i].id]=staff[i].sort_order;
   var chips=listEl.querySelectorAll('.staff-chip'),byId={};
   for(var i=0;i<staff.length;i++)byId[staff[i].id]=staff[i];
   var newGroup=[];
@@ -688,7 +694,12 @@ function persistStaffOrder(listEl,evt){
     var row=byId[parseInt(chips[i].getAttribute('data-sid'),10)];
     if(row)newGroup.push(row);
   }
-  if(newGroup.length!==getStaffForShift().length)return; // DOM/state disagree — do nothing
+  // DOM and state disagree. Sortable has already moved the chip, so returning
+  // quietly would leave a reorder on screen that was never saved. Fail loudly.
+  if(newGroup.length!==getStaffForShift().length){
+    refetchStaff('Could not save staff order');
+    return;
+  }
   var changed=[];
   for(var i=0;i<newGroup.length;i++){
     var nv=(i+1)*10;
@@ -702,12 +713,27 @@ function persistStaffOrder(listEl,evt){
     api('PATCH','staff','id=eq.'+row.id,{sort_order:row.sort_order},function(r){
       if(!r||!r.length)failed=true;   // verify the write landed, don't assume
       if(--pending===0){
-        if(failed){
-          for(var j=0;j<staff.length;j++)if(snap[staff[j].id]!=null)staff[j].sort_order=snap[staff[j].id];
-          sortStaff();render();toastErr('Could not save staff order');
-        }else{toast();}
+        // Any failure means some PATCHes may already be committed, so the local
+        // snapshot is not the truth any more. Re-read the server instead of
+        // guessing — the screen then matches what a reload would show.
+        if(failed)refetchStaff('Could not save staff order');
+        else toast();
       }
     });
+  });
+}
+
+// Re-read staff from the server and re-render. Used whenever a reorder fails:
+// a partial write leaves the DB in a state no local snapshot can describe.
+function refetchStaff(msg){
+  api('GET','staff','location=eq.Tempest&active=eq.true&order=shift.asc,sort_order.asc.nullslast,name.asc',null,function(r){
+    if(Array.isArray(r)){
+      staff=r;sortStaff();render();
+      if(msg)toastErr(msg);
+    }else{
+      // Couldn't reach the server either. Don't wipe staff[] — say so instead.
+      toastErr('Could not save staff order — reload the page');
+    }
   });
 }
 
@@ -789,9 +815,20 @@ function saveStaff(){
 function removeStaff(id){
   if(!confirm('Remove this staff member from this shift?'))return;
   api('PATCH','staff','id=eq.'+id,{active:false},function(r){
+    // Verify the write landed before claiming success. A blocked PATCH returns
+    // no error and updates 0 rows — the shape of the old notes-delete bug.
+    if(!r||!r.length){toastErr("Couldn't remove — reload to check");return;}
     staff=staff.filter(function(x){return x.id!==id;});toast();render();
   });
 }
+
+// Cheap half-fix for two managers on two tablets: prep and line render the same
+// staff bar off the same table, so a stale tab can overwrite the other's reorder.
+// Re-read staff when the tab regains focus. Silent — no toast for a background
+// refresh, and refetchStaff() leaves staff[] intact if the GET fails.
+document.addEventListener('visibilitychange',function(){
+  if(!document.hidden)refetchStaff();
+});
 
 function toast(){var t=document.getElementById('toast');t.textContent='✓ Saved';t.classList.remove('err');t.classList.add('show');clearTimeout(st);st=setTimeout(function(){t.classList.remove('show');},1200);}
 function toastErr(msg){var t=document.getElementById('toast');t.textContent='⚠ '+msg;t.classList.add('err','show');clearTimeout(st);st=setTimeout(function(){t.classList.remove('show');},2200);}
