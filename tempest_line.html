@@ -60,6 +60,10 @@
   .staff-bar-title{font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:8px}
   .staff-chips{display:flex;flex-wrap:wrap;gap:6px}
   .staff-chip{display:flex;align-items:center;gap:4px;padding:4px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;font-size:0.78rem;color:var(--text)}
+  .staff-bar .staff-chip{cursor:grab;touch-action:none}
+  .staff-bar .staff-chip:active{cursor:grabbing}
+  .staff-chip.sortable-ghost{opacity:.4}
+  .staff-chip.sortable-chosen{border-color:var(--accent)}
   .staff-chip .remove{color:var(--red);cursor:pointer;font-weight:700;margin-left:2px}
   .add-staff-btn{padding:4px 10px;background:transparent;border:1px dashed var(--accent);border-radius:6px;font-size:0.78rem;color:var(--accent);cursor:pointer;font-family:'DM Sans',sans-serif}
 
@@ -294,7 +298,7 @@ function api(m,t,q,d,cb){var x=new XMLHttpRequest();x.open(m,SB+'/rest/v1/'+t+(q
 function loadData(){
   api('GET','prep_items','location=eq.Tempest&team=eq.line&order=sort_order.asc',null,function(r){
     items=r||[];
-    api('GET','staff','location=eq.Tempest&active=eq.true&order=name.asc',null,function(r2){
+    api('GET','staff','location=eq.Tempest&active=eq.true&order=sort_order.asc,name.asc',null,function(r2){
       staff=r2||[];
       loadSections(loadLogs);
     });
@@ -339,9 +343,17 @@ function setViewAs(v){
 }
 function buildViewAs(){
   var sel=document.getElementById('viewAs');if(!sel)return;
+  // Current shift first, in the manager's chosen order, then anyone who only works
+  // the other shift. staff[] holds both shifts and their sort_order values are
+  // independent (AM 10 and PM 10 both exist), so a flat pass would interleave them.
   var seen={},names=[];
-  for(var i=0;i<staff.length;i++){var nm=staff[i].name;if(nm&&!seen[nm]){seen[nm]=1;names.push(nm);}}
-  names.sort(function(a,b){return a.toLowerCase()<b.toLowerCase()?-1:1;});
+  for(var pass=0;pass<2;pass++){
+    for(var i=0;i<staff.length;i++){
+      var row=staff[i],nm=row.name;
+      if((pass===0)!==(row.shift===shift))continue;
+      if(nm&&!seen[nm]){seen[nm]=1;names.push(nm);}
+    }
+  }
   // stale-name handling: saved cook no longer active → reset to All + clear storage
   if(viewAs&&seen[viewAs]!==1){viewAs='';localStorage.removeItem(VIEWAS_KEY);}
   var h='<option value="">All</option>';
@@ -408,7 +420,7 @@ function render(){
   var sb='<div class="staff-bar"><div class="staff-bar-title">'+shift+' Staff</div><div class="staff-chips">';
   var shiftStaff=getStaffForShift();
   for(var i=0;i<shiftStaff.length;i++){
-    sb+='<div class="staff-chip">'+esc(shiftStaff[i].name)+'<span class="remove" onclick="removeStaff('+shiftStaff[i].id+')">✕</span></div>';
+    sb+='<div class="staff-chip" data-sid="'+shiftStaff[i].id+'">'+esc(shiftStaff[i].name)+'<span class="remove" onclick="removeStaff('+shiftStaff[i].id+')">✕</span></div>';
   }
   sb+='<button class="add-staff-btn" onclick="openStaffModal()">+ Add</button>';
   sb+='</div></div>';
@@ -578,6 +590,20 @@ function initSortables(){
   sortables=[];
   if(!mgr)return;
   if(typeof Sortable==='undefined'){toastErr('Drag unavailable — reload page');return;}
+  var chipList=document.querySelector('.staff-bar .staff-chips');
+  if(chipList){
+    sortables.push(Sortable.create(chipList,{
+      draggable:'.staff-chip',
+      filter:'.remove',           // tapping the X must stay a click, not a drag
+      preventOnFilter:false,
+      animation:150,
+      delay:120,                  // guards against accidental drags while scrolling
+      delayOnTouchOnly:true,
+      ghostClass:'sortable-ghost',
+      chosenClass:'sortable-chosen',
+      onEnd:function(evt){persistStaffOrder(chipList,evt);}
+    }));
+  }
   var lists=document.querySelectorAll('.section-body[data-cat], .station-body[data-station]');
   for(var i=0;i<lists.length;i++){
     (function(listEl){
@@ -648,6 +674,52 @@ function persistOrder(listEl,cat,station,evt){
   });
 }
 
+// Persist a staff drag. Only the CURRENT shift's rows are renumbered (the bar only
+// ever shows one shift); the other shift keeps its own independent order. Renumbers
+// 10,20,30,... so a reload (order=sort_order.asc) is deterministic even if legacy
+// rows carried NULL or tied values.
+function persistStaffOrder(listEl,evt){
+  if(evt.oldIndex===evt.newIndex)return;
+  var snap={};for(var i=0;i<staff.length;i++)snap[staff[i].id]=staff[i].sort_order;
+  var chips=listEl.querySelectorAll('.staff-chip'),byId={};
+  for(var i=0;i<staff.length;i++)byId[staff[i].id]=staff[i];
+  var newGroup=[];
+  for(var i=0;i<chips.length;i++){
+    var row=byId[parseInt(chips[i].getAttribute('data-sid'),10)];
+    if(row)newGroup.push(row);
+  }
+  if(newGroup.length!==getStaffForShift().length)return; // DOM/state disagree — do nothing
+  var changed=[];
+  for(var i=0;i<newGroup.length;i++){
+    var nv=(i+1)*10;
+    if(newGroup[i].sort_order!==nv){newGroup[i].sort_order=nv;changed.push(newGroup[i]);}
+  }
+  sortStaff();
+  render(); // optimistic
+  if(changed.length===0)return;
+  var pending=changed.length,failed=false;
+  changed.forEach(function(row){
+    api('PATCH','staff','id=eq.'+row.id,{sort_order:row.sort_order},function(r){
+      if(!r||!r.length)failed=true;   // verify the write landed, don't assume
+      if(--pending===0){
+        if(failed){
+          for(var j=0;j<staff.length;j++)if(snap[staff[j].id]!=null)staff[j].sort_order=snap[staff[j].id];
+          sortStaff();render();toastErr('Could not save staff order');
+        }else{toast();}
+      }
+    });
+  });
+}
+
+// Keep staff[] in the same order the server would return it.
+function sortStaff(){
+  staff.sort(function(a,b){
+    var av=(a.sort_order==null)?1e9:a.sort_order, bv=(b.sort_order==null)?1e9:b.sort_order;
+    if(av!==bv)return av-bv;
+    return (a.name||'').toLowerCase()<(b.name||'').toLowerCase()?-1:1;
+  });
+}
+
 // ── ADD TASK ──
 function openAdd(c){document.getElementById('addCat').value=c;document.getElementById('addStation').value='salad';document.getElementById('addName').value='';document.getElementById('addDay').value='';document.getElementById('addModal').classList.add('show');setTimeout(function(){document.getElementById('addName').focus();},100);}
 function closeAddModal(){document.getElementById('addModal').classList.remove('show')}
@@ -694,18 +766,23 @@ function saveStaff(){
   var name=document.getElementById('staffName').value.trim();
   var sh=document.getElementById('staffShift').value;
   if(!name)return;
+  function nextOrder(sf){
+    var mx=0;
+    for(var i=0;i<staff.length;i++)if(staff[i].shift===sf&&staff[i].sort_order>mx)mx=staff[i].sort_order;
+    return mx+10;
+  }
   if(sh==='BOTH'){
     // Add to both shifts
-    api('POST','staff',null,{name:name,shift:'AM',location:'Tempest',active:true},function(r){
+    api('POST','staff',null,{name:name,shift:'AM',location:'Tempest',active:true,sort_order:nextOrder('AM')},function(r){
       if(r&&r.length)staff.push(r[0]);
-      api('POST','staff',null,{name:name,shift:'PM',location:'Tempest',active:true},function(r2){
+      api('POST','staff',null,{name:name,shift:'PM',location:'Tempest',active:true,sort_order:nextOrder('PM')},function(r2){
         if(r2&&r2.length)staff.push(r2[0]);
-        toast();render();closeStaffModal();
+        sortStaff();toast();render();closeStaffModal();
       });
     });
   }else{
-    api('POST','staff',null,{name:name,shift:sh,location:'Tempest',active:true},function(r){
-      if(r&&r.length)staff.push(r[0]);toast();render();closeStaffModal();
+    api('POST','staff',null,{name:name,shift:sh,location:'Tempest',active:true,sort_order:nextOrder(sh)},function(r){
+      if(r&&r.length)staff.push(r[0]);sortStaff();toast();render();closeStaffModal();
     });
   }
 }
@@ -819,7 +896,7 @@ init();
     for(var j=0;j<opts.length;j++)opts[j].addEventListener('click',function(){selCat=this.getAttribute('data-cat');for(var k=0;k<opts.length;k++)opts[k].classList.toggle('sel',opts[k].getAttribute('data-cat')===selCat);});
   }
   function loadStaff(){
-    nbApi('GET','staff','location=eq.Tempest&active=eq.true&order=name.asc',null,function(r){
+    nbApi('GET','staff','location=eq.Tempest&active=eq.true&order=sort_order.asc,name.asc',null,function(r){
       var seen={};if(r&&r.length)for(var i=0;i<r.length;i++){var n=r[i].name;if(n&&!seen[n]){seen[n]=true;var o=document.createElement('option');o.value=n;o.textContent=n;byEl.appendChild(o);}}
     });
   }

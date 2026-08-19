@@ -1108,7 +1108,7 @@ init();
     for(var j=0;j<opts.length;j++)opts[j].addEventListener('click',function(){selCat=this.getAttribute('data-cat');for(var k=0;k<opts.length;k++)opts[k].classList.toggle('sel',opts[k].getAttribute('data-cat')===selCat);});
   }
   function loadStaff(){
-    nbApi('GET','staff','location=eq.Tempest&active=eq.true&order=name.asc',null,function(r){
+    nbApi('GET','staff','location=eq.Tempest&active=eq.true&order=shift.asc,sort_order.asc,name.asc',null,function(r){
       var seen={};if(r&&r.length)for(var i=0;i<r.length;i++){var n=r[i].name;if(n&&!seen[n]){seen[n]=true;var o=document.createElement('option');o.value=n;o.textContent=n;byEl.appendChild(o);}}
     });
   }

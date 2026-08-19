@@ -207,7 +207,7 @@ function loadData(){
   api('GET','meat_items','location=eq.Tempest&active=eq.true&order=sort_order.asc',null,function(r){
     items=r||[];
     itemsLoaded=true;
-    api('GET','staff','location=eq.Tempest&active=eq.true&order=name.asc',null,function(r2){
+    api('GET','staff','location=eq.Tempest&active=eq.true&order=shift.asc,sort_order.asc,name.asc',null,function(r2){
       staff=r2||[];
       fillStaff();
       loadToday();
@@ -265,8 +265,13 @@ function setView(mode){
 }
 
 function fillStaff(){
-  var sel=document.getElementById('countedBy'),h='<option value="">Select…</option>';
-  for(var i=0;i<staff.length;i++){h+='<option value="'+esc(staff[i].name)+'">'+esc(staff[i].name)+'</option>';}
+  var sel=document.getElementById('countedBy'),h='<option value="">Select…</option>',seen={};
+  for(var i=0;i<staff.length;i++){
+    var n=staff[i].name;
+    if(!n||seen[n])continue;              // one entry per person, not one per shift
+    seen[n]=1;
+    h+='<option value="'+esc(n)+'">'+esc(n)+'</option>';
+  }
   sel.innerHTML=h;
 }
 
