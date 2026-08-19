@@ -1,6 +1,10 @@
 # Staff reordering (manager mode)
 
-**Status:** built, tested locally, **not deployed**. Branch `staff-edit-and-reorder`.
+**Status:** built, reviewed, drag confirmed on the kitchen tablet by the owner (§7e).
+**Not deployed** — awaiting approval (Slice 6). Branch `staff-edit-and-reorder`, PR #93.
+
+Read §7a–§7e for what was actually built and tested, and §8 for what is still open. Anything
+in §1–§6 is the *plan*; where the plan and §7 disagree, §7 is what exists.
 **Feature name:** `staff-edit-and-reorder`
 **Scope:** reordering ONLY. Renaming is deferred — see §6.
 **Goal tags:** [Consistency]
@@ -10,9 +14,14 @@
 
 ## 1. Goal
 
-In manager mode, drag staff into the order you want, and have that order drive every
-"Who" / "Assign" / "Counted by" / "Posted by" dropdown across the site — instead of the
+In manager mode, drag staff into the order you want, and have that order drive every staff
+**dropdown** across the site — "Who", "Assign", "Counted by", "Posted by" — instead of the
 current hardcoded alphabetical sort.
+
+"Dropdown" is the exact scope. Two staff-name fields are free-text boxes and are deliberately
+out of it: "Entered by" on flash (`tempest_flash.html`) and the "Who's resolving this note?"
+prompt on notes. They never read the `staff` table, so they inherit no ordering, and by owner
+decision they stay typed boxes (§9 N1).
 
 Manager-mode-only, consistent with the locked decision in `BUILD_PLAN.md`
 ("reordering is manager-mode only; staff can never reorder").
@@ -129,8 +138,13 @@ touched, not that it was touched correctly (that is exactly how B1 slipped throu
 grep -rn "'staff','location" *.html
 ```
 
-Expect **eight** lines, every one carrying the single approved order string
+Expect **ten** lines, every one carrying the single approved order string
 `order=shift.asc,sort_order.asc.nullslast,name.asc`. Anything else is a bug.
+
+The count is ten, not eight: `refetchStaff()` (Slice 2, §7c) added one more copy of the query
+in *each* of prep and line, taking the original eight to ten. If you change how many staff
+queries exist, update this number in the same commit — a check that always fails is a check
+that gets ignored.
 
 ---
 
@@ -178,8 +192,14 @@ That's a large migration on a live site. Logged as debt, not scheduled.
 ## 7. What was actually built (2026-08-19)
 
 DB migration run by the owner: `staff.sort_order` added, backfilled 10/20/30… per
-`(location, shift)` in the old alphabetical order. RLS confirmed: `staff` has SELECT,
-INSERT and UPDATE policies open to `public`, so browser writes persist.
+`(location, shift)` in the old alphabetical order.
+
+**RLS:** `staff` has SELECT, INSERT and UPDATE policies open to `public`. That is what makes
+the browser writes persist, so the feature needs it — but it is not a safety check that came
+back clean. The anon key sits in plain text in all seven of these HTML files, so `staff`
+accepts UPDATE from anyone who opens dev tools. The locked decision "staff can never reorder"
+is enforced by a hidden div and a localStorage PIN: a UX gate, not a security control.
+Consistent with the rest of the site and not a reason to stop — just not evidence of safety.
 
 **`tempest_prep.html` / `tempest_line.html`** — staff chips are a SortableJS list in manager
 mode (`filter:'.remove'` so ✕ stays a click; `delay:120, delayOnTouchOnly:true` to stop
@@ -210,7 +230,8 @@ it needs a human on a device.**
 
 Closes **B1**, **B2**, **N2** (query half).
 
-All **eight** staff queries in the repo are now one identical string:
+All staff queries in the repo are now one identical string
+(**eight** at the time of this slice; ten after Slice 2 added `refetchStaff()` — see M2.1):
 `order=shift.asc,sort_order.asc.nullslast,name.asc`.
 
 - The two half-fixed note modals (`tempest_prep.html`, `tempest_line.html`) gained
@@ -250,6 +271,14 @@ moved chip still on screen (B5).
 
 If the refetch GET *itself* fails, `staff[]` is deliberately left alone rather than wiped, and
 the toast escalates to "Could not save staff order — reload the page."
+
+**Two consequences worth stating.** First, `refetchStaff()` hand-copies the canonical query
+string into two more places, taking the whitelist count from eight to ten (M2.1) — the check
+in §4 Step 3 was updated to match. Second, and more honestly than this section originally put
+it: when the device is fully offline the screen does **not** immediately agree with the
+database. The PATCH fails, the refetch fails too, `staff[]` is deliberately left intact, and
+the unsaved order stays on screen until the user reloads — which is exactly what the toast
+tells them to do. Screen and DB agree after a *reload*, not instantly. (m2.3)
 
 ### Local test results (prep, real browser, live-read DB, all writes stubbed)
 1. **Partial failure** — 2 PATCHes succeed, 1 fails: error toast shown **and** the on-screen
@@ -321,19 +350,76 @@ Recorded as the owner's verdict on the gesture. The detailed §5 checklist items
 individually re-reported here.
 
 
-## 8. Risks
+## 8. Risks — what is still open
 
-1. **RLS.** No UPDATE policy on `staff` = silent no-op. Check before building.
-2. **Seven files, one query string.** The likeliest bug is one page left on `order=name.asc`,
-   showing a different order than the rest. Grep at the end.
-3. **Live site.** Nothing deploys without approval.
+Rewritten 2026-08-19 to list only live risks. Closed items are recorded where they were
+closed, not here.
+
+1. **Live site, no test database.** `boxkitchen` and `boxkitchen-dev` both point at
+   `sxppuyarecqkgkrsrefc.supabase.co`. Any reorder test touches the staff list the kitchen is
+   using. Test before service, not during it. (R1)
+2. **Rollback is "revert the HTML, never drop the column."** All ten staff queries now
+   hard-depend on `sort_order`. PostgREST answers an unknown order column with a 400, and
+   `api()` swallows that into `staff=[]` — dropping the column would empty every staff
+   dropdown on the site at once. (R4)
+3. **Cached tablets after deploy.** A device holding the old page keeps showing the old order
+   until it reloads. Harmless — both query forms are valid against the migrated table — but it
+   reads as broken. Hard-reload each device once as the last deploy step. (R6)
+4. **Two managers, two tablets, silent overwrite.** prep and line render the same staff bar
+   off the same table. Reorder on prep, then on line without reloading, and line renumbers
+   from its stale `staff[]` and overwrites the first change. No version check, last write
+   wins. Real but rare at this size; the focus-refetch in Slice 7 covers the common case.
+   Full fix (optimistic locking) is not scheduled. (R2)
+5. **`sort_order` has no `DEFAULT` and no `NOT NULL`.** Rows inserted from anywhere but these
+   two pages get NULL. The queries now say `.nullslast` explicitly so the behaviour is stated
+   rather than accidental, but the column itself is still unconstrained — a DB change, not an
+   HTML one. (N2, DB half)
+6. **Nothing deploys without approval.**
+
+**Closed, for the record:** RLS UPDATE policy exists (§7, and see W2 for what that does and
+does not prove). The "grep for the old string" check that missed B1 has been replaced by the
+whitelist grep in §4 Step 3. The untested-drag risk was closed by the owner's tablet test
+(§7e), which also cancelled the arrow-button fallback.
 
 ---
+
+## 8b. Expected behaviour that looks like a bug
+
+Both of these are working as designed. They are written down because to whoever is using the
+feature they read as breakage.
+
+**Reordering the PM bar does not change meat / portion / notes / orders. (R3)**
+Those four pages have no AM/PM concept — they show one flat list of people. They sort
+`shift.asc` first and then keep the first row per name, which is always the AM row. So those
+dropdowns are: *everyone on AM, in AM order, then the PM-only people.* Dragging the PM staff
+bar changes the PM order on prep and line, and correctly changes nothing on those four pages.
+If you want a different rule there, it needs one ordering source for the read-only pages —
+that is a new decision, not a bug fix.
+
+**`boxkitchen` and `boxkitchen-dev` have now diverged. (N7)**
+These files exist in both repos against one database; this work is only in `boxkitchen`.
+Whichever repo is the deploy source, the other is stale — reconcile before doing staff work
+out of `boxkitchen-dev`.
 
 ## 9. Adversarial review (2026-08-19)
 
 Reviewed the doc against the working tree, not just on its own terms. Ranked worst first.
-Nothing below has been fixed — this is the list, not the work.
+
+**This section is the original review, kept as written. It is no longer the open list** — most
+of it has since been fixed. Current status:
+
+| Finding | Status |
+|---|---|
+| B1 note-modal query, B2 grep check, N2 (query half) | Fixed — Slice 1, §7b |
+| B4 partial write, B5 silent no-op, N3 NULL restore | Fixed — Slice 2, §7c |
+| B3 drag grip / scroll dead zone, N4 stranded `+ Add` | Fixed — Slice 3, §7d |
+| B6 uncommitted work | Fixed — Slice 0, committed and pushed as PR #93 |
+| R5 untested gesture | Closed — owner tablet test passed, §7e |
+| W1, W2, W3, W4, R3, N7 | Fixed — Slice 5, this pass (§Status, §1, §7, §8, §8b) |
+| R1, R2, R4, R6, N2 (DB half) | **Still open** — see §8 |
+| N5 unverified `removeStaff` write | **Still open** — Slice 7, optional |
+
+For what is actually open right now, read §8. Do not use the list below as a to-do.
 
 ### Blockers — fix before deploy
 
@@ -392,7 +478,8 @@ screen shows a reorder that was never saved and will disappear on the next reloa
 shape as the notes-delete RLS bug: the UI implies success, nothing persisted. Fail loudly
 and re-render instead.
 
-**B6. None of this is committed.**
+**B6. None of this is committed.** *(FIXED — Slice 0. The text below was true at review time
+and is false now: the branch is committed and pushed as PR #93.)*
 Branch `staff-edit-and-reorder` is **0 commits ahead of origin/main**. All 192 lines are
 uncommitted working-tree edits, and `docs/` is untracked entirely. One `git checkout main`
 loses the build. Given that this repo gets worked concurrently, this is the highest-
@@ -511,7 +598,8 @@ every `render()` — `initSortables()` destroys the old instances first
 
 ## 10. Build slices
 
-Everything in §1–§7 is written but uncommitted. What follows is the *remaining* work, cut so
+*(Written when everything was uncommitted; that is no longer true — see the status marks on
+each slice below.)* What follows is the *remaining* work, cut so
 each slice is one sitting, one commit, one review — and closes a named finding from §9.
 "Done when" is the check that ends the slice; if it can't be checked, the slice isn't done.
 
@@ -519,7 +607,7 @@ Order matters only where "blocked by" says so.
 
 ---
 
-### Slice 0 — Get the existing build into git
+### Slice 0 — Get the existing build into git ✅ DONE
 **Delivers:** the 192 lines that already exist stop being one command away from gone, and
 become a diff someone can actually review.
 **Closes:** B6.
@@ -531,7 +619,7 @@ slice below edits those same six files.
 
 ---
 
-### Slice 1 — One ordering rule for every staff dropdown
+### Slice 1 — One ordering rule for every staff dropdown ✅ DONE (§7b)
 **Delivers:** every staff list on the site — including the note pop-ups — comes back in the
 same order, from the same query.
 **Closes:** B1, B2, N2.
@@ -540,13 +628,13 @@ same order, from the same query.
 `sort_order.asc.nullslast` so the NULL behaviour is stated instead of inherited. Replace §4
 Step 3's "grep for the old string" check with the whitelist grep from B2.
 **Done when:** `grep -rn "GET','staff'\|'staff','location" *.html` returns eight lines and
-every one matches an approved form; the note pop-up on prep, line and orders lists people in
+every one matches an approved form *(was eight at the time; ten now — see M2.1)*; the note pop-up on prep, line and orders lists people in
 the same order as the Who dropdown.
 **Size:** ~30 minutes, mechanical, no device needed. **Blocked by:** Slice 0.
 
 ---
 
-### Slice 2 — Make a failed save tell the truth
+### Slice 2 — Make a failed save tell the truth ✅ DONE (§7c)
 **Delivers:** after a reorder that fails, the screen and the database agree. Today they can
 disagree silently, which is the failure mode that cost you the notes-delete bug.
 **Closes:** B4, B5, N3.
@@ -562,7 +650,7 @@ a reload shows the pre-drag order. Both halves, not just the toast.
 
 ---
 
-### Slice 3 — Build the drag grip D2 actually specified
+### Slice 3 — Build the drag grip D2 actually specified ✅ DONE (§7d)
 **Delivers:** a deliberate drag handle, and a staff bar that still lets you scroll the page.
 **Closes:** B3, N4.
 **Touches:** prep and line — add a grip element to each chip, set `handle:` on the Sortable
@@ -576,7 +664,7 @@ best done before Slice 4 so the device trip tests the final gesture, not the cur
 
 ---
 
-### Slice 4 — Prove it on the kitchen tablet
+### Slice 4 — Prove it on the kitchen tablet ✅ DONE — PASS (§7e); 4b cancelled
 **Delivers:** the answer to the only question this build has never asked: can a person
 actually do this with a finger, during service, on your hardware.
 **Closes:** R5, and the §5 checklist for real.
@@ -588,7 +676,7 @@ test database — this reorders the live staff list), and written the verdict in
 
 ---
 
-### Slice 5 — Doc truth pass
+### Slice 5 — Doc truth pass ✅ DONE (this pass)
 **Delivers:** a document someone can trust to decide whether to deploy.
 **Closes:** W1, W2, W3, W4, R3, N7.
 **Touches:** doc only. Status line carries the untested-gesture caveat instead of burying it
@@ -602,7 +690,7 @@ noting `boxkitchen` and `boxkitchen-dev` have now diverged (N7).
 
 ---
 
-### Slice 6 — Deploy
+### Slice 6 — Deploy ⬅ NEXT (needs approval)
 **Delivers:** the feature in the kitchen's hands.
 **Closes:** R4, R6, N6.
 **Touches:** deploy of six HTML files. Write the rollback into the doc *first*: **revert the
@@ -616,7 +704,7 @@ in the doc.
 
 ---
 
-### Slice 7 — Optional smalls
+### Slice 7 — Optional smalls — open, skippable
 **Delivers:** two loose ends, only worth doing if you're already in these files.
 **Closes:** N5 — `removeStaff()` (`tempest_prep.html:790`) toasts success without checking
 the write landed, three functions away from the new code that was careful to check.
