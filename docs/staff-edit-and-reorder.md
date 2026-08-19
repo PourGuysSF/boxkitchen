@@ -341,18 +341,20 @@ drag. That is Slice 4, and it needs a person on the tablet.
 
 **Owner tested the drag on the real device and confirmed it works.**
 
-**⚠ Which build was under the finger is unresolved (M5.1) — and the likely answer is neither
-grip.** GitHub Pages serves `main`, and `main` at that moment was the squash-merge of PR #93,
-which contains **no grip at all** (verified against the live URL: zero `.staff-grip`
-occurrences, and the chip still carrying `touch-action:none`). So unless the test was run
-against a locally-served build, what passed was the **original whole-chip drag**, not the
-20×20 grip and not the shipped 22×30 one.
+**Two separate finger tests, both passed.**
 
-That does not invalidate the verdict — it confirms Sortable initialises, that `evt.oldIndex/
-newIndex` mean what the code assumes, that `filter:'.remove'` keeps the ✕ clickable, and that
-the writes persist (see §7f for the live 10..90 renumber left behind by that test). It does
-mean **the grip gesture itself is still unproven by a finger**, which is the one thing Slice 3
-added. Owner to confirm which build was tested and which §5 lines were actually run.
+1. **The original whole-chip drag**, tested while `main` was the squash-merge of PR #93 —
+   which contains no grip at all (verified against the live URL at the time: zero
+   `.staff-grip` occurrences, chip still carrying `touch-action:none`). That test confirmed
+   Sortable initialises, that `evt.oldIndex/newIndex` mean what the code assumes, that
+   `filter:'.remove'` keeps the ✕ clickable, and that the writes persist — see §7f for the
+   live 10..90 renumber it left behind.
+2. **The shipped 22×30 grip**, tested by the owner on the tablet against the live PR #94
+   build and reported good (2026-08-19). This closes **M5.1** and **M6.1**: the gesture that
+   is actually deployed has now been performed by a finger, not just configured.
+
+Recorded as the owner's verdict. The §5 checklist lines were not individually re-reported
+for either run.
 
 This closes the one question the build had never asked: Sortable's gesture cannot be
 synthesised in the automation harness, so every "tested" claim above §7d covers configuration
@@ -361,8 +363,8 @@ and persistence logic — not whether a finger can perform the drag. It now has 
 Closes **R5**. **Slice 4b (▲▼ arrow fallback) is therefore cancelled** — it only ever existed
 if this test failed. Do not build it.
 
-Recorded as the owner's verdict on the gesture. The detailed §5 checklist items were not
-individually re-reported here.
+Slice 3's own done-when (a swipe starting on a chip scrolls the page; a drag from the grip
+reorders; the ✕ deletes on one tap) is covered by run 2 above.
 
 
 ## 7f. Slice 7 — optional smalls (2026-08-19)
@@ -556,7 +558,7 @@ reads as the feature being broken. Write it down as expected behaviour, or give 
 read-only pages one ordering source.
 
 **R4. If `sort_order` ever goes missing, every staff dropdown on the site empties at once.**
-All seven queries now hard-depend on the column. PostgREST answers an unknown order column
+All ten queries now hard-depend on the column. PostgREST answers an unknown order column
 with a 400, and `api()` swallows it into `staff=[]`. So the rollback plan is **revert the
 HTML, keep the column** — never drop the column to undo. That coupling is stated nowhere.
 
@@ -741,13 +743,15 @@ noting `boxkitchen` and `boxkitchen-dev` have now diverged (N7).
 
 ---
 
-### Slice 6 — Deploy ⬅ PARTLY DONE ALREADY (see §12)
+### Slice 6 — Deploy ✅ DONE (see §12)
 **Delivers:** the feature in the kitchen's hands.
 **Closes:** R4, R6, N6.
 **Touches:** deploy of six HTML files. Write the rollback into the doc *first*: **revert the
-HTML, never drop the column** — all seven queries now hard-depend on `sort_order`, and
-dropping it 400s every staff query and empties every dropdown on the site at once (R4). Per
-N6 the six files can go in any order, one at a time, safely. Finish by hard-reloading each
+HTML, never drop the column** — all ten queries now hard-depend on `sort_order`, and
+dropping it 400s every staff query and empties every dropdown on the site at once (R4).
+*(N6's "one file at a time, any order" does not apply — §12 established that merging to `main`
+IS the deploy, so every file ships atomically. Safer than planned, but not as described.)*
+Finish by hard-reloading each
 kitchen device once (R6) — otherwise a cached tablet shows the old order and reads as broken.
 **Done when:** each device has been reloaded and shows the chosen order; the rollback line is
 in the doc.
@@ -815,23 +819,26 @@ This corrects two things the plan got wrong:
   an ordinary PR merge silently satisfies it. If the gate should be real, these PRs must be
   opened as **drafts**, because merging is deploying.
 
-### Already live as of 2026-08-19 20:21 UTC
-PR #93 was squash-merged (commit `3409c30`), which deployed **Slices 0 and 1**. Verified
-against the live URL, not just against git:
+### Everything is live as of 2026-08-19
+
+Two squash-merges, both deployed by merging:
+
+- PR #93 (`3409c30`) — Slices 0 and 1.
+- PR #94 (`822cf66`) — Slices 2, 3, 5 and 7.
+
+Verified against the live URL, not just against git: all six HTML files served by Pages are
+**byte-identical to `main`** (sha1 compared file by file). The live pages carry the 22×30
+`.staff-grip`, `refetchStaff()`, the `visibilitychange` re-read, and **zero** occurrences of
+the old `.staff-bar .staff-chip{...touch-action:none}` dead-zone rule.
 
 | | live? |
 |---|---|
 | Consistent staff queries everywhere (Slice 1, closes B1) | **yes** |
-| `refetchStaff()` honest failed-save (Slice 2) | no |
-| Drag grip + staff-bar scroll fix (Slice 3) | no |
+| `refetchStaff()` honest failed-save (Slice 2) | **yes** |
+| Drag grip + staff-bar scroll fix (Slice 3) | **yes** |
+| `removeStaff()` verify + focus re-read (Slice 7) | **yes** |
 
-So the production staff bar still carries `.staff-bar .staff-chip{...touch-action:none}` —
-the B3 scroll dead zone — and still has the snapshot rollback that can show an order which
-was never saved (B4/B5). **The bugs Slices 2 and 3 fix are the ones currently deployed.**
-
-**Consequence for §7e:** the owner's tablet test was run against the *pre-grip* build, so it
-confirms the old whole-chip gesture, not the grip. The grip is strictly more deliberate than
-what was tested, but the grip gesture itself is still unproven on a device.
+The grip gesture on this build has been finger-tested by the owner and passed (§7e run 2).
 
 ### Deploy checklist for the remaining slices
 1. Merge outside service — there is no test database (R1).
@@ -925,3 +932,30 @@ is already open. Newest slice last.
   524–541). The status table Slice 5 added above them covers it and §9 is explicitly
   historical, so this is consistent — but a skimmer can still land on W3 and conclude §8 is
   stale. If it ever bites, one "superseded" marker per W-heading fixes it.
+
+### From Slice 6 + 7 review (2026-08-19) — verdict: PASS
+Slice 7's code is clean: `removeStaff()` verifies its write, the `visibilitychange` re-read is
+silent and safe, prep and line are byte-identical, and the add/staff modals live outside
+`#appBody` so a background `render()` cannot wipe an open modal. Slice 6 is fully deployed and
+live-verified (§12). Findings were all record-keeping, not code:
+
+- **M6.1** *(closed)* The grip gesture shipped without ever having been finger-tested — the
+  §7e test ran against the pre-grip PR #93 build. **Owner tested the live 22×30 grip on the
+  tablet and reported it good (2026-08-19).** Recorded in §7e as run 2. Also closes M5.1.
+- **M6.2** *(fixed here)* §12's "Already live" table was written after PR #93 and still said
+  Slices 2 and 3 were *not* deployed — the opposite of the truth after PR #94, and §12 is the
+  section someone reads to decide whether to roll back. Rewritten with both merges and a
+  file-by-file sha1 comparison against the live URL. §10's Slice 6 heading updated from
+  "PARTLY DONE" to DONE.
+- **m6.3** *(open)* Slice 6's done-when included "each device has been reloaded and shows the
+  chosen order" (R6). Nothing records that being done. Pages serves `max-age=600`, so tablets
+  self-heal within ten minutes and the risk is small — but it is an unrun check, not a passed
+  one.
+- **m6.4** *(fixed here)* Three places still said "all seven queries hard-depend on
+  `sort_order`." It is ten. §4 and §8 were corrected in Slice 5; the Slice 6 card, R4's
+  original text and Slice 1's card were not.
+- **m6.5** *(fixed here)* Slice 6's card still repeated N6's "six files, one at a time, any
+  order," which §12 superseded — a merge is atomic. Marked inline.
+- **m6.6** *(open, process)* §12 says that if "nothing deploys without approval" is meant to
+  be a real gate, these PRs must be opened as **drafts**, because merging is deploying.
+  PR #94 merged as an ordinary PR. Worth settling before the next feature.
