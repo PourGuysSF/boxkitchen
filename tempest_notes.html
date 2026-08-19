@@ -210,7 +210,7 @@ function timeAgo(iso){
 function init(){buildCatPicker();loadStaff();loadNotes();}
 
 function loadStaff(){
-  api('GET','staff','location=eq.Tempest&active=eq.true&order=name.asc',null,function(r){
+  api('GET','staff','location=eq.Tempest&active=eq.true&order=shift.asc,sort_order.asc.nullslast,name.asc',null,function(r){
     var seen={};staffNames=[];
     if(r&&r.length)for(var i=0;i<r.length;i++){var n=r[i].name;if(n&&!seen[n]){seen[n]=true;staffNames.push(n);}}
     var sel=document.getElementById('noteBy');
