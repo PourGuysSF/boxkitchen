@@ -1,7 +1,12 @@
 # Staff reordering (manager mode)
 
-**Status:** built, reviewed, drag confirmed on the kitchen tablet by the owner (§7e).
-**Not deployed** — awaiting approval (Slice 6). Branch `staff-edit-and-reorder`, PR #93.
+**Status: DEPLOYED and live — feature complete (2026-08-19).** Shipped in two merges,
+PR #93 (`3409c30`) then PR #94 (`822cf66`), and verified against the live URL. Both finger
+tests passed on the kitchen tablet, including the shipped 22×30 grip (§7e). Every slice in
+§10 is done.
+
+Live at https://pourguyssf.github.io/boxkitchen/ — GitHub Pages serves `main`, so **merging is
+deploying** (§12). Remaining debt is listed in §8; none of it blocks.
 
 Read §7a–§7e for what was actually built and tested, and §8 for what is still open. Anything
 in §1–§6 is the *plan*; where the plan and §7 disagree, §7 is what exists.
@@ -947,10 +952,11 @@ live-verified (§12). Findings were all record-keeping, not code:
   section someone reads to decide whether to roll back. Rewritten with both merges and a
   file-by-file sha1 comparison against the live URL. §10's Slice 6 heading updated from
   "PARTLY DONE" to DONE.
-- **m6.3** *(open)* Slice 6's done-when included "each device has been reloaded and shows the
-  chosen order" (R6). Nothing records that being done. Pages serves `max-age=600`, so tablets
-  self-heal within ten minutes and the risk is small — but it is an unrun check, not a passed
-  one.
+- **m6.3** *(partly closed)* Slice 6's done-when included "each device has been reloaded and
+  shows the chosen order" (R6). At least one tablet is confirmed on the new build — the owner's
+  22×30 grip test could only have run against the post-#94 deploy (M6.1). Whether *every*
+  device was reloaded is still unrecorded. Pages serves `max-age=600`, so the rest self-heal
+  within ten minutes; the residual risk is a device left open on the old page.
 - **m6.4** *(fixed here)* Three places still said "all seven queries hard-depend on
   `sort_order`." It is ten. §4 and §8 were corrected in Slice 5; the Slice 6 card, R4's
   original text and Slice 1's card were not.
