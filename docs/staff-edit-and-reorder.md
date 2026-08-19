@@ -121,8 +121,16 @@ staff query to `order=sort_order.asc,name.asc` in `tempest_meat.html`,
 `tempest_portion.html`, `tempest_notes.html`, `tempest_orders.html`, and the note-modal
 `loadStaff()` copies on prep/line/orders.
 
-Per CLAUDE.md there is no shared JS — every one is a separate hand-edit. Finish by grepping
-for `order=name.asc` and confirming **zero** remain.
+Per CLAUDE.md there is no shared JS — every one is a separate hand-edit. Finish with the
+**whitelist** check, not a blacklist one — grepping for the *old* string proves a page was
+touched, not that it was touched correctly (that is exactly how B1 slipped through):
+
+```
+grep -rn "'staff','location" *.html
+```
+
+Expect **eight** lines, every one carrying the single approved order string
+`order=shift.asc,sort_order.asc.nullslast,name.asc`. Anything else is a bug.
 
 ---
 
@@ -197,6 +205,31 @@ the ✕ still fires `removeStaff`. No console errors. **The real drag gesture is
 it needs a human on a device.**
 
 ---
+
+## 7b. Slice 1 — one ordering rule for every staff dropdown (2026-08-19)
+
+Closes **B1**, **B2**, **N2** (query half).
+
+All **eight** staff queries in the repo are now one identical string:
+`order=shift.asc,sort_order.asc.nullslast,name.asc`.
+
+- The two half-fixed note modals (`tempest_prep.html`, `tempest_line.html`) gained
+  `shift.asc`, so AM/PM no longer interleave in the "Posted by" list. All three note-modal
+  `loadStaff()` bodies — prep, line, orders — are now byte-identical.
+- The prep/line main loads gained `shift.asc` too. They did not need it
+  (`getStaffForShift()` re-filters), but one string across all eight is what makes the
+  whitelist check above meaningful.
+- `.nullslast` states the NULL behaviour instead of inheriting it. It matches the `1e9`
+  sentinel in `sortStaff()` — that agreement used to be accidental (N2) and is now written
+  into the query. The column itself still has no `DEFAULT` and no `NOT NULL`; that half of
+  N2 is unclosed and lives in the DB, not here.
+
+**Verified against the live API**, not just by reading: the new order string returns
+HTTP 200 with the AM block first, each block in `sort_order`. This mattered — PostgREST
+answers an unknown/invalid order clause with a 400, which `api()` swallows into `staff=[]`
+and would empty every staff dropdown on the site at once (R4).
+
+Not deployed.
 
 ## 8. Risks
 
@@ -535,3 +568,22 @@ Everything else is one sitting. The two worth watching:
 And one that's smaller than it looks: **Slice 0.** It's ten minutes of git with no code in it,
 which is exactly why it keeps getting postponed. It's also the only slice where the downside
 is losing work you've already paid for.
+
+---
+
+## 11. Running minors (slice reviews)
+
+Small stuff surfaced by per-slice review. Not blockers; fold in whenever the relevant file
+is already open. Newest slice last.
+
+### From Slice 0 review (2026-08-19) — verdict: PASS
+- **m0.1** PR #93 is not a draft, though both it and the commit message say "not for
+  deploy yet." Nothing but convention prevents a merge. Mark it draft until Slice 5.
+- **m0.2** §9 B6 and the §10 preamble are now stale — B6 (line ~273) still says "0 commits
+  ahead… uncommitted," and §10's preamble says "written but uncommitted." Both are false as
+  of `c807914`. Fold into Slice 5's doc truth pass.
+- **m0.3** Slice 0 landed as one 729-line commit (537 of them the doc), which partly defeats
+  its own stated deliverable — "a diff someone can actually review." Doc and code would have
+  read better split. Not worth rewriting history; just split them next time.
+- **m0.4** The Status line (line 3) carries no branch/PR pointer now that one exists. Add
+  "PR #93" alongside the W1 caveat fix.

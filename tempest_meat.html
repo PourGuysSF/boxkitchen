@@ -207,7 +207,7 @@ function loadData(){
   api('GET','meat_items','location=eq.Tempest&active=eq.true&order=sort_order.asc',null,function(r){
     items=r||[];
     itemsLoaded=true;
-    api('GET','staff','location=eq.Tempest&active=eq.true&order=shift.asc,sort_order.asc,name.asc',null,function(r2){
+    api('GET','staff','location=eq.Tempest&active=eq.true&order=shift.asc,sort_order.asc.nullslast,name.asc',null,function(r2){
       staff=r2||[];
       fillStaff();
       loadToday();

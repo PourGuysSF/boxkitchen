@@ -299,7 +299,7 @@ function api(m,t,q,d,cb){var x=new XMLHttpRequest();x.open(m,SB+'/rest/v1/'+t+(q
 function loadData(){
   api('GET','prep_items','location=eq.Tempest&team=eq.kitchen&order=sort_order.asc',null,function(r){
     items=r||[];
-    api('GET','staff','location=eq.Tempest&active=eq.true&order=sort_order.asc,name.asc',null,function(r2){
+    api('GET','staff','location=eq.Tempest&active=eq.true&order=shift.asc,sort_order.asc.nullslast,name.asc',null,function(r2){
       staff=r2||[];
       loadSections(loadLogs);
     });
@@ -903,7 +903,7 @@ init();
     for(var j=0;j<opts.length;j++)opts[j].addEventListener('click',function(){selCat=this.getAttribute('data-cat');for(var k=0;k<opts.length;k++)opts[k].classList.toggle('sel',opts[k].getAttribute('data-cat')===selCat);});
   }
   function loadStaff(){
-    nbApi('GET','staff','location=eq.Tempest&active=eq.true&order=sort_order.asc,name.asc',null,function(r){
+    nbApi('GET','staff','location=eq.Tempest&active=eq.true&order=shift.asc,sort_order.asc.nullslast,name.asc',null,function(r){
       var seen={};if(r&&r.length)for(var i=0;i<r.length;i++){var n=r[i].name;if(n&&!seen[n]){seen[n]=true;var o=document.createElement('option');o.value=n;o.textContent=n;byEl.appendChild(o);}}
     });
   }
