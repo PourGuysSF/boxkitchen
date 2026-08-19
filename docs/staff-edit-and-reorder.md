@@ -306,6 +306,21 @@ pattern rather than inventing a second one:
 is proven here is the configuration and the scroll fix, not that a finger can perform the
 drag. That is Slice 4, and it needs a person on the tablet.
 
+## 7e. Slice 4 — tablet verdict: PASS (2026-08-19)
+
+**Owner tested the drag on the real device and confirmed it works.**
+
+This closes the one question the build had never asked: Sortable's gesture cannot be
+synthesised in the automation harness, so every "tested" claim above §7d covers configuration
+and persistence logic — not whether a finger can perform the drag. It now has a human answer.
+
+Closes **R5**. **Slice 4b (▲▼ arrow fallback) is therefore cancelled** — it only ever existed
+if this test failed. Do not build it.
+
+Recorded as the owner's verdict on the gesture. The detailed §5 checklist items were not
+individually re-reported here.
+
+
 ## 8. Risks
 
 1. **RLS.** No UPDATE policy on `staff` = silent no-op. Check before building.
@@ -683,3 +698,26 @@ is already open. Newest slice last.
 - **m2.4** The canonical query string is now hand-copied in ten places. A per-file
   `STAFF_Q` constant would make the whitelist check trivially true. Noted only — there is no
   shared JS here by design, and this is not the build to change that.
+
+### From Slice 3 review (2026-08-19) — verdict: PASS on the code, slice still open
+- **M3.1** *(major)* Slice 3's "done when" is device-shaped — a finger swipe starting on a
+  chip scrolls, a drag from the grip reorders, the ✕ deletes on one tap — and none of that
+  has been run. What was verified is computed styles and Sortable config in the harness,
+  which is the right evidence for the *fix* but not the stated check. Per §10's own rule
+  ("if it can't be checked, the slice isn't done"), Slice 3 stays open until Slice 4a.
+- **M3.2** *(major — FIXED 2026-08-19)* The grip shipped at 20px wide / 20px min-height,
+  smaller than the `.drag-handle` pattern it copies (22×30) and well under the 44px touch
+  guideline, on exactly the gesture Slice 4 exists to test. Bumped to **22×30** in prep and
+  line so the device trip tests the version worth shipping. If 4a still says "fiddly," grip
+  size is the next cheap lever before the ▲▼ arrows of 4b.
+- **m3.3** `+ Add` alignment changed: it is now a sibling of `.staff-chips` under
+  `align-items:flex-start`, so with chips wrapped over two or three rows it sits top-right of
+  the block rather than trailing the last chip. Correct per N4, but it is a visible layout
+  change and §7d's test list doesn't mention looking at it. Eyeball it during Slice 4a.
+- **m3.4** `filter:'.remove'` / `preventOnFilter:false` are now dead config — with `handle:`
+  set, the ✕ can't start a drag either way. Harmless belt-and-braces; the comment still
+  explains it as the thing protecting the ✕.
+- **m3.5** The grip is a `<span>` with an `aria-label` and no `tabindex`, so there is no
+  keyboard path to reorder. Fine for this hardware; noted because the label implies otherwise.
+- **m3.6** Chip padding became asymmetric (`4px 6px 4px 4px`) to seat the grip. Intentional,
+  just unrecorded in §7d.
