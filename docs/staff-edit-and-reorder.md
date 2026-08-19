@@ -196,7 +196,7 @@ DB migration run by the owner: `staff.sort_order` added, backfilled 10/20/30… 
 
 **RLS:** `staff` has SELECT, INSERT and UPDATE policies open to `public`. That is what makes
 the browser writes persist, so the feature needs it — but it is not a safety check that came
-back clean. The anon key sits in plain text in all seven of these HTML files, so `staff`
+back clean. The anon key sits in plain text in all six of these HTML files, so `staff`
 accepts UPDATE from anyone who opens dev tools. The locked decision "staff can never reorder"
 is enforced by a hidden div and a localStorage PIN: a UX gate, not a security control.
 Consistent with the rest of the site and not a reason to stop — just not evidence of safety.
@@ -769,6 +769,7 @@ is already open. Newest slice last.
 ### From Slice 1 review (2026-08-19) — verdict: PASS
 - **m1.1** The whitelist check in §4 Step 3 says "expect **eight** lines." That was true at
   `9c80fa5` and is no longer — see M2.1 below. Fix the number, not the queries.
+  **FIXED — Slice 5.**
 
 ### From Slice 2 review (2026-08-19) — verdict: PASS, one major
 - **M2.1** *(major, not a minor — listed here so it isn't lost)* `refetchStaff()` adds a
@@ -776,13 +777,14 @@ is already open. Newest slice last.
   check now reports ten and appears to fail on every run. All ten strings are correct, so
   nothing is broken in the product — but the guard that exists to catch B1-shaped bugs now
   cries wolf, and a check that always fails is a check that gets ignored. Update the expected
-  count to **ten** in §4 and §7b. Deferred to Slice 5 by decision.
+  count to **ten** in §4 and §7b. **FIXED — Slice 5 (§4 Step 3, §7b, Slice 1's done-when).**
 - **m2.2** §7c describes `refetchStaff()` as a re-render path and doesn't note that it also
   introduced a new copy of the canonical query string — which is what causes M2.1.
 - **m2.3** Offline, the screen still shows the unsaved order until the user reloads: the
   PATCH fails, the refetch fails too, and `staff[]` is deliberately left intact. That is the
   right call and the toast says "reload the page," but §7c reads as though screen and DB
-  always agree after a failure. They agree after a *reload*.
+  always agree after a failure. They agree after a *reload*. **FIXED — Slice 5 rewrote that
+  paragraph in §7c.**
 - **m2.4** The canonical query string is now hand-copied in ten places. A per-file
   `STAFF_Q` constant would make the whitelist check trivially true. Noted only — there is no
   shared JS here by design, and this is not the build to change that.
@@ -793,6 +795,9 @@ is already open. Newest slice last.
   has been run. What was verified is computed styles and Sortable config in the harness,
   which is the right evidence for the *fix* but not the stated check. Per §10's own rule
   ("if it can't be checked, the slice isn't done"), Slice 3 stays open until Slice 4a.
+  **CLOSED — the owner's tablet test passed (§7e).** See M5.1: §7e records one overall PASS
+  rather than the individual gestures, and does not say whether the 20×20 or the 22×30 grip
+  was under the finger.
 - **M3.2** *(major — FIXED 2026-08-19)* The grip shipped at 20px wide / 20px min-height,
   smaller than the `.drag-handle` pattern it copies (22×30) and well under the 44px touch
   guideline, on exactly the gesture Slice 4 exists to test. Bumped to **22×30** in prep and
@@ -809,3 +814,22 @@ is already open. Newest slice last.
   keyboard path to reorder. Fine for this hardware; noted because the label implies otherwise.
 - **m3.6** Chip padding became asymmetric (`4px 6px 4px 4px`) to seat the grip. Intentional,
   just unrecorded in §7d.
+
+### From Slice 5 review (2026-08-19) — verdict: PASS, one major
+- **M5.1** *(major, open)* §7e records a single blanket tablet PASS, and the 22×30 grip bump
+  was committed *inside* `b61ca07` — the same commit as the test record. So the doc cannot
+  say whether the finger test ran on the old 20×20 grip or the shipped 22×30 one, and §7e
+  itself notes the §5 checklist items were not individually re-reported. Slice 4's done-when
+  was "run the §5 checklist"; Slice 3's was three named gestures. Before Slice 6, write into
+  §7e which grip was tested and which checklist lines were actually run. A bigger target is
+  very unlikely to be worse — this is about the record, not the risk.
+- **m5.2** *(fixed here)* §7's RLS paragraph said "all seven of these HTML files." It is six —
+  the seventh was `tempest_flash.html`, which N1 took out of scope. Corrected. The identical
+  line inside §9 W2 is **left alone on purpose**: §9 is kept as written, and editing the
+  historical review would defeat the point of keeping it.
+- **m5.3** *(fixed here)* §11 itself was the one section Slice 5 didn't sweep — M2.1, M3.1,
+  m1.1 and m2.3 all still read as open after being fixed. Status marks added.
+- **m5.4** *(open, cosmetic)* §9's W-findings still read as open in their own text (~lines
+  524–541). The status table Slice 5 added above them covers it and §9 is explicitly
+  historical, so this is consistent — but a skimmer can still land on W3 and conclude §8 is
+  stale. If it ever bites, one "superseded" marker per W-heading fixes it.
