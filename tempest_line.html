@@ -637,7 +637,6 @@ function initSortables(){
 // Writes only to the single global prep_items.sort_order, PATCH changed rows.
 function persistOrder(listEl,cat,station,evt){
   if(evt.oldIndex===evt.newIndex)return;
-  var snap={};for(var i=0;i<items.length;i++)snap[items[i].id]=items[i].sort_order;
   var rows=listEl.querySelectorAll('.task'),visIds=[];
   for(var i=0;i<rows.length;i++)visIds.push(parseInt(rows[i].getAttribute('data-id'),10));
   var draggedId=parseInt(evt.item.getAttribute('data-id'),10);
@@ -647,7 +646,9 @@ function persistOrder(listEl,cat,station,evt){
   var group=[];for(var i=0;i<items.length;i++){var gi=items[i];if(gi.shift!==shift||gi.category!==cat)continue;if(cat==='daily'&&(gi.station||'__none__')!==(station||'__none__'))continue;group.push(gi);}
   var dragged=null,rest=[];
   for(var i=0;i<group.length;i++){if(group[i].id===draggedId)dragged=group[i];else rest.push(group[i]);}
-  if(!dragged)return;
+  // Sortable has already moved the row, so returning quietly would leave a
+  // reorder on screen that was never saved. Fail loudly instead.
+  if(!dragged){refetchItems(1);return;}
   function idxOf(arr,id){for(var k=0;k<arr.length;k++)if(arr[k].id===id)return k;return -1;}
   var vi=visIds.indexOf(draggedId),at,newGroup;
   if(vi<=0){
@@ -671,13 +672,28 @@ function persistOrder(listEl,cat,station,evt){
     api('PATCH','prep_items','id=eq.'+it.id,{sort_order:it.sort_order},function(r){
       if(!r||!r.length)failed=true;
       if(--pending===0){
+        // Any failure means some PATCHes may already be committed, so a local
+        // snapshot cannot describe the database. Re-read the server instead of
+        // guessing — the screen then matches what a reload would show.
         if(failed){
-          for(var j=0;j<items.length;j++)if(snap[items[j].id]!=null)items[j].sort_order=snap[items[j].id];
-          items.sort(function(a,b){return a.sort_order-b.sort_order;});
-          render();toastErr('Could not save order');
+          refetchItems(1);
         }else{toast();}
       }
     });
+  });
+}
+
+// Re-read the item list from the server and re-render. Used whenever a reorder
+// fails: a partial write leaves the DB in a state no local snapshot can describe.
+function refetchItems(msg){
+  api('GET','prep_items','location=eq.Tempest&team=eq.line&order=sort_order.asc',null,function(r){
+    if(Array.isArray(r)){
+      items=r;render();
+      if(msg)toastErr('Could not save order');
+    }else{
+      // Couldn't reach the server either. Don't wipe items[] — say so instead.
+      toastErr('Could not save order — reload the page');
+    }
   });
 }
 
