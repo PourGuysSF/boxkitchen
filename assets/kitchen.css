@@ -1,0 +1,98 @@
+/* ─────────────────────────────────────────────────────────────
+   kitchen.css — shared stylesheet for the Tempest Kitchen site
+   "Expo Board in chit colors": paper, ink, one accent (tomato),
+   one highlighter (yellow). State is expressed with fill, weight
+   and border — not with hue.
+
+   Tokens and font import are copied verbatim from index.html,
+   which is the reference implementation of the look.
+
+   Adopted page by page (see docs/page-restyle.md). Only add
+   components here when a real page needs them.
+   ───────────────────────────────────────────────────────────── */
+
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=Playfair+Display:wght@700;900&display=swap');
+
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+:root{--paper:#fbfaf6;--ink:#121212;--grey:#6a6a6a;--hair:#e2e0d8;--faint:#a9a7a0;--dash:#b8b6ae;--yellow:#ffe600;--tomato:#e85d3a;--press:#f3f1ea}
+
+/* ── BASE ─────────────────────────────────────────────────── */
+body{font-family:'Barlow',-apple-system,sans-serif;background:var(--paper);color:var(--ink);min-height:100vh;padding-bottom:80px;font-variant-numeric:tabular-nums}
+a{color:inherit;text-decoration:none}
+[hidden]{display:none !important}
+
+/* Barlow Condensed uppercase — the label voice of the whole site */
+.h{font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--grey)}
+
+/* ── HEADER ───────────────────────────────────────────────── */
+.header{position:sticky;top:0;z-index:100;background:rgba(251,250,246,0.96);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-bottom:3px solid var(--ink);padding:14px 18px 12px}
+.header-row{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px}
+.header h1{font-family:'Playfair Display',serif;font-size:1.4rem;font-weight:900;letter-spacing:-0.01em;line-height:1.1;flex:1;text-align:center}
+.header h1 span{color:var(--tomato)}
+.home-link{display:inline-flex;align-items:center;justify-content:center;min-height:44px;min-width:44px;padding:0 10px;margin-left:-10px;font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--grey);transition:color 0.15s;flex-shrink:0;white-space:nowrap}
+.home-link:hover,.home-link:active{color:var(--tomato)}
+@media (min-width:760px){.header{padding-left:calc((100% - 720px)/2 + 18px);padding-right:calc((100% - 720px)/2 + 18px)}}
+
+/* ── BUTTONS ──────────────────────────────────────────────── */
+.new-btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 14px;background:var(--tomato);border:1px solid var(--tomato);border-radius:6px;color:#fff;font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;flex-shrink:0;white-space:nowrap}
+.new-btn:active{opacity:0.85}
+
+/* ── FILTER TOGGLE — state via fill, not hue ──────────────── */
+.filter-toggle{display:flex;background:var(--paper);border:1px solid var(--ink);border-radius:6px;overflow:hidden}
+.filter-btn{flex:1;min-height:40px;padding:9px;text-align:center;font-family:'Barlow Condensed',sans-serif;font-size:0.95rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;border:none;background:transparent;color:var(--grey);cursor:pointer}
+.filter-btn+.filter-btn{border-left:1px solid var(--ink)}
+.filter-btn.active{background:var(--ink);color:var(--paper)}
+
+/* ── EMPTY / LOADING ──────────────────────────────────────── */
+.empty{text-align:center;color:var(--grey);padding:60px 20px;font-size:0.9rem;font-style:italic}
+.loading{display:flex;flex-direction:column;align-items:center;padding:80px 20px;color:var(--grey)}
+.spinner{width:30px;height:30px;border:3px solid var(--hair);border-top-color:var(--tomato);border-radius:50%;animation:spin 0.8s linear infinite;margin-bottom:14px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── MODAL ────────────────────────────────────────────────── */
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:300;align-items:center;justify-content:center;padding:16px}
+.modal-bg.show{display:flex}
+.modal{background:var(--paper);border:1px solid var(--ink);border-radius:10px;padding:22px;width:100%;max-width:380px;max-height:90vh;overflow-y:auto}
+.modal h3{font-family:'Playfair Display',serif;font-size:1.2rem;font-weight:900;letter-spacing:-0.01em;margin-bottom:14px}
+.modal label{display:block;font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:var(--grey);margin-bottom:7px}
+.modal textarea,.modal select,.modal input[type="tel"],.modal input[type="text"]{width:100%;padding:11px;background:var(--paper);border:1px solid var(--ink);border-radius:6px;color:var(--ink);font-family:'Barlow',sans-serif;font-size:0.95rem;outline:none;-webkit-appearance:none;appearance:none}
+.modal textarea{margin-bottom:16px;resize:vertical;min-height:96px}
+.modal select{margin-bottom:16px}
+.modal input[type="tel"],.modal input[type="text"]{min-height:44px;margin-bottom:8px}
+.modal textarea:focus,.modal select:focus,.modal input:focus{border-color:var(--tomato);box-shadow:0 0 0 2px rgba(232,93,58,.2)}
+.modal textarea::placeholder{color:var(--grey)}
+/* error text: same dark red index.html uses for .auth-error — tomato is
+   too light to read at this size on paper */
+.modal-err{display:none;color:#b42318;font-size:0.83rem;font-weight:600;margin-bottom:12px}
+.modal-err.show{display:block}
+.modal-btns{display:flex;gap:10px}
+.modal-btn{flex:1;padding:12px;min-height:48px;border:1px solid var(--ink);border-radius:6px;font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;cursor:pointer}
+.modal-btn.cancel{background:var(--paper);color:var(--ink)}
+.modal-btn.cancel:active{background:var(--press)}
+.modal-btn.save{background:var(--tomato);border-color:var(--tomato);color:#fff}
+.modal-btn.save:active{opacity:0.85}
+.modal-btn:disabled{opacity:0.5;cursor:default}
+.pin-input{text-align:center;letter-spacing:0.5em;font-size:1.4rem;font-weight:700}
+
+/* ── CATEGORY PICKER — selection is an ink fill ───────────── */
+.cat-picker{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+.cat-opt{padding:9px 12px;min-height:44px;display:flex;align-items:center;gap:5px;background:var(--paper);border:1px solid var(--hair);border-radius:6px;color:var(--ink);font-family:'Barlow',sans-serif;font-size:0.85rem;font-weight:600;cursor:pointer}
+.cat-opt:active{background:var(--press)}
+.cat-opt.sel{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+
+/* ── TOAST — ink says saved, tomato says failed ───────────── */
+.toast{position:fixed;bottom:30px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:11px 22px;border-radius:6px;font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;opacity:0;transition:opacity 0.3s;pointer-events:none;z-index:400;box-shadow:0 4px 20px rgba(0,0,0,0.22)}
+.toast.show{opacity:1}
+.toast.error{background:var(--tomato);color:#fff}
+
+/* ── MANAGER MODE ─────────────────────────────────────────── */
+.mgr-toggle{display:flex;align-items:center;gap:8px;font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--grey);min-height:44px;flex-shrink:0}
+.mgr-switch{width:40px;height:22px;border-radius:11px;background:var(--paper);border:1px solid var(--ink);position:relative;cursor:pointer;transition:background 0.2s}
+.mgr-switch .knob{width:16px;height:16px;border-radius:50%;background:var(--ink);position:absolute;top:2px;left:2px;transition:left 0.2s,background 0.2s}
+.mgr-switch.on{background:var(--ink)}
+.mgr-switch.on .knob{background:var(--paper);left:20px}
+.mgr-edit-btn,.mgr-delete-btn{min-height:40px;min-width:44px;display:inline-flex;align-items:center;justify-content:center;background:transparent;border:1px solid var(--ink);border-radius:6px;cursor:pointer;font-family:'Barlow Condensed',sans-serif;font-size:0.95rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:0 12px}
+.mgr-edit-btn{color:var(--ink)}
+.mgr-edit-btn:active{background:var(--press)}
+.mgr-delete-btn{color:var(--tomato);border-color:rgba(232,93,58,0.5)}
+.mgr-delete-btn:active{background:rgba(232,93,58,0.10)}
