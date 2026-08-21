@@ -43,12 +43,12 @@ a{color:inherit;text-decoration:none}
    .view-toggle > button. JS sets all three, so all three names
    stay; only one set of rules describes them.
    Active state is an ink fill, never a hue. ─────────────────── */
-.filter-toggle,.mode-toggle{display:flex;background:var(--paper);border:1px solid var(--ink);border-radius:6px;overflow:hidden}
-.filter-btn,.mode-btn,.view-toggle button{flex:1;min-height:40px;padding:9px;text-align:center;font-family:'Barlow Condensed',sans-serif;font-size:0.95rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;background:transparent;color:var(--grey);cursor:pointer}
+.filter-toggle,.mode-toggle,.shift-toggle{display:flex;background:var(--paper);border:1px solid var(--ink);border-radius:6px;overflow:hidden}
+.filter-btn,.mode-btn,.shift-btn,.view-toggle button{flex:1;min-height:40px;padding:9px;text-align:center;font-family:'Barlow Condensed',sans-serif;font-size:0.95rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;background:transparent;color:var(--grey);cursor:pointer}
 /* joined variant: the container carries the border */
-.filter-btn,.mode-btn{border:none}
-.filter-btn+.filter-btn,.mode-btn+.mode-btn{border-left:1px solid var(--ink)}
-.filter-btn.active,.mode-btn.active,.view-toggle button.active{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+.filter-btn,.mode-btn,.shift-btn{border:none}
+.filter-btn+.filter-btn,.mode-btn+.mode-btn,.shift-btn+.shift-btn{border-left:1px solid var(--ink)}
+.filter-btn.active,.mode-btn.active,.shift-btn.active,.view-toggle button.active{background:var(--ink);border-color:var(--ink);color:var(--paper)}
 
 /* ── EMPTY / LOADING ──────────────────────────────────────── */
 .empty{text-align:center;color:var(--grey);padding:60px 20px;font-size:0.9rem;font-style:italic}
@@ -81,11 +81,13 @@ a{color:inherit;text-decoration:none}
 .modal-btn:disabled{opacity:0.5;cursor:default}
 .pin-input{text-align:center;letter-spacing:0.5em;font-size:1.4rem;font-weight:700}
 
-/* ── CATEGORY PICKER — selection is an ink fill ───────────── */
-.cat-picker{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
-.cat-opt{padding:9px 12px;min-height:44px;display:flex;align-items:center;gap:5px;background:var(--paper);border:1px solid var(--hair);border-radius:6px;color:var(--ink);font-family:'Barlow',sans-serif;font-size:0.85rem;font-weight:600;cursor:pointer}
-.cat-opt:active{background:var(--press)}
-.cat-opt.sel{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+/* ── CATEGORY PICKER — selection is an ink fill.
+   Notes calls the chip .cat-opt, Prep's staff-note modal calls it
+   .nb-cat. One control, one rule. ─────────────────────────── */
+.cat-picker,.nb-cats{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+.cat-opt,.nb-cat{padding:9px 12px;min-height:44px;display:flex;align-items:center;gap:5px;background:var(--paper);border:1px solid var(--hair);border-radius:6px;color:var(--ink);font-family:'Barlow',sans-serif;font-size:0.85rem;font-weight:600;cursor:pointer}
+.cat-opt:active,.nb-cat:active{background:var(--press)}
+.cat-opt.sel,.nb-cat.sel{background:var(--ink);border-color:var(--ink);color:var(--paper)}
 
 /* ── TOAST — ink says saved, tomato says failed ───────────── */
 .toast{position:fixed;bottom:30px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:11px 22px;border-radius:6px;font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;opacity:0;transition:opacity 0.3s;pointer-events:none;z-index:400;box-shadow:0 4px 20px rgba(0,0,0,0.22)}
@@ -211,8 +213,11 @@ a{color:inherit;text-decoration:none}
 
 /* ── HEADER EXTRAS ────────────────────────────────────────── */
 .lock-tag{display:flex;align-items:center;gap:5px;flex-shrink:0;white-space:nowrap;font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--grey)}
-.manage-btn{display:block;margin:10px auto 0;min-height:40px;padding:8px 12px;background:var(--paper);border:1px solid var(--ink);border-radius:6px;color:var(--ink);font-family:'Barlow Condensed',sans-serif;font-size:0.9rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;white-space:nowrap}
-.manage-btn:active{background:var(--press)}
+.manage-btn,.manage-sections-btn{display:block;margin:10px auto 0;min-height:40px;padding:8px 12px;background:var(--paper);border:1px solid var(--ink);border-radius:6px;color:var(--ink);font-family:'Barlow Condensed',sans-serif;font-size:0.9rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;white-space:nowrap}
+.manage-btn:active,.manage-sections-btn:active{background:var(--press)}
+/* Prep's variant is hidden until manager mode; its JS sets an inline
+   display, which wins over this. */
+.manage-sections-btn{display:none}
 
 /* ── DATE STEPPER ─────────────────────────────────────────── */
 .date-left{display:flex;align-items:center;gap:10px;min-width:0}
@@ -419,3 +424,161 @@ body.manager-mode .card-mgr-actions{display:flex}
   .grid{padding:10px 20px 40px;grid-template-columns:1fr}
   .rec-page .mgr-add-bar{padding:10px 20px 0}
 }
+
+/* ═══════════════════════════════════════════════════════════
+   PREP LIST — tempest_prep.html
+   Added in slice 5. First SortableJS page.
+
+   ⚠️ touch-action:none appears on .drag-handle and .staff-grip
+   ONLY. Widening it to .task, .staff-chip or any container turns
+   the list into a scroll dead zone on a phone — a bug this page
+   has already paid for once. SortableJS is configured
+   handle:'.drag-handle' / handle:'.staff-grip' to match.
+   ═══════════════════════════════════════════════════════════ */
+
+/* Section and station hues, retuned for cream — Stephen chose to keep
+   all eight (2026-08-21). The originals were picked against a near-black
+   background. These match the values Notes already uses for its
+   categories; slice 9 should fold both sets into one shared palette. */
+:root{--sec-cleaning:#a25c00;--sec-daily:#22457f;--sec-weekly:#e85d3a;
+      --st-salad:#2d6a4f;--st-grill:#b42318;--st-saute:#22457f;--st-kits:#5f4589;--st-none:#6a6a6a}
+
+/* ── PROGRESS ─────────────────────────────────────────────── */
+.progress-wrap{display:flex;align-items:center;gap:8px}
+.progress-bar{width:100px;height:6px;background:var(--hair);border-radius:3px;overflow:hidden}
+/* done is solid ink, never green */
+.progress-fill{height:100%;background:var(--ink);border-radius:3px;transition:width 0.4s}
+.progress-text{font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;letter-spacing:.04em;color:var(--grey);min-width:40px;text-align:right;font-variant-numeric:tabular-nums}
+
+.viewas-bar{display:flex;align-items:center;gap:8px;padding:8px 18px;background:var(--press);border-bottom:1px solid var(--hair);font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--grey)}
+.viewas-bar select{min-height:34px;padding:5px 8px;background:var(--paper);border:1px solid var(--ink);border-radius:6px;color:var(--ink);font-family:'Barlow',sans-serif;font-size:0.82rem;text-transform:none;letter-spacing:0;outline:none}
+.viewas-bar select:focus{border-color:var(--tomato);box-shadow:0 0 0 2px rgba(232,93,58,.2)}
+.empty-filter{padding:14px 18px;font-size:0.88rem;font-style:italic;color:var(--grey)}
+
+/* ── STAFF BAR (manager mode) ─────────────────────────────── */
+.staff-bar{display:none;padding:10px 18px;background:var(--press);border-bottom:1px solid var(--hair)}
+.manager-mode .staff-bar{display:block}
+.staff-bar-title{font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--grey);margin-bottom:8px}
+.staff-row{display:flex;flex-wrap:wrap;gap:6px;align-items:flex-start}
+.staff-chips{display:flex;flex-wrap:wrap;gap:6px}
+.staff-chip{display:flex;align-items:center;gap:4px;padding:4px 6px 4px 4px;background:var(--paper);border:1px solid var(--ink);border-radius:6px;font-size:0.8rem;color:var(--ink)}
+/* touch-action:none lives on the grip ONLY — putting it on the chip made
+   the whole staff bar a scroll dead zone. Same discipline as .drag-handle. */
+.staff-grip{display:none;align-items:center;justify-content:center;width:22px;align-self:stretch;min-height:30px;color:var(--grey);cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none;flex:none}
+.manager-mode .staff-grip{display:flex}
+.staff-grip:active{cursor:grabbing;color:var(--tomato)}
+.staff-grip svg{display:block;pointer-events:none}
+.staff-chip.sortable-ghost{background:var(--press);border-style:dashed;border-color:var(--dash)}
+.staff-chip.sortable-chosen{background:var(--press);border-color:var(--ink)}
+.staff-chip .remove{color:var(--tomato);cursor:pointer;font-weight:700;margin-left:2px}
+.add-staff-btn{padding:4px 10px;background:transparent;border:1px dashed var(--dash);border-radius:6px;color:var(--ink);font-family:'Barlow Condensed',sans-serif;font-size:0.85rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;cursor:pointer}
+.add-staff-btn:active{background:var(--press)}
+
+/* ── SECTIONS ─────────────────────────────────────────────── */
+.section{border-bottom:1px solid var(--hair)}
+.section-header{display:flex;justify-content:space-between;align-items:center;padding:12px 18px;background:var(--press);cursor:pointer}
+.section-header:active{background:var(--hair)}
+.section-title{font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}
+.section-title.cleaning{color:var(--sec-cleaning)}
+.section-title.daily{color:var(--sec-daily)}
+.section-title.weekly{color:var(--sec-weekly)}
+.section-right{display:flex;align-items:center;gap:8px}
+.section-count{font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:600;letter-spacing:.04em;color:var(--grey);background:var(--paper);border:1px solid var(--hair);padding:2px 8px;border-radius:10px;font-variant-numeric:tabular-nums}
+.chevron{font-size:0.65rem;color:var(--grey);transition:transform 0.2s}
+.section.open .chevron{transform:rotate(180deg)}
+.section-body{display:none}
+.section.open .section-body{display:block}
+
+/* ── STATION SUB-GROUPS ───────────────────────────────────── */
+.station-group{border-top:1px solid var(--hair)}
+.station-header{display:flex;justify-content:space-between;align-items:center;padding:7px 18px;background:var(--paper)}
+.station-title{font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:.1em;text-transform:uppercase}
+.station-count{font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:600;color:var(--grey);background:var(--paper);border:1px solid var(--hair);padding:1px 7px;border-radius:9px;font-variant-numeric:tabular-nums}
+.st-salad{color:var(--st-salad)}
+.st-grill{color:var(--st-grill)}
+.st-saute{color:var(--st-saute)}
+.st-kits{color:var(--st-kits)}
+.st-none{color:var(--st-none)}
+.station-right{display:flex;align-items:center;gap:8px}
+.station-assign{max-width:112px;padding:2px 5px;background:var(--paper);border:1px solid var(--hair);border-radius:6px;color:var(--grey);font-family:'Barlow',sans-serif;font-size:0.7rem;outline:none}
+.station-assign:focus{border-color:var(--tomato);box-shadow:0 0 0 2px rgba(232,93,58,.2)}
+
+/* Kit/Make pill — "MAKE" is an alert and stays the loudest thing on the row */
+.mode-pill{display:inline-block;margin-left:6px;padding:2px 7px;border:1px solid var(--hair);border-radius:4px;font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;vertical-align:middle;cursor:pointer}
+.mode-pill.mode-kit{background:var(--paper);color:var(--grey)}
+.mode-pill.mode-make{background:var(--tomato);border-color:var(--tomato);color:#fff;animation:notePulse 2s infinite}
+
+/* ── TASK ROW ─────────────────────────────────────────────── */
+.task{display:flex;align-items:center;gap:8px;padding:10px 18px;border-bottom:1px solid var(--hair)}
+/* done reads as struck off, not faded — opacity washes out on paper */
+.task.done .task-name{text-decoration:line-through;color:var(--grey)}
+.mgr-controls{display:none;flex-direction:column;gap:1px;flex-shrink:0}
+.manager-mode .mgr-controls{display:flex}
+.checkbox{width:26px;height:26px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:var(--paper);border:2px solid var(--hair);border-radius:6px;color:transparent;font-size:0.85rem;cursor:pointer;transition:all 0.15s}
+/* same reading as .count-input.filled and .money-wrap.filled: fill, not hue */
+.checkbox.checked{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+.task-info{flex:1;min-width:0}
+.task-name{font-size:0.85rem;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.manager-mode .task-name{cursor:pointer}
+.task-name-input{display:none;width:100%;padding:4px 8px;background:var(--paper);border:1px solid var(--tomato);border-radius:6px;color:var(--ink);font-family:'Barlow',sans-serif;font-size:0.88rem;outline:none}
+.task-day{display:inline-block;margin-left:5px;padding:1px 5px;background:var(--tomato);border-radius:3px;color:#fff;font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;vertical-align:middle}
+.task-fields{display:flex;gap:5px;align-items:center;flex-shrink:0}
+/* the chevron is an inline SVG with a hard-coded fill — it must be
+   restated in the new grey or it keeps the old dark-theme muted */
+.who-select{width:132px;padding:5px 4px;padding-right:16px;background:var(--paper);border:1px solid var(--hair);border-radius:6px;color:var(--ink);font-family:'Barlow',sans-serif;font-size:0.78rem;outline:none;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Cpath d='M0 2l4 4 4-4' fill='%236a6a6a'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 6px center}
+.who-select:focus{border-color:var(--tomato);box-shadow:0 0 0 2px rgba(232,93,58,.2)}
+/* assigned = somebody's on it. Weight and border, not hue. */
+.who-select.assigned{border-color:var(--ink);color:var(--ink);font-weight:600}
+.task-input{padding:5px 8px;background:var(--paper);border:1px solid var(--hair);border-radius:6px;color:var(--ink);font-family:'Barlow',sans-serif;font-size:0.78rem;font-variant-numeric:tabular-nums;outline:none}
+.task-input:focus{border-color:var(--tomato);box-shadow:0 0 0 2px rgba(232,93,58,.2)}
+.task-input::placeholder{color:var(--faint)}
+.task-input.qty{width:48px;text-align:center}
+
+/* ── NOTES ON A TASK — yellow is the note colour ──────────── */
+.note-btn{width:26px;height:26px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:var(--paper);border:1px solid var(--hair);border-radius:6px;color:var(--grey);font-size:0.7rem;cursor:pointer}
+/* yellow as a fill, not as text — #ffe600 on paper is unreadable */
+.note-btn.has-note{background:var(--yellow);border-color:var(--yellow);color:var(--ink)}
+.note-badge{display:inline-block;margin-left:5px;padding:1px 5px;background:var(--yellow);border-radius:3px;color:var(--ink);font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;vertical-align:middle;animation:notePulse 2s infinite}
+@keyframes notePulse{0%,100%{opacity:1}50%{opacity:0.6}}
+.note-row{display:none;padding:4px 18px 10px 62px}
+.note-row.show{display:block}
+.note-input{width:100%;padding:6px 10px;background:var(--paper);border:1px solid var(--hair);border-radius:6px;color:var(--ink);font-family:'Barlow',sans-serif;font-size:0.82rem;outline:none}
+.note-input:focus{border-color:var(--ink);box-shadow:0 0 0 2px var(--yellow)}
+
+/* ── MANAGER-ONLY ROW CONTROLS ────────────────────────────── */
+.delete-btn{display:none;width:22px;height:22px;flex-shrink:0;align-items:center;justify-content:center;background:transparent;border:1px solid rgba(232,93,58,0.5);border-radius:5px;color:var(--tomato);font-size:0.8rem;cursor:pointer}
+.manager-mode .delete-btn{display:flex}
+.delete-btn:active{background:rgba(232,93,58,0.10)}
+.add-btn{display:none;width:100%;padding:10px 18px;background:transparent;border:none;color:var(--ink);font-family:'Barlow Condensed',sans-serif;font-size:0.95rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;text-align:left;cursor:pointer}
+.manager-mode .add-btn{display:block}
+.add-btn:active{background:var(--press)}
+
+/* ── DRAG TO REORDER ──────────────────────────────────────────
+   touch-action:none belongs here and on .staff-grip, nowhere else.
+   Ghost and chosen use outline/inset shadow rather than border so
+   grabbing a row never shifts the layout mid-drag. ──────────── */
+.drag-handle{display:flex;align-items:center;justify-content:center;width:22px;height:30px;color:var(--grey);cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none}
+.drag-handle:active{cursor:grabbing;color:var(--tomato)}
+.drag-handle svg{display:block;pointer-events:none}
+/* the gap the row will land in */
+.task.sortable-ghost{background:var(--press);outline:1px dashed var(--dash);outline-offset:-1px}
+/* the row you grabbed */
+.task.sortable-chosen{background:var(--press);box-shadow:inset 0 0 0 1px var(--ink)}
+/* the floating copy — lifted off the page */
+.task.sortable-drag{background:var(--paper);box-shadow:0 6px 20px rgba(0,0,0,0.18)}
+
+/* ── STAFF NOTE FAB + MODAL ───────────────────────────────── */
+.nb-fab{position:fixed;right:20px;bottom:20px;z-index:250;width:56px;height:56px;display:flex;align-items:center;justify-content:center;padding-bottom:3px;background:var(--tomato);border:none;border-radius:50%;color:#fff;font-size:2rem;font-weight:300;line-height:1;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,0.22)}
+.nb-fab:active{transform:scale(0.94);opacity:0.9}
+.nb-textarea{width:100%;min-height:90px;padding:10px;margin-bottom:10px;background:var(--paper);border:1px solid var(--ink);border-radius:6px;color:var(--ink);font-family:'Barlow',sans-serif;font-size:0.9rem;resize:vertical;outline:none}
+.nb-textarea:focus{border-color:var(--tomato);box-shadow:0 0 0 2px rgba(232,93,58,.2)}
+.nb-textarea::placeholder{color:var(--grey)}
+.nb-err{display:none;color:#b42318;font-size:0.82rem;font-weight:600;margin-bottom:10px}
+.nb-err.show{display:block}
+.nb-toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);z-index:400;padding:10px 24px;background:var(--ink);border-radius:6px;color:var(--paper);font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;opacity:0;transition:opacity 0.3s;pointer-events:none;box-shadow:0 4px 20px rgba(0,0,0,0.22)}
+.nb-toast.show{opacity:1}
+
+/* ── COMPLETION CELEBRATION ───────────────────────────────── */
+.celebrate-canvas{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:9998}
+/* the highlighter moment: yellow ground, ink type */
+.celebrate-banner{position:fixed;left:50%;top:38%;transform:translate(-50%,-50%) scale(0.9);z-index:9999;max-width:80vw;padding:16px 28px;background:var(--yellow);border:1px solid var(--ink);border-radius:6px;color:var(--ink);font-family:'Playfair Display',serif;font-size:1.25rem;font-weight:900;text-align:center;opacity:0;pointer-events:none;box-shadow:0 8px 40px rgba(0,0,0,0.25)}
