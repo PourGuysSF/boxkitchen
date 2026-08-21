@@ -125,89 +125,107 @@ So this is a translation job, not a find-and-replace. Proposed mapping:
 
 # Build slices
 
-Ordered smallest-and-safest first, so the pattern is proven on a page nobody's shift
-depends on before it reaches the pages that run service. **One slice = one PR.**
+**Reordered 2026-08-21.** The first cut ordered by file size, smallest first. That was
+wrong: the two smallest pages (Notes, Costing) are the only two whose tables are **empty**,
+so they're the two you can't actually see restyled. Order is now by *reviewability* —
+pages with real data first — with the operationally risky pages still late.
 
-Each slice is written so it can be built, previewed, reviewed and merged on its own, and
-reverted on its own if it lands wrong.
+Row counts behind each page, measured 2026-08-21:
 
-### Gate 0 — decide the open questions — **DONE 2026-08-21**
-Both answered by Stephen: typographic category labels, and a shared stylesheet adopted
-page by page. See "Decisions" above. Slice 1 is unblocked.
+| page | rows |
+|---|---:|
+| notes | **0** |
+| ingredient_costs (costing) | **0** |
+| meat_items | 18 |
+| Recipes | 47 |
+| flash_days | 51 |
+| portion_items | 66 |
+| order_items | 277 |
+| prep_items | 351 |
 
-### Slice 1 — `assets/kitchen.css` + convert `tempest_notes.html`
+**One slice = one PR.** Each is buildable, reviewable, mergeable and revertible on its own.
+
+### Gate 0 — decisions — **DONE 2026-08-21**
+Shared stylesheet adopted page by page; Notes keeps its category colours (retuned for
+paper). Orders and Recipes re-ask when their slices come up. Dark mode out of scope.
+
+### Slice 1 — `assets/kitchen.css` + `tempest_notes.html` — **IN PROGRESS**
 The foundation, proven on the smallest page (418 lines, 88 CSS lines, no drag-and-drop).
-Create `assets/kitchen.css` holding the `:root` tokens, the font import, and base rules
-(body, header, buttons, inputs) **plus only the components notes actually uses** — modal,
-toast, manager toggle. Don't speculatively style components no page has needed yet; later
-slices add them as real pages demand them.
-**Delivers:** Kitchen Notes looks like the home page, and a stylesheet the other eight
-pages can adopt. **Files:** `assets/kitchen.css` (new), `tempest_notes.html`.
-**Risk:** low visually, **high in influence** — every later slice inherits these decisions.
-**Done when:** notes reads as one product with the home page; add/edit/delete a note,
-manager mode, and a toast all still work.
+Creates `assets/kitchen.css` — tokens, font import, base rules, and only the components
+Notes actually uses (modal, toast, manager toggle, spinner). Later slices add components as
+real pages demand them; don't style speculatively.
+**Caveat:** `notes` has 0 rows, so the page renders its empty state. Verification requires
+creating test notes across all five categories **and deleting every one afterwards** — this
+writes to the live production database and the kitchen's home tile displays them meanwhile.
+**Delivers:** Kitchen Notes matching the home page + a stylesheet eight pages can adopt.
+**Risk:** low visually, **high in influence** — every later slice inherits its decisions.
 
-### Slice 2 — `tempest_costing.html`
-Second-smallest (434 lines, 95 CSS). No SortableJS. First real test that the stylesheet
-generalizes to a page it wasn't written against.
-**Delivers:** Recipe Costing restyled; any gaps in `kitchen.css` found and filled.
-**Risk:** low. **Done when:** costing calculations display correctly, PIN gate still gates.
+### Slice 2 — `tempest_portion.html` + `tempest_meat.html` (both, one PR)
+66 and 18 real rows, so the restyle is actually visible. Their CSS blocks are
+**byte-identical** — one job done twice; splitting them would mean reviewing the same diff
+twice. No SortableJS. First real test that the stylesheet generalizes to pages it wasn't
+written against.
+**Delivers:** both count sheets restyled; gaps in `kitchen.css` found and filled.
+**Risk:** low. **Done when:** a count saves on both, date arrows work, manager mode works.
 
-### Slice 3 — `tempest_portion.html` + `tempest_meat.html` (both, one PR)
-Their CSS blocks are **byte-identical**, so this is genuinely one job done twice. Splitting
-them would mean reviewing the same diff twice.
-**Delivers:** both count sheets restyled. **Files:** two.
-**Risk:** low. **Done when:** a count saves on both, the date arrows work, manager mode works.
+### Slice 3 — `tempest_flash.html`
+644 lines, 117 CSS, 51 rows of real data. Dense numeric tables plus month/year report
+views — first page where tabular-figure alignment and table styling matter.
+**Delivers:** Flash Reports restyled, report tables included. `kitchen.css` gains a table block.
+**Risk:** medium. **Done when:** save a day, switch month/year views, PIN gate intact,
+numbers align in columns.
 
-### Slice 4 — `tempest_flash.html`
-644 lines, 117 CSS. Dense numeric tables plus the month/year report views — the first page
-where tabular-figure alignment and table styling matter.
-**Delivers:** Flash Reports restyled, including its report tables.
-**Risk:** medium — tables are new styling territory; `kitchen.css` will gain a table block.
-**Done when:** save a day, switch month/year views, PIN gate intact, numbers align.
-
-### Slice 5 — `recipe_dashboard.html`
-802 lines, 121 CSS, 44 manager-mode references — the heaviest manager surface in the app.
+### Slice 4 — `recipe_dashboard.html`
+802 lines, 121 CSS, 47 recipes, 44 manager-mode references — heaviest manager surface.
+**Category colours: ask Stephen before building** — the Notes answer does not carry.
 **Delivers:** recipe dashboard restyled.
-**Risk:** medium. **Done when:** search/filter, category and station labels, and add/edit/
-delete recipes all work in and out of manager mode.
+**Risk:** medium. **Done when:** search/filter, category and station labels, and
+add/edit/delete recipes all work in and out of manager mode.
 
-### Slice 6 — `tempest_prep.html`
-969 lines, 161 CSS, **first SortableJS page**. Drag styling is the real work: SortableJS
-injects its own ghost/chosen/drag classes and reads computed styles.
-**Delivers:** prep list restyled, drag-and-drop intact.
-**Risk:** **high** — this is the page the kitchen uses most.
-**Done when:** check items off on both shifts, add/edit/delete, reorder by dragging, and
-confirm the reorder survives a reload.
+### Slice 5 — `tempest_prep.html`
+969 lines, 161 CSS, 351 rows, **first SortableJS page**. Drag styling is the real work:
+SortableJS injects its own ghost/chosen/drag classes and reads computed styles.
+**Risk:** **high** — the page the kitchen uses most.
+**Done when:** check items off on both shifts, add/edit/delete, drag to reorder, and the
+new order survives a reload.
 
-### Slice 7 — `tempest_line.html`
-962 lines, 160 CSS; 21 CSS lines differ from prep. Applies the pattern slice 6 proved.
-**Delivers:** line list restyled.
-**Risk:** medium (pattern already proven). **Done when:** same checklist as slice 6, plus
-the SUN–SAT day dropdown renders correctly.
+### Slice 6 — `tempest_line.html`
+962 lines, 160 CSS; 21 CSS lines differ from prep. Applies the pattern slice 5 proved.
+**Risk:** medium. **Done when:** same checklist as slice 5, plus the SUN–SAT dropdown renders.
 
-### Slice 8 — `tempest_orders.html` — **too big, split it**
-1137 lines, 171 CSS, 25 modal references, 24 manager references, SortableJS. This is the
-largest page and the most modal-heavy, and it is where an order actually gets submitted.
-Split into:
-- **8a — layout, typography, shelves and item rows.** The page reads correctly at rest.
-- **8b — modals, manager mode, drag affordances.** The interactive surfaces.
-**Delivers (8a+8b):** order guides restyled.
-**Risk:** **high** — a broken order guide means an order doesn't go to Birite.
+### Slice 7 — `tempest_orders.html` — **split, too big as one**
+1137 lines, 171 CSS, 277 rows, 25 modal references, 24 manager references, SortableJS.
+Largest page, most modal-heavy, and where an order actually gets submitted.
+- **7a — layout, typography, shelves, item rows.** The page reads correctly at rest.
+- **7b — modals, manager mode, drag affordances.** The interactive surfaces.
+**Category colours: ask Stephen before 7a.**
+**Risk:** **high** — a broken order guide means an order doesn't reach Birite.
 **Done when:** build an order, submit it, view a previous order, move an item between
-shelves, drag to reorder, and manager mode behaves — all on a phone.
+shelves, drag to reorder, manager mode behaves — all on a phone.
+
+### Slice 8 — `tempest_costing.html` — **last, deliberately**
+434 lines, 95 CSS. Moved from second to last: `ingredient_costs` and
+`ingredient_price_history` are **both empty**, so this page can only be restyled blind
+against its empty state. Doing it last means the pattern is fully proven by then and
+blindness costs least.
+**Separate question for Stephen, not part of this slice:** an unused costing tool is either
+a data-entry job or a feature to retire. Worth deciding before spending review time on it.
+**Risk:** low. **Done when:** the page renders correctly and the PIN gate still gates.
 
 ### Slice 9 — consistency sweep
-With all pages converted: delete leftover duplicated rules, confirm no page still imports
-DM Sans or references a dead `--surface`/`--green`/`--blue` variable, and walk the whole
-site on one phone looking for drift.
+Delete leftover duplicated rules, confirm no page still imports DM Sans or references a
+dead `--surface`/`--green`/`--blue`, and walk the whole site on one phone looking for drift.
 **Delivers:** one coherent product; `kitchen.css` as the single source of styling truth.
-**Risk:** low. **Done when:** grep finds no old tokens, and the walk-through finds no page
-that feels foreign.
+**Done when:** grep finds no old tokens and no page feels foreign.
+
+## Verifying a page with no data — standing rule
+Notes (slice 1) and Costing (slice 8) render empty. Any test rows created to review styling
+go into the **live production database** and are visible to the kitchen immediately. Create
+the minimum needed, delete every one before opening the PR, and confirm the home page tile
+has returned to its empty reading. Never do this during service.
 
 ## Sizing note
-
-Nine slices (ten PRs, since 8 splits). Slice 8 was the only one that came out clearly
-oversized and it has been split above. Slice 1 is not the biggest but is the one most worth
-slowing down on — every later slice inherits whatever it decides. Slices 6 and 8 carry the
-real operational risk; both sit late deliberately, after the pattern is boring.
+Nine slices, ten PRs (7 splits). Slice 7 was the only one clearly oversized and is split.
+Slice 1 is not the biggest but is the one worth slowing down on — every later slice
+inherits whatever it decides. Slices 5 and 7 carry the real operational risk; both sit late
+deliberately, after the pattern is boring.
