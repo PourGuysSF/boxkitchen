@@ -285,3 +285,137 @@ a{color:inherit;text-decoration:none}
 .vretire:active{background:rgba(232,93,58,0.10)}
 .vretire.restore{color:var(--ink);border-color:var(--ink)}
 .vretire.restore:active{background:var(--press)}
+
+/* ═══════════════════════════════════════════════════════════
+   RECIPE DASHBOARD — recipe_dashboard.html
+   Added in slice 4. The only desktop-first page in the app:
+   40px gutters, an auto-fill card grid, one 600px breakpoint.
+   Its header is a masthead, not the compact sticky header the
+   phone pages share, so it is restyled in place rather than
+   swapped for .header.
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── MASTHEAD ─────────────────────────────────────────────── */
+/* the old tomato gradient wash is dropped — flat paper, and the
+   3px ink rule that every other page's header carries */
+.rec-page .header{position:static;padding:40px 40px 20px;border-bottom:3px solid var(--ink);background:var(--paper);backdrop-filter:none;-webkit-backdrop-filter:none}
+.rec-page .header h1{font-family:'Playfair Display',serif;font-size:2.4rem;font-weight:900;letter-spacing:-0.02em;line-height:1.05;flex:none;text-align:left}
+.rec-page .header h1 span{color:var(--tomato)}
+.rec-page .header p{color:var(--grey);font-size:0.95rem;margin-top:2px}
+.rec-page .home-link{margin-bottom:8px}
+.header-row .head-text{flex:1;min-width:220px}
+.rec-page .header-row{align-items:flex-start;flex-wrap:wrap;gap:16px;margin-bottom:0}
+
+.status-bar{display:flex;align-items:center;gap:10px;margin-top:16px}
+/* the dot no longer pulses — it was decorative motion reading as a
+   live connection signal */
+.status-dot{width:8px;height:8px;border-radius:50%;background:var(--faint);flex-shrink:0}
+.status-text{font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--grey)}
+
+/* ── CONTROLS ─────────────────────────────────────────────── */
+.controls{display:flex;gap:12px;padding:20px 40px;flex-wrap:wrap;align-items:center}
+.search-box{flex:1;min-width:200px;min-height:44px;padding:10px 16px;background:var(--paper);border:1px solid var(--ink);border-radius:6px;color:var(--ink);font-family:'Barlow',sans-serif;font-size:0.95rem;outline:none;-webkit-appearance:none;appearance:none}
+.search-box::placeholder{color:var(--faint)}
+.search-box:focus{border-color:var(--tomato);box-shadow:0 0 0 2px rgba(232,93,58,.2)}
+
+/* These filter buttons are standalone pills in a control row, NOT a
+   segmented control like .filter-toggle on Notes or .mode-toggle on
+   Flash — so they need their own border and must not stretch. */
+.controls .filter-btn{flex:0 0 auto;min-height:44px;padding:8px 18px;background:var(--paper);border:1px solid var(--ink);border-radius:6px;color:var(--grey)}
+.controls .filter-btn:hover{color:var(--ink)}
+.controls .filter-btn.active{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+.controls .archived-toggle.active{background:var(--grey);border-color:var(--grey);color:var(--paper)}
+.count{font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--grey);padding:0 10px}
+
+/* padding only — display is owned by .mgr-add-bar / .manager-mode above,
+   and repeating display:none here would win on order and keep the bar
+   hidden in manager mode */
+.rec-page .mgr-add-bar{padding:10px 40px 0;border-bottom:none}
+
+/* ── CARD GRID ────────────────────────────────────────────── */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:20px;padding:10px 40px 60px}
+.card{background:var(--paper);border:1px solid var(--ink);border-radius:8px;padding:22px;cursor:pointer;transition:background 0.15s,box-shadow 0.15s}
+.card:hover{background:var(--press);box-shadow:0 2px 0 var(--ink)}
+.card-header{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:12px}
+.card-title{font-family:'Playfair Display',serif;font-size:1.3rem;font-weight:700;line-height:1.2}
+
+/* Every one of the 47 recipes is Tempest, so this chip is on every
+   card and distinguishes nothing. Styled down to a hairline label.
+   .showdown is kept for the day a second location exists. */
+.location-tag{font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.12em;padding:3px 8px;border-radius:4px;white-space:nowrap;background:transparent;border:1px solid var(--hair);color:var(--grey)}
+.location-tag.tempest{background:transparent;border-color:var(--hair);color:var(--grey)}
+.location-tag.showdown{background:transparent;border-color:var(--tomato);color:var(--tomato)}
+.location-tag.archived{background:var(--press);border-color:var(--dash);color:var(--faint)}
+
+.card-category{display:inline-block;font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--grey);background:var(--press);padding:3px 10px;border-radius:4px;margin-bottom:14px}
+/* station is the one tag that actually varies — it keeps tomato */
+.card-station{display:inline-block;font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--tomato);background:rgba(232,93,58,0.10);padding:3px 10px;border-radius:4px;margin-bottom:14px;margin-left:6px}
+.card-yield{font-size:0.8rem;color:var(--grey);margin-bottom:10px;font-style:italic}
+
+.section-label{font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:var(--ink);margin-bottom:6px;margin-top:14px}
+.ingredients-preview{font-size:0.88rem;color:var(--grey);line-height:1.5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ingredients-full{font-size:0.88rem;color:var(--ink);line-height:1.6;display:none}
+.method-full{font-size:0.88rem;color:var(--ink);line-height:1.8;display:none}
+.method-full .step{margin-bottom:4px}
+.expand-hint{font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);margin-top:12px;text-align:center}
+.card.open .ingredients-preview{display:none}
+.card.open .ingredients-full{display:block}
+.card.open .method-full{display:block}
+.card.open{background:var(--press)}
+/* the hint swaps its own text on open — both halves are needed or an
+   expanded card still reads "tap to expand" */
+.card.open .expand-hint span{display:none}
+.card.open .expand-hint::after{content:'\25B2  tap to collapse'}
+
+/* archived reads as set aside, not faded — opacity washes out on paper */
+.card.archived{background:var(--press);border:1px dashed var(--dash)}
+.card.archived .card-title,.card.archived .ingredients-full,.card.archived .method-full{color:var(--grey)}
+
+.empty-state{grid-column:1 / -1;text-align:center;padding:80px 20px;color:var(--grey)}
+.empty-state h3{font-family:'Playfair Display',serif;font-size:1.5rem;font-weight:900;color:var(--ink);margin-bottom:8px}
+.grid .loading{grid-column:1 / -1;padding:80px 20px}
+
+/* ── CARD MANAGER ACTIONS ─────────────────────────────────── */
+.card-mgr-actions{display:none;gap:8px;margin-top:14px;padding-top:14px;border-top:1px solid var(--hair)}
+body.manager-mode .card-mgr-actions{display:flex}
+.card-mgr-actions .mgr-edit-btn,.mgr-archive-btn,.mgr-unarchive-btn,.card-mgr-actions .mgr-delete-btn{flex:1;min-height:44px;display:flex;align-items:center;justify-content:center;background:transparent;border:1px solid var(--hair);border-radius:6px;cursor:pointer;font-family:'Barlow Condensed',sans-serif;font-size:0.9rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:0 10px}
+.card-mgr-actions .mgr-edit-btn{color:var(--ink);border-color:var(--ink)}
+.card-mgr-actions .mgr-edit-btn:hover,.card-mgr-actions .mgr-edit-btn:active{background:var(--press)}
+.mgr-archive-btn{color:var(--tomato);border-color:rgba(232,93,58,0.5)}
+.mgr-archive-btn:hover,.mgr-archive-btn:active{background:rgba(232,93,58,0.10)}
+/* unarchive is a restore, not a warning — ink, not green */
+.mgr-unarchive-btn{color:var(--ink);border-color:var(--ink)}
+.mgr-unarchive-btn:hover,.mgr-unarchive-btn:active{background:var(--press)}
+/* delete is permanent: it stays the most dangerous-looking control on
+   the page — the only solid fill among the card actions. Scoped to the
+   card row so Notes' outline delete button is unaffected. */
+.card-mgr-actions .mgr-delete-btn{background:var(--tomato);border-color:var(--tomato);color:#fff}
+.card-mgr-actions .mgr-delete-btn:hover,.card-mgr-actions .mgr-delete-btn:active{background:#c9451f;border-color:#c9451f}
+
+/* ── RECIPE FORM MODAL ────────────────────────────────────── */
+.modal.modal-lg{max-width:560px}
+.modal-btn.danger{background:var(--tomato);border-color:var(--tomato);color:#fff}
+.rec-page .modal label{margin-top:14px}
+.rec-page .modal label:first-of-type{margin-top:0}
+.rec-page .modal input,.rec-page .modal select,.rec-page .modal textarea{margin-bottom:0}
+.rec-page .modal textarea{line-height:1.5;resize:vertical;min-height:90px}
+.rec-page .modal-btns{margin-top:18px}
+
+.comp-block{border:1px solid var(--hair);border-radius:8px;padding:14px;margin-top:16px;background:var(--press)}
+.comp-block.first{border-style:dashed;border-color:var(--dash)}
+.comp-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.comp-head label{margin:0}
+.comp-opt{font-family:'Barlow',sans-serif;font-weight:400;color:var(--grey);text-transform:none;letter-spacing:0;font-size:0.75rem}
+.comp-remove{background:transparent;border:1px solid rgba(232,93,58,0.5);color:var(--tomato);border-radius:6px;min-width:36px;min-height:36px;cursor:pointer;font-size:0.95rem;font-weight:700}
+.comp-remove:hover,.comp-remove:active{background:rgba(232,93,58,0.10)}
+.add-comp-btn{display:block;width:100%;margin-top:14px;min-height:44px;padding:10px;background:transparent;border:1px dashed var(--dash);border-radius:6px;color:var(--ink);font-family:'Barlow Condensed',sans-serif;font-size:0.95rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;cursor:pointer}
+.add-comp-btn:hover,.add-comp-btn:active{background:var(--press)}
+
+/* ── NARROW ───────────────────────────────────────────────── */
+@media (max-width:600px){
+  .rec-page .header{padding:24px 20px 16px}
+  .rec-page .header h1{font-size:1.6rem}
+  .controls{padding:16px 20px}
+  .grid{padding:10px 20px 40px;grid-template-columns:1fr}
+  .rec-page .mgr-add-bar{padding:10px 20px 0}
+}
