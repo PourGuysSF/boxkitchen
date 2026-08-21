@@ -14,129 +14,13 @@
   })();
 </script>
 <title>BoxKitchen — Recipe Database</title>
-<style>
-  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,700&family=Playfair+Display:wght@700;900&display=swap');
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: 'DM Sans', sans-serif; background: #0f1115; color: #e8e6e3; min-height: 100vh; }
-  .header { padding: 40px 40px 20px; border-bottom: 1px solid #2a2d35; background: linear-gradient(180deg, rgba(232,93,58,0.06) 0%, transparent 100%); }
-  .header h1 { font-family: 'Playfair Display', serif; font-size: 2.4rem; font-weight: 900; }
-  .header h1 span { color: #e85d3a; }
-  .header p { color: #8a8a8a; font-size: 0.95rem; }
-  .home-link { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; min-width: 44px; padding: 0 10px; margin-left: -10px; margin-bottom: 8px; font-family: 'DM Sans', sans-serif; font-size: 0.85rem; font-weight: 500; color: rgba(232,230,227,0.75); text-decoration: none; transition: color 0.15s; }
-  .home-link:hover, .home-link:active { color: #e85d3a; }
-  .status-bar { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
-  .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #8a8a8a; animation: pulse 2s infinite; }
-  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-  .status-text { color: #8a8a8a; font-size: 0.85rem; }
-  .controls { display: flex; gap: 12px; padding: 20px 40px; flex-wrap: wrap; align-items: center; }
-  .search-box { flex: 1; min-width: 200px; padding: 10px 16px; background: #1a1d24; border: 1px solid #2a2d35; border-radius: 8px; color: #e8e6e3; font-family: 'DM Sans', sans-serif; font-size: 0.95rem; outline: none; }
-  .search-box:focus { border-color: #e85d3a; }
-  .search-box::placeholder { color: #8a8a8a; }
-  .filter-btn { padding: 8px 18px; background: #1a1d24; border: 1px solid #2a2d35; border-radius: 8px; color: #8a8a8a; font-family: 'DM Sans', sans-serif; font-size: 0.85rem; cursor: pointer; }
-  .filter-btn:hover { border-color: #e85d3a; color: #e8e6e3; }
-  .filter-btn.active { background: #e85d3a; border-color: #e85d3a; color: #fff; }
-  .count { font-size: 0.85rem; color: #8a8a8a; padding: 0 10px; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 20px; padding: 10px 40px 60px; }
-  .card { background: #1a1d24; border: 1px solid #2a2d35; border-radius: 12px; padding: 24px; cursor: pointer; transition: all 0.25s ease; }
-  .card:hover { background: #22262f; border-color: #e85d3a; transform: translateY(-2px); box-shadow: 0 8px 30px rgba(0,0,0,0.3); }
-  .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
-  .card-title { font-family: 'Playfair Display', serif; font-size: 1.3rem; font-weight: 700; line-height: 1.2; }
-  .location-tag { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; padding: 4px 10px; border-radius: 4px; white-space: nowrap; }
-  .location-tag.tempest { background: rgba(59,130,246,0.15); color: #3b82f6; }
-  .location-tag.showdown { background: rgba(245,158,11,0.15); color: #f59e0b; }
-  .card-category { display: inline-block; font-size: 0.8rem; color: #8a8a8a; background: #2a2d35; padding: 3px 10px; border-radius: 4px; margin-bottom: 14px; }
-  .section-label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: #e85d3a; margin-bottom: 6px; margin-top: 14px; }
-  .ingredients-preview { font-size: 0.88rem; color: #8a8a8a; line-height: 1.5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .ingredients-full { font-size: 0.88rem; color: #8a8a8a; line-height: 1.6; display: none; }
-  .method-full { font-size: 0.88rem; color: #8a8a8a; line-height: 1.8; display: none; }
-  .method-full .step { margin-bottom: 4px; }
-  .expand-hint { font-size: 0.75rem; color: #555; margin-top: 12px; text-align: center; }
-  .card.open .ingredients-preview { display: none; }
-  .card.open .ingredients-full { display: block; }
-  .card.open .method-full { display: block; }
-  .card.open .expand-hint span { display: none; }
-  .card.open .expand-hint::after { content: '▲ tap to collapse'; }
-  .empty-state { grid-column: 1 / -1; text-align: center; padding: 80px 20px; color: #8a8a8a; }
-  .empty-state h3 { font-family: 'Playfair Display', serif; font-size: 1.5rem; color: #e8e6e3; margin-bottom: 8px; }
-  .loading { grid-column: 1 / -1; text-align: center; padding: 80px 20px; color: #8a8a8a; }
-  .spinner { width: 32px; height: 32px; border: 3px solid #2a2d35; border-top-color: #e85d3a; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 16px; }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  @media (max-width: 600px) { .header { padding: 24px 20px 16px; } .header h1 { font-size: 1.6rem; } .controls { padding: 16px 20px; } .grid { padding: 10px 20px 40px; grid-template-columns: 1fr; } }
-
-  /* ── Manager mode UI ── */
-  .header-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
-  .header-row .head-text { flex: 1; min-width: 220px; }
-  .mgr-toggle { display: flex; align-items: center; gap: 8px; font-size: 0.82rem; color: #8a8a8a; min-height: 44px; flex-shrink: 0; }
-  .mgr-switch { width: 40px; height: 22px; border-radius: 11px; background: #2a2d35; position: relative; cursor: pointer; transition: background 0.2s; }
-  .mgr-switch.on { background: #e85d3a; }
-  .mgr-switch .knob { width: 18px; height: 18px; border-radius: 50%; background: #fff; position: absolute; top: 2px; left: 2px; transition: left 0.2s; }
-  .mgr-switch.on .knob { left: 20px; }
-
-  /* Manager-only controls (hidden unless body.manager-mode) */
-  .archived-toggle { display: none; }
-  body.manager-mode .archived-toggle { display: inline-block; }
-  .archived-toggle.active { background: #6b7280; border-color: #6b7280; color: #fff; }
-  .mgr-add-bar { display: none; padding: 10px 40px 0; }
-  body.manager-mode .mgr-add-bar { display: block; }
-  .mgr-add-btn { width: 100%; min-height: 48px; padding: 12px; background: transparent; border: 1px dashed #e85d3a; border-radius: 10px; color: #e85d3a; font-family: 'DM Sans', sans-serif; font-size: 0.92rem; font-weight: 700; cursor: pointer; }
-  .mgr-add-btn:active, .mgr-add-btn:hover { background: rgba(232,93,58,0.1); }
-  .card-mgr-actions { display: none; gap: 8px; margin-top: 14px; padding-top: 14px; border-top: 1px solid #2a2d35; }
-  body.manager-mode .card-mgr-actions { display: flex; }
-  .mgr-edit-btn, .mgr-archive-btn, .mgr-unarchive-btn, .mgr-delete-btn { flex: 1; min-height: 44px; display: flex; align-items: center; justify-content: center; background: transparent; border: 1px solid #2a2d35; border-radius: 8px; cursor: pointer; font-family: 'DM Sans', sans-serif; font-size: 0.82rem; font-weight: 600; padding: 0 10px; }
-  .mgr-edit-btn { color: #e85d3a; }
-  .mgr-edit-btn:active, .mgr-edit-btn:hover { background: rgba(232,93,58,0.12); }
-  .mgr-archive-btn { color: #ef4444; border-color: rgba(239,68,68,0.4); }
-  .mgr-archive-btn:active, .mgr-archive-btn:hover { background: rgba(239,68,68,0.12); }
-  .mgr-unarchive-btn { color: #22c55e; border-color: rgba(34,197,94,0.4); }
-  .mgr-unarchive-btn:active, .mgr-unarchive-btn:hover { background: rgba(34,197,94,0.12); }
-  .mgr-delete-btn { color: #fff; background: #ef4444; border-color: #ef4444; }
-  .mgr-delete-btn:active, .mgr-delete-btn:hover { background: #dc2626; border-color: #dc2626; }
-
-  .card.archived { opacity: 0.6; }
-  .card-station { display: inline-block; font-size: 0.8rem; color: #e85d3a; background: rgba(232,93,58,0.12); padding: 3px 10px; border-radius: 4px; margin-bottom: 14px; margin-left: 6px; }
-  .card-yield { font-size: 0.78rem; color: #8a8a8a; margin-bottom: 10px; font-style: italic; }
-  .location-tag.archived { background: rgba(138,138,138,0.18); color: #8a8a8a; }
-
-  /* ── Modals ── */
-  .modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 300; align-items: center; justify-content: center; padding: 16px; }
-  .modal-bg.show { display: flex; }
-  .modal { background: #1a1d24; border: 1px solid #2a2d35; border-radius: 14px; padding: 22px; width: 100%; max-width: 380px; max-height: 90vh; overflow-y: auto; }
-  .modal.modal-lg { max-width: 560px; }
-  .modal h3 { font-size: 1.1rem; margin-bottom: 14px; font-family: 'DM Sans', sans-serif; font-weight: 700; color: #e8e6e3; }
-  .modal label { display: block; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #8a8a8a; margin-bottom: 7px; margin-top: 14px; }
-  .modal label:first-of-type { margin-top: 0; }
-  .modal input, .modal select, .modal textarea { width: 100%; padding: 11px; min-height: 44px; background: #0f1115; border: 1px solid #2a2d35; border-radius: 9px; color: #e8e6e3; font-family: 'DM Sans', sans-serif; font-size: 0.95rem; outline: none; appearance: none; -webkit-appearance: none; }
-  .modal textarea { line-height: 1.5; resize: vertical; min-height: 90px; }
-  .modal input:focus, .modal select:focus, .modal textarea:focus { border-color: #e85d3a; }
-  .modal .pin-input { text-align: center; letter-spacing: 0.5em; font-size: 1.4rem; font-weight: 700; }
-  .modal-err { display: none; color: #ef4444; font-size: 0.83rem; font-weight: 600; margin-top: 12px; }
-  .modal-err.show { display: block; }
-  .modal-btns { display: flex; gap: 10px; margin-top: 18px; }
-  .modal-btn { flex: 1; padding: 12px; min-height: 48px; border: none; border-radius: 9px; font-family: 'DM Sans', sans-serif; font-size: 0.92rem; font-weight: 700; cursor: pointer; }
-  .modal-btn.cancel { background: #2a2d35; color: #e8e6e3; }
-  .modal-btn.save { background: #e85d3a; color: #fff; }
-  .modal-btn.danger { background: #ef4444; color: #fff; }
-  .modal-btn:disabled { opacity: 0.6; cursor: default; }
-
-  /* Component blocks in the recipe form */
-  .comp-block { border: 1px solid #2a2d35; border-radius: 10px; padding: 14px; margin-top: 16px; background: rgba(15,17,21,0.4); }
-  .comp-block.first { border-style: dashed; }
-  .comp-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
-  .comp-head label { margin: 0; }
-  .comp-opt { font-weight: 500; color: #555; text-transform: none; letter-spacing: 0; font-size: 0.7rem; }
-  .comp-remove { background: transparent; border: 1px solid rgba(239,68,68,0.4); color: #ef4444; border-radius: 6px; min-width: 36px; min-height: 36px; cursor: pointer; font-size: 0.95rem; font-weight: 700; }
-  .comp-remove:hover, .comp-remove:active { background: rgba(239,68,68,0.12); }
-  .add-comp-btn { display: block; width: 100%; margin-top: 14px; min-height: 44px; padding: 10px; background: transparent; border: 1px dashed #e85d3a; border-radius: 9px; color: #e85d3a; font-family: 'DM Sans', sans-serif; font-size: 0.88rem; font-weight: 600; cursor: pointer; }
-  .add-comp-btn:hover, .add-comp-btn:active { background: rgba(232,93,58,0.1); }
-
-  /* Toast */
-  .toast { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); padding: 12px 24px; border-radius: 10px; font-size: 0.9rem; font-weight: 600; opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 400; box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
-  .toast.show { opacity: 1; }
-  .toast.success { background: #22c55e; color: #fff; }
-  .toast.error { background: #ef4444; color: #fff; }
-</style>
+<link rel="stylesheet" href="assets/kitchen.css">
+<!-- All styling lives in assets/kitchen.css (see docs/page-restyle.md).
+     Masthead and card-grid rules are scoped .rec-page, which is on <body>:
+     this is the only desktop-first page and its header is a masthead, not
+     the compact sticky header the phone pages share. -->
 </head>
-<body>
+<body class="rec-page">
 <div class="header">
   <a class="home-link" href="index.html">← Home</a>
   <div class="header-row">
@@ -205,8 +89,8 @@
 <div class="modal-bg" id="deleteModal">
   <div class="modal">
     <h3>Delete recipe permanently</h3>
-    <p style="font-size:0.9rem;color:#e8e6e3;margin-bottom:10px;">You are about to permanently delete <strong id="deleteRecipeName"></strong>.</p>
-    <p style="font-size:0.83rem;color:#ef4444;font-weight:600;margin-bottom:14px;">This cannot be undone.</p>
+    <p style="font-size:0.9rem;color:var(--ink);margin-bottom:10px;">You are about to permanently delete <strong id="deleteRecipeName"></strong>.</p>
+    <p style="font-size:0.83rem;color:var(--tomato);font-weight:600;margin-bottom:14px;">This cannot be undone.</p>
     <label>Type the recipe name to confirm</label>
     <input type="text" id="deleteConfirmInput" autocomplete="off" placeholder="Type the recipe name to confirm">
     <div class="modal-err" id="deleteErr"></div>
@@ -264,7 +148,7 @@ function fetchRecipes() {
   api('GET', 'Recipes', 'select=*&order=name.asc', null, function(r, status) {
     if (status === 200 && r) {
       allRecipes = r;
-      document.getElementById('statusDot').style.background = '#22c55e';
+      document.getElementById('statusDot').style.background = 'var(--ink)';
       document.getElementById('statusText').textContent = 'Connected — ' + allRecipes.length + ' recipes loaded';
       renderRecipes();
     } else {
@@ -274,7 +158,7 @@ function fetchRecipes() {
 }
 
 function showError(msg) {
-  document.getElementById('statusDot').style.background = '#ef4444';
+  document.getElementById('statusDot').style.background = 'var(--tomato)';
   document.getElementById('statusText').textContent = 'Connection failed';
   document.getElementById('recipeGrid').innerHTML = '<div class="empty-state"><h3>Could not connect</h3><p>' + esc(msg) + '</p></div>';
 }
