@@ -37,11 +37,18 @@ a{color:inherit;text-decoration:none}
 .new-btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 14px;background:var(--tomato);border:1px solid var(--tomato);border-radius:6px;color:#fff;font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;flex-shrink:0;white-space:nowrap}
 .new-btn:active{opacity:0.85}
 
-/* ── FILTER TOGGLE — state via fill, not hue ──────────────── */
-.filter-toggle{display:flex;background:var(--paper);border:1px solid var(--ink);border-radius:6px;overflow:hidden}
-.filter-btn{flex:1;min-height:40px;padding:9px;text-align:center;font-family:'Barlow Condensed',sans-serif;font-size:0.95rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;border:none;background:transparent;color:var(--grey);cursor:pointer}
-.filter-btn+.filter-btn{border-left:1px solid var(--ink)}
-.filter-btn.active{background:var(--ink);color:var(--paper)}
+/* ── SEGMENTED TOGGLE — one control, three class names ─────
+   Notes calls it .filter-toggle/.filter-btn, Flash calls it
+   .mode-toggle/.mode-btn, the count sheets call it
+   .view-toggle > button. JS sets all three, so all three names
+   stay; only one set of rules describes them.
+   Active state is an ink fill, never a hue. ─────────────────── */
+.filter-toggle,.mode-toggle{display:flex;background:var(--paper);border:1px solid var(--ink);border-radius:6px;overflow:hidden}
+.filter-btn,.mode-btn,.view-toggle button{flex:1;min-height:40px;padding:9px;text-align:center;font-family:'Barlow Condensed',sans-serif;font-size:0.95rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;background:transparent;color:var(--grey);cursor:pointer}
+/* joined variant: the container carries the border */
+.filter-btn,.mode-btn{border:none}
+.filter-btn+.filter-btn,.mode-btn+.mode-btn{border-left:1px solid var(--ink)}
+.filter-btn.active,.mode-btn.active,.view-toggle button.active{background:var(--ink);border-color:var(--ink);color:var(--paper)}
 
 /* ── EMPTY / LOADING ──────────────────────────────────────── */
 .empty{text-align:center;color:var(--grey);padding:60px 20px;font-size:0.9rem;font-style:italic}
@@ -83,7 +90,9 @@ a{color:inherit;text-decoration:none}
 /* ── TOAST — ink says saved, tomato says failed ───────────── */
 .toast{position:fixed;bottom:30px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:11px 22px;border-radius:6px;font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;opacity:0;transition:opacity 0.3s;pointer-events:none;z-index:400;box-shadow:0 4px 20px rgba(0,0,0,0.22)}
 .toast.show{opacity:1}
-.toast.error{background:var(--tomato);color:#fff}
+/* Flash's JS sets .err, Notes' and Counts' set .error. Both names
+   must keep working or a failure renders as a success. */
+.toast.err,.toast.error{background:var(--tomato);color:#fff}
 
 /* ── MANAGER MODE ─────────────────────────────────────────── */
 .mgr-toggle{display:flex;align-items:center;gap:8px;font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--grey);min-height:44px;flex-shrink:0}
@@ -141,27 +150,28 @@ a{color:inherit;text-decoration:none}
 .count-value{width:118px;min-height:44px;padding:8px 10px;color:var(--ink);font-family:'Barlow',sans-serif;font-size:0.95rem;font-variant-numeric:tabular-nums;font-weight:600;text-align:center;flex-shrink:0;display:flex;align-items:center;justify-content:center}
 .count-value.blank{color:var(--faint);font-weight:400}
 
-/* ── VIEW TOGGLE — active is an ink fill, not tomato ───────── */
+/* separated variant: a full-width bar, so each button is outlined */
 .view-toggle{display:flex;gap:8px;padding:10px 18px;border-bottom:1px solid var(--hair);background:var(--press)}
-.view-toggle button{flex:1;min-height:40px;padding:8px 12px;background:var(--paper);border:1px solid var(--ink);border-radius:6px;color:var(--grey);font-family:'Barlow Condensed',sans-serif;font-size:0.95rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;transition:background 0.15s,color 0.15s}
-.view-toggle button.active{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+.view-toggle button{padding:8px 12px;background:var(--paper);border:1px solid var(--ink);border-radius:6px;transition:background 0.15s,color 0.15s}
 
 .prev-date-label{display:none;padding:10px 18px;background:var(--press);border-bottom:1px solid var(--hair);font-size:0.85rem;color:var(--ink)}
 .prev-date-label.show{display:block}
 .prev-date-label .by{color:var(--grey);font-size:0.78rem;margin-left:6px}
 
-/* ── SUBMIT BAR — 3px ink top border, mirroring the header's
-   3px bottom border on the home page ──────────────────────── */
-.submit-bar{position:fixed;bottom:0;left:0;right:0;padding:12px 18px;background:rgba(251,250,246,0.96);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-top:3px solid var(--ink);display:flex;gap:12px;align-items:center;z-index:100}
-.submit-summary{flex:1;font-size:0.85rem;color:var(--grey)}
-.submit-summary strong{color:var(--ink);font-weight:600}
-.submit-btn{padding:12px 28px;min-height:48px;background:var(--tomato);border:1px solid var(--tomato);border-radius:6px;color:#fff;font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;cursor:pointer}
-.submit-btn:active{opacity:0.85}
-.submit-btn:disabled{background:var(--hair);border-color:var(--hair);color:var(--faint);cursor:default}
-@media (min-width:760px){.submit-bar{padding-left:calc((100% - 720px)/2 + 18px);padding-right:calc((100% - 720px)/2 + 18px)}}
+/* ── FIXED BOTTOM BAR — one component, two class names.
+   Counts call it .submit-bar/.submit-btn, Flash calls it
+   .save-bar/.save-btn. 3px ink top border, mirroring the
+   header's 3px bottom border on the home page. ─────────────── */
+.submit-bar,.save-bar{position:fixed;bottom:0;left:0;right:0;padding:12px 18px;background:rgba(251,250,246,0.96);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-top:3px solid var(--ink);display:flex;gap:12px;align-items:center;z-index:150}
+.submit-summary,.save-summary{flex:1;font-size:0.85rem;color:var(--grey);min-width:0}
+.submit-summary strong,.save-summary b{color:var(--ink);font-weight:600}
+.submit-btn,.save-btn{padding:12px 28px;min-height:48px;background:var(--tomato);border:1px solid var(--tomato);border-radius:6px;color:#fff;font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;flex-shrink:0;white-space:nowrap}
+.submit-btn:active,.save-btn:active{opacity:0.85}
+.submit-btn:disabled,.save-btn:disabled{background:var(--hair);border-color:var(--hair);color:var(--faint);cursor:default;opacity:1}
+@media (min-width:760px){.submit-bar,.save-bar{padding-left:calc((100% - 720px)/2 + 18px);padding-right:calc((100% - 720px)/2 + 18px)}}
 
-/* toast clears the fixed submit bar on these pages */
-.submit-bar~.toast{bottom:92px}
+/* toast clears the fixed bottom bar on these pages */
+.submit-bar~.toast,.save-bar~.toast{bottom:92px}
 /* saved = ink (the base .toast); these pages add .success explicitly */
 .toast.success{background:var(--ink);color:var(--paper)}
 
@@ -174,3 +184,104 @@ a{color:inherit;text-decoration:none}
 .manager-mode .mgr-add-bar{display:block}
 .mgr-add-btn{width:100%;min-height:44px;padding:10px;background:transparent;border:1px dashed var(--dash);border-radius:6px;color:var(--ink);font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;cursor:pointer}
 .mgr-add-btn:active{background:var(--press)}
+
+/* ═══════════════════════════════════════════════════════════
+   FLASH REPORTS — tempest_flash.html
+   Added in slice 3. The full-screen PIN gate and the table
+   block are written to be reused (Costing, slice 8).
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── FULL-SCREEN PIN GATE ─────────────────────────────────────
+   Sits over everything at z-index 1000 and must be fully opaque
+   paper — the financials are behind it. ───────────────────── */
+.gate{position:fixed;inset:0;z-index:1000;background:var(--paper);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:30px;text-align:center}
+.gate.hide{display:none}
+.gate h2{font-family:'Playfair Display',serif;font-size:1.6rem;font-weight:900;letter-spacing:-0.01em;line-height:1.15;margin-bottom:6px}
+.gate p{color:var(--grey);font-size:0.9rem;line-height:1.4;max-width:320px;margin-bottom:22px}
+.gate .pin-input{width:180px;min-height:56px;padding:12px;background:var(--paper);border:1px solid var(--ink);border-radius:6px;color:var(--ink);font-family:'Barlow',sans-serif;font-size:1.5rem;outline:none;-webkit-appearance:none;appearance:none}
+.gate .pin-input:focus{border-color:var(--tomato);box-shadow:0 0 0 2px rgba(232,93,58,.2)}
+.gate-err{display:none;color:#b42318;font-size:0.85rem;font-weight:600;margin-top:14px}
+.gate-err.show{display:block}
+.gate-btns{display:flex;gap:10px;margin-top:20px}
+.gate-btn{padding:11px 20px;min-height:48px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--ink);border-radius:6px;font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;white-space:nowrap}
+.gate-btn.go{background:var(--tomato);border-color:var(--tomato);color:#fff}
+.gate-btn.go:active{opacity:0.85}
+.gate-btn.back{background:var(--paper);color:var(--ink)}
+.gate-btn.back:active{background:var(--press)}
+
+/* ── HEADER EXTRAS ────────────────────────────────────────── */
+.lock-tag{display:flex;align-items:center;gap:5px;flex-shrink:0;white-space:nowrap;font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--grey)}
+.manage-btn{display:block;margin:10px auto 0;min-height:40px;padding:8px 12px;background:var(--paper);border:1px solid var(--ink);border-radius:6px;color:var(--ink);font-family:'Barlow Condensed',sans-serif;font-size:0.9rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;white-space:nowrap}
+.manage-btn:active{background:var(--press)}
+
+/* ── DATE STEPPER ─────────────────────────────────────────── */
+.date-left{display:flex;align-items:center;gap:10px;min-width:0}
+.date-info{text-align:center;min-width:0}
+.date-arrow{width:36px;height:36px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:var(--paper);border:1px solid var(--ink);border-radius:6px;color:var(--ink);font-size:0.85rem;cursor:pointer}
+.date-arrow:active{background:var(--ink);color:var(--paper)}
+.day-display{font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--tomato)}
+.date-today{font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--grey);text-align:right;text-decoration:underline;cursor:pointer;flex-shrink:0}
+
+/* ── KPI ROW — .summary on entry, .rmonth-kpi in the reports ── */
+.summary,.rmonth-kpi{display:flex;gap:10px;padding:14px 18px;background:var(--paper);border-bottom:1px solid var(--hair)}
+.stat{flex:1;min-width:0;text-align:center}
+.stat-label{font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--grey);margin-bottom:4px}
+.stat-val{font-size:1.2rem;font-weight:700;line-height:1.15;font-variant-numeric:tabular-nums}
+.stat-val.pct{color:var(--tomato)}
+/* month-to-date food cost — the figure the home tile also surfaces.
+   Yellow highlighter behind it, the same treatment index.html gives
+   the numbers that matter. */
+.stat-val.run{display:inline-block;background:var(--yellow);color:var(--ink);padding:1px 7px}
+.stat-sub{font-size:11px;line-height:1.2;color:var(--grey);margin-top:2px}
+
+/* ── VENDOR / SALES ROWS ──────────────────────────────────── */
+.flash-row{display:flex;align-items:center;gap:10px;min-height:56px;padding:9px 18px;border-bottom:1px solid var(--hair)}
+.flash-row.sales{background:var(--press);border-top:1px solid var(--ink)}
+.vname{flex:1;min-width:0;font-size:0.9rem;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* the one row that isn't a vendor */
+.flash-row.sales .vname{color:var(--ink);font-weight:700}
+
+/* Same "filled" reading as .count-input.filled on the count sheets —
+   ink border and a press fill. A cook must read it the same way on
+   both pages. */
+.money-wrap{display:flex;align-items:center;gap:2px;width:140px;flex-shrink:0;padding:0 10px;background:var(--paper);border:1px solid var(--hair);border-radius:6px;transition:border-color 0.15s,background 0.15s}
+.money-wrap:focus-within{border-color:var(--tomato);box-shadow:0 0 0 2px rgba(232,93,58,.2)}
+.money-wrap.filled{border:1.5px solid var(--ink);background:var(--press)}
+.money-wrap .dollar{color:var(--grey);font-size:0.85rem}
+.money-wrap.filled .dollar{color:var(--ink)}
+.money-input{flex:1;min-width:0;min-height:44px;padding:9px 0;background:transparent;border:none;outline:none;color:var(--ink);font-family:'Barlow',sans-serif;font-size:0.95rem;font-weight:600;font-variant-numeric:tabular-nums;text-align:right}
+.money-input::placeholder{color:var(--faint);font-weight:400}
+
+.entered-bar{display:flex;align-items:center;gap:10px;padding:10px 18px;border-bottom:1px solid var(--hair)}
+.entered-bar label{font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--grey);white-space:nowrap}
+.entered-bar input{flex:1;min-width:0;min-height:44px;padding:9px 10px;background:var(--paper);border:1px solid var(--ink);border-radius:6px;color:var(--ink);font-family:'Barlow',sans-serif;font-size:0.9rem;outline:none;-webkit-appearance:none;appearance:none}
+.entered-bar input:focus{border-color:var(--tomato);box-shadow:0 0 0 2px rgba(232,93,58,.2)}
+.entered-bar input::placeholder{color:var(--faint)}
+
+/* ── REPORT TABLES ────────────────────────────────────────────
+   Paper ground, hairline row rules, no fills. .rscroll owns the
+   horizontal scroll so the page body never scrolls sideways. ── */
+.rsection{padding:16px 0 4px;border-bottom:1px solid var(--hair)}
+.rsection-title{font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--grey);padding:0 18px 10px}
+.rscroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.rtable{min-width:100%;border-collapse:collapse;background:var(--paper);font-size:0.78rem;font-variant-numeric:tabular-nums;white-space:nowrap}
+.rtable th,.rtable td{padding:7px 12px;text-align:right;border-bottom:1px solid var(--hair)}
+.rtable th{background:var(--paper);border-bottom:1px solid var(--ink);font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--grey)}
+.rtable td.l,.rtable th.l{text-align:left}
+/* totals earn a 2px ink rule, not a fill */
+.rtable tr.total td{font-weight:700;border-top:2px solid var(--ink);border-bottom:none}
+.rempty{padding:36px 20px;text-align:center;font-size:0.9rem;font-style:italic;color:var(--grey)}
+
+/* ── MANAGE VENDORS ───────────────────────────────────────── */
+.nb-label{font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--grey);margin:14px 0 7px}
+.vrow{display:flex;align-items:center;gap:7px;padding:7px 0;border-bottom:1px solid var(--hair)}
+.vrow.retired .vname-input{opacity:0.5}
+.vmove{display:flex;flex-direction:column;gap:2px;flex-shrink:0}
+.vmini{width:26px;height:17px;padding:0;background:var(--paper);border:1px solid var(--ink);border-radius:3px;color:var(--ink);font-size:0.6rem;line-height:1;cursor:pointer}
+.vmini:active{background:var(--ink);color:var(--paper)}
+.vname-input{flex:1;min-width:0;min-height:40px;padding:8px;background:var(--paper);border:1px solid var(--hair);border-radius:6px;color:var(--ink);font-family:'Barlow',sans-serif;font-size:0.88rem;outline:none;-webkit-appearance:none;appearance:none}
+.vname-input:focus{border-color:var(--tomato);box-shadow:0 0 0 2px rgba(232,93,58,.2)}
+.vretire{flex-shrink:0;min-height:36px;padding:7px 9px;background:transparent;border:1px solid rgba(232,93,58,0.5);border-radius:6px;color:var(--tomato);font-family:'Barlow Condensed',sans-serif;font-size:0.85rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;cursor:pointer}
+.vretire:active{background:rgba(232,93,58,0.10)}
+.vretire.restore{color:var(--ink);border-color:var(--ink)}
+.vretire.restore:active{background:var(--press)}
