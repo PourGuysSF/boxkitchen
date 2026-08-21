@@ -193,14 +193,14 @@ render as a single grey chip for all 12 values, and stations as a single tomato 
 **Done when:** search/filter, archived toggle, and add/edit/archive recipes all work in and
 out of manager mode.
 
-### Slice 5 — `tempest_prep.html` — **NEXT** (ticket written; colour decision pending)
+### Slice 5 — `tempest_prep.html` — ✅ **MERGED (#108)**
 969 lines, 161 CSS, 351 rows, **first SortableJS page**. Drag styling is the real work:
 SortableJS injects its own ghost/chosen/drag classes and reads computed styles.
 **Risk:** **high** — the page the kitchen uses most.
 **Done when:** check items off on both shifts, add/edit/delete, drag to reorder, and the
 new order survives a reload.
 
-### Slice 6 — `tempest_line.html`
+### Slice 6 — `tempest_line.html` — **IN PROGRESS**
 962 lines, 160 CSS; 21 CSS lines differ from prep. Applies the pattern slice 5 proved.
 **Risk:** medium. **Done when:** same checklist as slice 5, plus the SUN–SAT dropdown renders.
 
