@@ -160,10 +160,12 @@
     <a class="tile" href="tempest_line.html">
       <div class="tile-title">Tempest Line</div>
       <div class="tile-sub">Hot/cold line prep &amp; cleaning</div>
+      <div class="tile-status" id="statusLine" hidden></div>
     </a>
     <a class="tile" href="tempest_prep.html">
       <div class="tile-title">Prep Kitchen</div>
       <div class="tile-sub">Back prep &amp; batches</div>
+      <div class="tile-status" id="statusPrep" hidden></div>
     </a>
   </div>
 </div>
@@ -391,6 +393,36 @@
   api('GET','orders','select=guide_name,submitted_by,submitted_at,item_count&location=eq.Tempest&status=eq.submitted&submitted_at=gte.'+encodeURIComponent(iso72)+'&order=submitted_at.desc',null,function(r){orders=r;done();});
   api('GET','meat_counts','location=eq.Tempest&count_date=gte.'+date3+'&order=count_date.desc',null,function(r){meat=r;done();});
   api('GET','portion_counts','location=eq.Tempest&count_date=gte.'+date3+'&order=count_date.desc',null,function(r){portion=r;done();});
+
+  // ---- Prep progress for the Line + Prep Kitchen tiles. Mirrors getF() on the prep pages:
+  // daily items always count; cleaning/weekly items count only when day_specific is empty or today's abbr.
+  // Done = a prep_logs row for today's date with completed=true. Real calendar day, both shifts.
+  var dayAbbr=['SUN','MON','TUE','WED','THU','FRI','SAT'][today];
+  var todayStr=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0');
+  var prepItems=null,prepLogs=null;
+  function prepDone(){
+    if(prepItems===null||prepLogs===null)return;
+    var doneIds={};for(var i=0;i<prepLogs.length;i++)if(prepLogs[i].completed)doneIds[prepLogs[i].prep_item_id]=true;
+    function tally(team){
+      var t={AM:{done:0,total:0},PM:{done:0,total:0}};
+      for(var i=0;i<prepItems.length;i++){
+        var it=prepItems[i];if(it.team!==team)continue;var sh=t[it.shift];if(!sh)continue;
+        var c=it.category,inToday=c==='daily'||((c==='cleaning'||c==='weekly')&&(!it.day_specific||it.day_specific===dayAbbr));
+        if(!inToday)continue;sh.total++;if(doneIds[it.id])sh.done++;
+      }
+      return t;
+    }
+    function show(id,team){
+      var t=tally(team),parts=[],left=false;
+      ['AM','PM'].forEach(function(k){var sh=t[k];if(!sh.total)return;var txt=k+' '+sh.done+'/'+sh.total;
+        if(sh.done<sh.total){left=true;parts.push('<mark>'+esc(txt)+'</mark>');}else parts.push(esc(txt));});
+      if(!parts.length){setStatus(id,'none','No prep list today');return;}
+      setStatus(id,left?'due':'done',parts.join(' · '));
+    }
+    show('statusLine','line');show('statusPrep','kitchen');
+  }
+  api('GET','prep_items','location=eq.Tempest&team=in.(kitchen,line)&select=id,team,shift,category,day_specific',null,function(r){prepItems=r;prepDone();});
+  api('GET','prep_logs','date=eq.'+todayStr+'&select=prep_item_id,completed',null,function(r){prepLogs=r;prepDone();});
 })();
 </script>
 </body>
