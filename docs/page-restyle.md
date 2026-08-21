@@ -149,7 +149,7 @@ Row counts behind each page, measured 2026-08-21:
 Shared stylesheet adopted page by page; Notes keeps its category colours (retuned for
 paper). Orders and Recipes re-ask when their slices come up. Dark mode out of scope.
 
-### Slice 1 — `assets/kitchen.css` + `tempest_notes.html` — **IN PROGRESS**
+### Slice 1 — `assets/kitchen.css` + `tempest_notes.html` — ✅ **MERGED (#102)**
 The foundation, proven on the smallest page (418 lines, 88 CSS lines, no drag-and-drop).
 Creates `assets/kitchen.css` — tokens, font import, base rules, and only the components
 Notes actually uses (modal, toast, manager toggle, spinner). Later slices add components as
@@ -160,7 +160,7 @@ writes to the live production database and the kitchen's home tile displays them
 **Delivers:** Kitchen Notes matching the home page + a stylesheet eight pages can adopt.
 **Risk:** low visually, **high in influence** — every later slice inherits its decisions.
 
-### Slice 2 — `tempest_portion.html` + `tempest_meat.html` (both, one PR)
+### Slice 2 — `tempest_portion.html` + `tempest_meat.html` — ✅ **MERGED (#103)**
 66 and 18 real rows, so the restyle is actually visible. Their CSS blocks are
 **byte-identical** — one job done twice; splitting them would mean reviewing the same diff
 twice. No SortableJS. First real test that the stylesheet generalizes to pages it wasn't
@@ -168,21 +168,32 @@ written against.
 **Delivers:** both count sheets restyled; gaps in `kitchen.css` found and filled.
 **Risk:** low. **Done when:** a count saves on both, date arrows work, manager mode works.
 
-### Slice 3 — `tempest_flash.html`
+### Slice 3 — `tempest_flash.html` — ✅ **MERGED (#105)**
 644 lines, 117 CSS, 51 rows of real data. Dense numeric tables plus month/year report
 views — first page where tabular-figure alignment and table styling matter.
 **Delivers:** Flash Reports restyled, report tables included. `kitchen.css` gains a table block.
 **Risk:** medium. **Done when:** save a day, switch month/year views, PIN gate intact,
 numbers align in columns.
 
-### Slice 4 — `recipe_dashboard.html`
-802 lines, 121 CSS, 47 recipes, 44 manager-mode references — heaviest manager surface.
-**Category colours: ask Stephen before building** — the Notes answer does not carry.
+### Slice 4 — `recipe_dashboard.html` — ✅ **MERGED (#106)**
+802 lines, 121 CSS, 47 recipes (36 active / 11 archived), 44 manager-mode references —
+heaviest manager surface.
+**Correction to the earlier plan:** there is no category-colour question here. Categories
+render as a single grey chip for all 12 values, and stations as a single tomato chip for all
+6 — no per-value hues exist to preserve. The real colour question is `.location-tag`
+(see ticket).
+**Two things make this page unlike every other:**
+- **86 literal hex values and zero `var(--…)` uses.** Every other page is tokenised; this
+  one hard-codes its colours inline. The restyle is a hex-by-hex hunt, not a token swap, and
+  a single missed hex leaves a dark patch on a paper page.
+- **It is the only desktop-first page** (40px gutters, auto-fill grid, one 600px breakpoint).
+  Everything else is phone-first. Keep it working on both.
 **Delivers:** recipe dashboard restyled.
-**Risk:** medium. **Done when:** search/filter, category and station labels, and
-add/edit/delete recipes all work in and out of manager mode.
+**Risk:** medium-high — raised from medium because of the 86 hard-coded hexes.
+**Done when:** search/filter, archived toggle, and add/edit/archive recipes all work in and
+out of manager mode.
 
-### Slice 5 — `tempest_prep.html`
+### Slice 5 — `tempest_prep.html` — **NEXT** (ticket written; colour decision pending)
 969 lines, 161 CSS, 351 rows, **first SortableJS page**. Drag styling is the real work:
 SortableJS injects its own ghost/chosen/drag classes and reads computed styles.
 **Risk:** **high** — the page the kitchen uses most.
