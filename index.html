@@ -240,6 +240,7 @@
       <span class="lock" aria-label="PIN required"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg></span>
       <div class="tile-title">Flash Reports</div>
       <div class="tile-sub">Daily food cost &amp; sales</div>
+      <div class="tile-status" id="statusFlash" hidden></div>
     </a>
   </div>
 </div>
@@ -448,6 +449,28 @@
     for(var i=0;i<n;i++){if(r[i].category==='urgent')urgent++;if(r[i].created_at&&(!newest||r[i].created_at>newest))newest=r[i].created_at;}
     var txt=n+' open'+(urgent?' ('+urgent+' urgent)':'');
     setStatus('statusNotes','due','<mark>'+esc(txt)+'</mark>'+(newest?' · newest '+esc(timeAgo(newest)):''));
+  });
+  // ---- Flash Reports. Two questions on one line: was today's flash posted, and
+  // what's the month-to-date food cost? Daily food cost % is deliberately NOT shown --
+  // purchases land on delivery days, so a single day swings 3%-73% and means nothing.
+  // MTD is the stable number and matches the Flash page's own "Running" figure.
+  // "Posted" = food sales entered, same rule as that page (if(s>0)daysWithSales++).
+  function money0(v){return '$'+Math.round(Number(v)||0).toLocaleString('en-US');}
+  function pct1(n){return (Number(n)*100).toFixed(1)+'%';}
+  function amt(v){var n=parseFloat(String(v).replace(/[^0-9.\-]/g,''));return isNaN(n)?0:n;}
+  var monthStart=todayStr.slice(0,8)+'01';
+  api('GET','flash_days','location=eq.Tempest&report_date=gte.'+monthStart+'&report_date=lte.'+todayStr+'&select=report_date,purchases,food_sales',null,function(r){
+    var mtdP=0,mtdS=0,todayRow=null,todayGross=0,i,k;
+    for(i=0;i<r.length;i++){
+      var row=r[i],p=row.purchases||{},g=0;
+      for(k in p)if(p.hasOwnProperty(k))g+=amt(p[k]);
+      mtdP+=g;mtdS+=amt(row.food_sales);
+      if(row.report_date===todayStr){todayRow=row;todayGross=g;}
+    }
+    var mtd=mtdS>0?' \u00b7 MTD <b>'+pct1(mtdP/mtdS)+'</b>':'';
+    if(!todayRow){setStatus('statusFlash','due','<mark>Not posted today</mark>'+mtd);return;}
+    if(amt(todayRow.food_sales)<=0){setStatus('statusFlash','due','<mark>Started \u00b7 sales not entered</mark>'+mtd);return;}
+    setStatus('statusFlash','done',money0(todayGross)+' today'+mtd);
   });
 })();
 </script>
