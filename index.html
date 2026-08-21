@@ -218,6 +218,7 @@
     <a class="tile wide" href="tempest_notes.html">
       <div class="tile-title">Kitchen Notes &amp; Issues</div>
       <div class="tile-sub">Staff notes, equipment issues, 86'd items</div>
+      <div class="tile-status" id="statusNotes" hidden></div>
     </a>
   </div>
 </div>
@@ -423,6 +424,31 @@
   }
   api('GET','prep_items','location=eq.Tempest&team=in.(kitchen,line)&select=id,team,shift,category,day_specific',null,function(r){prepItems=r;prepDone();});
   api('GET','prep_logs','date=eq.'+todayStr+'&select=prep_item_id,completed',null,function(r){prepLogs=r;prepDone();});
+
+  // ---- Kitchen Notes: open = anything not resolved (same rule as the Notes page's Open filter).
+  // Age text uses the Notes page's own timeAgo(), copied as-is, since notes can be weeks old.
+  function timeAgo(iso){
+    if(!iso)return '';
+    var then=new Date(iso),now=new Date(),diff=(now-then)/1000;
+    if(diff<60)return 'just now';
+    if(diff<3600)return Math.floor(diff/60)+'m ago';
+    if(diff<86400)return Math.floor(diff/3600)+'h ago';
+    var d1=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+    var d2=new Date(then.getFullYear(),then.getMonth(),then.getDate());
+    var days=Math.round((d1-d2)/86400000);
+    if(days===1)return 'yesterday';
+    if(days<7)return days+'d ago';
+    var mn=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return mn[then.getMonth()]+' '+then.getDate();
+  }
+  api('GET','notes','location=eq.Tempest&or=(status.neq.resolved,status.is.null)&select=id,category,created_at&order=created_at.desc',null,function(r){
+    var n=r.length;
+    if(!n){setStatus('statusNotes','done','No open notes');return;}
+    var urgent=0,newest=null;
+    for(var i=0;i<n;i++){if(r[i].category==='urgent')urgent++;if(r[i].created_at&&(!newest||r[i].created_at>newest))newest=r[i].created_at;}
+    var txt=n+' open'+(urgent?' ('+urgent+' urgent)':'');
+    setStatus('statusNotes','due','<mark>'+esc(txt)+'</mark>'+(newest?' · newest '+esc(timeAgo(newest)):''));
+  });
 })();
 </script>
 </body>
