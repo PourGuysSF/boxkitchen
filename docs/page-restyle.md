@@ -200,7 +200,7 @@ SortableJS injects its own ghost/chosen/drag classes and reads computed styles.
 **Done when:** check items off on both shifts, add/edit/delete, drag to reorder, and the
 new order survives a reload.
 
-### Slice 6 — `tempest_line.html` — **IN PROGRESS**
+### Slice 6 — `tempest_line.html` — ✅ **MERGED (#109)**
 962 lines, 160 CSS; 21 CSS lines differ from prep. Applies the pattern slice 5 proved.
 **Risk:** medium. **Done when:** same checklist as slice 5, plus the SUN–SAT dropdown renders.
 
