@@ -214,7 +214,7 @@ Largest page, most modal-heavy, and where an order actually gets submitted.
 **Done when:** build an order, submit it, view a previous order, move an item between
 shelves, drag to reorder, manager mode behaves — all on a phone.
 
-### Slice 8 — `tempest_costing.html` — **last, deliberately**
+### Slice 8 — `tempest_costing.html` — ✅ **MERGED (#113)**
 434 lines, 95 CSS. Moved from second to last: `ingredient_costs` and
 `ingredient_price_history` are **both empty**, so this page can only be restyled blind
 against its empty state. Doing it last means the pattern is fully proven by then and
@@ -223,7 +223,12 @@ blindness costs least.
 a data-entry job or a feature to retire. Worth deciding before spending review time on it.
 **Risk:** low. **Done when:** the page renders correctly and the PIN gate still gates.
 
-### Slice 9 — consistency sweep
+### Slice 9 — consistency sweep — **NEXT, and the only slice left**
+**Every page is now on `assets/kitchen.css`.** The repo-wide greps for `DM+Sans`,
+`--surface`, `--dim`, `#0f1115`, `--muted`, `--accent`, `--text` and `--border` all come
+back empty as of slice 8, so the sweep is no longer a hunt for leftovers. What remains:
+`index.html` still carries its own inline styles and should join the shared sheet, and
+the whole site wants one walk on one phone looking for drift.
 Delete leftover duplicated rules, confirm no page still imports DM Sans or references a
 dead `--surface`/`--green`/`--blue`, and walk the whole site on one phone looking for drift.
 **Delivers:** one coherent product; `kitchen.css` as the single source of styling truth.
