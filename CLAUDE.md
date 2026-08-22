@@ -8,7 +8,7 @@ Boxkitchen is a live production site used during service. Never run write/deploy
 
 ## Architecture
 
-**`index.html` is the hub.** It gates entry (see Auth below), links out to each tool page, renders day-of-week reminders (the `REMINDERS` map keyed by `getDay()`), and builds a 72-hour "Activity" feed by querying the `orders`, `meat_counts`, and `portion_counts` tables and merging them by timestamp. Each other page (`tempest_*.html`, `recipe_dashboard.html`) is a self-contained tool.
+**`index.html` is the hub.** Each other page (`tempest_*.html`, `recipe_dashboard.html`) is a self-contained tool.
 
 **Backend is Supabase, accessed directly from the browser** via its PostgREST REST API — there is no server-side code in this repo. Every page embeds the **same** Supabase project URL and anon key inline and defines its own copy of a helper:
 
@@ -16,7 +16,7 @@ Boxkitchen is a live production site used during service. Never run write/deploy
 api(method, table, query, data, cb)  // XMLHttpRequest to /rest/v1/<table>?<query>
 ```
 
-REST verbs map to PostgREST semantics (`GET`/`POST`/`PATCH`/`DELETE`, filters like `location=eq.Tempest`, `count_date=gte.<date>`, `order=...desc`). **This `api()` helper and the anon key are duplicated in each file — there is no shared JS.** A change to any shared pattern must be applied per-file, and a new page is best created by copying an existing one as a template. Note the per-page `api()` copies differ: flash/orders/counts pass the HTTP status to their callback, the others don't.
+**This `api()` helper and the anon key are duplicated in each file — there is no shared JS.** A change to any shared pattern must be applied per-file, and a new page is best created by copying an existing one as a template. Note the per-page `api()` copies differ: flash/orders/counts pass the HTTP status to their callback, the others don't.
 
 ## Data model conventions
 
@@ -93,5 +93,8 @@ failure this stylesheet can produce.
 ### Where the detail lives
 
 - **`docs/page-restyle.md`** — what was built, slice by slice, and the justified page overrides.
-- **`docs/restyle-review.md`** — the adversarial review of it, the fixes that shipped, and the
-  findings still open. Read this before assuming the restyle is finished business.
+- **`docs/review-checklist.md`** — how to review a change to this site: the failure shapes
+  worth hunting, why contrast is arithmetic, and the class names that exist only at runtime.
+  Read it before reviewing anything here.
+- **GitHub issues** — what the restyle review left open. Don't assume the restyle is
+  finished business.
