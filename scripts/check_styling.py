@@ -39,6 +39,7 @@ PALETTE = {
 CORE_TOKENS = {
     "--paper", "--ink", "--grey", "--hair", "--faint", "--dash",
     "--yellow", "--tomato", "--press", "--edge", "--danger",
+    "--font", "--font-cond", "--font-display",
 }
 
 # Selectors that are the visible edge of something you tap. These may never
@@ -77,10 +78,35 @@ assert pages, "run me from the repo root"
 sheet = open(SHEET).read()
 sheet_bare = strip_comments(sheet)
 
-# 1 - every page loads the shared sheet
+# 1 - every page loads the shared sheet, at the same cache-busting version.
+#     The version matters: HTML and CSS are now separate cacheable files on
+#     GitHub Pages (max-age=600), so without it a phone can hold old CSS
+#     against new HTML for ten minutes after a deploy. Bump ?v= whenever
+#     kitchen.css changes. Nine pages bumped and one forgotten is the real
+#     failure mode, so they must all agree.
+versions = {}
 for f in pages:
-    if 'href="%s"' % SHEET not in open(f).read():
+    raw = open(f).read()
+    m = re.search(r'href="%s(\?v=[^"]*)?"' % re.escape(SHEET), raw)
+    if not m:
         fail(f, 1, f"does not link {SHEET}")
+    else:
+        versions[f] = m.group(1) or ""
+        if not m.group(1):
+            fail(f, 1, f"links {SHEET} with no ?v= cache-busting version")
+if len(set(versions.values())) > 1:
+    for f, v in sorted(versions.items()):
+        fail(f, 1, f'kitchen.css version "{v}" disagrees with other pages '
+                   f'- all ten must match')
+
+# 1b - fonts must be <link>ed from the head, not @import-ed from the sheet.
+#      An @import serialises: HTML -> kitchen.css -> fonts CSS -> font files.
+if "@import" in sheet_bare:
+    fail(SHEET, 1, "@import re-introduced - it costs a serialised round trip "
+                   "before any text renders in the right face")
+for f in pages:
+    if "fonts.googleapis.com" not in open(f).read():
+        fail(f, 1, "no Google Fonts <link> in <head> - text will fall back")
 
 # 2 - the shared sheet still opts out of OS re-theming
 if "color-scheme:light" not in sheet_bare:

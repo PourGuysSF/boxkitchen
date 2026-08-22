@@ -17,7 +17,10 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="theme-color" content="#fbfaf6">
 <title>Tempest Order Guide</title>
-<link rel="stylesheet" href="assets/kitchen.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=Playfair+Display:wght@700;900&display=swap">
+<link rel="stylesheet" href="assets/kitchen.css?v=2026-08-22">
 <style>
   /* ═══════════════════════════════════════════════════════════
      Tempest Orders — page-level overrides only.
@@ -36,17 +39,17 @@
      it wraps to two lines between the home link and the manager toggle.
      The old page fit it on one line, so it keeps one here too. */
   .header h1{font-size:1.2rem;white-space:nowrap}
-  .name-bar input{flex:1;min-width:0;min-height:44px;padding:8px 12px;background:var(--paper);border:1px solid var(--ink);border-radius:6px;color:var(--ink);font-family:'Barlow',sans-serif;font-size:0.9rem;outline:none;-webkit-appearance:none;appearance:none}
+  .name-bar input{flex:1;min-width:0;min-height:44px;padding:8px 12px;background:var(--paper);border:1px solid var(--ink);border-radius:6px;color:var(--ink);font-family:var(--font);font-size:0.9rem;outline:none;-webkit-appearance:none;appearance:none}
   .name-bar input:focus{border-color:var(--tomato);box-shadow:0 0 0 2px rgba(232,93,58,.2)}
   .name-bar input::placeholder{color:var(--faint)}
   /* delivery day reads better as a highlighter than as yellow text */
-  .delivery-info{font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;background:var(--yellow);color:var(--ink);padding:2px 6px}
+  .delivery-info{font-family:var(--font-cond);font-size:14px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;background:var(--yellow);color:var(--ink);padding:2px 6px}
 
   /* VENDOR SECTION — same voice as prep's .section-header */
   .vendor-section{border-bottom:1px solid var(--hair)}
   .vendor-header{display:flex;justify-content:space-between;align-items:center;padding:12px 18px;background:var(--press);cursor:pointer}
   .vendor-header:active{background:var(--hair)}
-  .vendor-name{font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}
+  .vendor-name{font-family:var(--font-cond);font-size:14px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}
   /* Vendor hues retuned for cream, reusing the values already proven on
      Notes and Prep. Purple had no equivalent in the new palette; it takes
      the same plum those pages use. */
@@ -56,7 +59,7 @@
   .vendor-name.asia{color:#a25c00}
   .vendor-name.cooks{color:#2d6a4f}
   .vendor-right{display:flex;align-items:center;gap:8px}
-  .vendor-count{font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:600;letter-spacing:.04em;color:var(--grey);background:var(--paper);border:1px solid var(--hair);padding:2px 8px;border-radius:10px;font-variant-numeric:tabular-nums}
+  .vendor-count{font-family:var(--font-cond);font-size:12px;font-weight:600;letter-spacing:.04em;color:var(--grey);background:var(--paper);border:1px solid var(--hair);padding:2px 8px;border-radius:10px;font-variant-numeric:tabular-nums}
   /* "this vendor has items on the order" — weight and border, not hue */
   .vendor-count.has{color:var(--ink);font-weight:700;border-color:var(--ink)}
   .vendor-section.open .chevron{transform:rotate(180deg)}
@@ -66,7 +69,7 @@
   /* ITEM HEADER STRIP — .ih-* widths must stay identical to the .item-*
      widths below or the columns stop lining up */
   .item-header{display:flex;align-items:center;padding:6px 18px;background:var(--press);border-bottom:1px solid var(--hair)}
-  .item-header span{font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--grey)}
+  .item-header span{font-family:var(--font-cond);font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--grey)}
   .ih-name{flex:1}
   .ih-par{width:50px;text-align:center}
   .ih-unit{width:42px;text-align:center}
@@ -80,7 +83,7 @@
   .item-par{width:50px;text-align:center;font-size:0.78rem;font-weight:600;color:var(--grey);font-variant-numeric:tabular-nums}
   .item-unit{width:42px;text-align:center;font-size:0.72rem;color:var(--grey)}
   .item-qty{width:58px}
-  .qty-input{width:100%;padding:5px;background:var(--paper);border:1px solid var(--hair);border-radius:6px;color:var(--ink);font-family:'Barlow',sans-serif;font-size:0.85rem;font-variant-numeric:tabular-nums;text-align:center;outline:none;-webkit-appearance:none;appearance:none}
+  .qty-input{width:100%;padding:5px;background:var(--paper);border:1px solid var(--hair);border-radius:6px;color:var(--ink);font-family:var(--font);font-size:0.85rem;font-variant-numeric:tabular-nums;text-align:center;outline:none;-webkit-appearance:none;appearance:none}
   .qty-input:focus{border-color:var(--tomato);box-shadow:0 0 0 2px rgba(232,93,58,.2)}
   /* the same reading as .count-input.filled and .money-wrap.filled */
   .qty-input.filled{border:1.5px solid var(--ink);background:var(--press);font-weight:600}
@@ -94,7 +97,7 @@
   .prev-card{margin:14px 18px;background:var(--paper);border:1px solid var(--ink);border-radius:6px;overflow:hidden}
   .prev-card-head{padding:10px 14px;background:var(--press);border-bottom:1px solid var(--ink);font-size:0.85rem;font-weight:600;color:var(--ink)}
   .prev-card-head .by{display:block;margin-top:2px;color:var(--grey);font-size:0.75rem;font-weight:400}
-  .prev-vendor{padding:8px 14px 4px;font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--grey)}
+  .prev-vendor{padding:8px 14px 4px;font-family:var(--font-cond);font-size:13px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--grey)}
   .prev-item{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 14px;border-top:1px solid var(--hair);font-size:0.85rem}
   .prev-item .pi-name{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .prev-item .pi-unit{color:var(--grey);font-size:0.72rem}
@@ -809,7 +812,7 @@ function submitOrder(){
 
 function editName(id,el){
   if(!mgr)return;var cur=el.textContent;
-  el.innerHTML='<input style="font-size:0.85rem;background:var(--paper);border:1px solid var(--ink);border-radius:5px;color:var(--ink);padding:4px 8px;width:100%;font-family:Barlow,sans-serif;outline:none" value="'+esc(cur)+'" onblur="saveName('+id+',this)" onkeydown="if(event.key===\'Enter\')this.blur()">';
+  el.innerHTML='<input style="font-size:0.85rem;background:var(--paper);border:1px solid var(--ink);border-radius:5px;color:var(--ink);padding:4px 8px;width:100%;font-family:var(--font);outline:none" value="'+esc(cur)+'" onblur="saveName('+id+',this)" onkeydown="if(event.key===\'Enter\')this.blur()">';
   el.querySelector('input').focus();
 }
 function saveName(id,inp){

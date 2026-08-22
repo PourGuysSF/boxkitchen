@@ -17,7 +17,10 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="theme-color" content="#fbfaf6">
 <title>Tempest Notes</title>
-<link rel="stylesheet" href="assets/kitchen.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=Playfair+Display:wght@700;900&display=swap">
+<link rel="stylesheet" href="assets/kitchen.css?v=2026-08-22">
 <style>
   /* Kitchen Notes — note-card rules only. Everything else lives in
      assets/kitchen.css. */
@@ -40,7 +43,7 @@
   .note-card.cat-other{border-left-color:var(--cat-other)}
 
   .note-top{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px}
-  .note-cat{font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--ink)}
+  .note-cat{font-family:var(--font-cond);font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--ink)}
   .note-time{font-size:0.75rem;color:var(--grey);white-space:nowrap}
   .note-body{font-size:0.95rem;line-height:1.45;white-space:pre-wrap;word-break:break-word}
   .note-meta{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:12px}
@@ -55,10 +58,10 @@
   .note-card.resolved .note-body{text-decoration:line-through;color:var(--grey)}
 
   /* Done is solid ink, not green */
-  .resolve-btn{padding:8px 14px;min-height:40px;background:transparent;border:1px solid var(--ink);border-radius:6px;color:var(--ink);font-family:'Barlow Condensed',sans-serif;font-size:0.95rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;flex-shrink:0}
+  .resolve-btn{padding:8px 14px;min-height:40px;background:transparent;border:1px solid var(--ink);border-radius:6px;color:var(--ink);font-family:var(--font-cond);font-size:0.95rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;flex-shrink:0}
   .resolve-btn:active{background:var(--ink);color:var(--paper)}
-  .resolved-tag{text-align:right;font-family:'Barlow Condensed',sans-serif;font-size:0.95rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink)}
-  .resolved-tag span{display:block;font-family:'Barlow',sans-serif;font-size:0.72rem;font-weight:400;letter-spacing:0;text-transform:none;color:var(--grey);margin-top:2px}
+  .resolved-tag{text-align:right;font-family:var(--font-cond);font-size:0.95rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink)}
+  .resolved-tag span{display:block;font-family:var(--font);font-size:0.72rem;font-weight:400;letter-spacing:0;text-transform:none;color:var(--grey);margin-top:2px}
 
   .note-mgr-actions{display:none;gap:6px;margin-left:auto}
   .manager-mode .note-mgr-actions{display:flex}
