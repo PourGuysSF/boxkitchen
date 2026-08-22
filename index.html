@@ -7,24 +7,27 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="theme-color" content="#fbfaf6">
 <title>Tempest Kitchen</title>
-<link rel="stylesheet" href="assets/kitchen.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=Playfair+Display:wght@700;900&display=swap">
+<link rel="stylesheet" href="assets/kitchen.css?v=2026-08-22">
 <style>
 
   .header{position:sticky;top:0;z-index:100;background:rgba(251,250,246,0.96);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-bottom:3px solid var(--ink);padding:18px 18px 12px;display:flex;align-items:flex-end;justify-content:space-between;gap:12px}
   .header h1{font-size:1.5rem;flex:0 1 auto;text-align:start}
-  .header-date{font-family:'Barlow Condensed',sans-serif;font-size:17px;font-weight:600;letter-spacing:.06em;color:var(--grey);text-transform:uppercase;padding-bottom:2px;white-space:nowrap}
+  .header-date{font-family:var(--font-cond);font-size:17px;font-weight:600;letter-spacing:.06em;color:var(--grey);text-transform:uppercase;padding-bottom:2px;white-space:nowrap}
 
   /* TODAY BOARD */
   .board{padding:14px 14px 0}
   .board-hd{display:flex;justify-content:space-between;align-items:baseline;padding:0 2px 8px}
   .board-hd .h{color:var(--ink)}
-  .board-count{font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;letter-spacing:.04em;color:var(--grey)}
+  .board-count{font-family:var(--font-cond);font-size:14px;font-weight:600;letter-spacing:.04em;color:var(--grey)}
   .tickets{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
   .ticket{border:1px solid var(--ink);border-radius:6px;overflow:hidden;min-height:92px;display:flex;flex-direction:column}
   .ticket-bar{height:5px;background:var(--yellow);border-bottom:1px solid var(--ink)}
   .ticket.done .ticket-bar{background:var(--ink)}
   .ticket-body{padding:9px 10px 10px;display:flex;flex-direction:column;gap:3px;flex:1}
-  .ticket-title{font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:600;line-height:1.1;letter-spacing:.01em}
+  .ticket-title{font-family:var(--font-cond);font-size:16px;font-weight:600;line-height:1.1;letter-spacing:.01em}
   .ticket-note{font-size:11px;color:var(--grey);line-height:1.2}
   .ticket-meta{font-size:12px;color:var(--grey);line-height:1.2;margin-top:auto;padding-top:4px}
   .ticket.due .ticket-meta{color:var(--ink);font-weight:600;align-self:flex-start;background:var(--yellow);padding:2px 5px;margin-left:-5px;margin-top:auto}
@@ -38,7 +41,7 @@
   .tile:hover{background:var(--press)}
   .tile:active{transform:scale(.99);background:var(--press)}
   .tile.wide{grid-column:1 / -1}
-  .tile-title{font-family:'Barlow Condensed',sans-serif;font-size:19px;font-weight:600;line-height:1.1;letter-spacing:.02em;text-transform:uppercase;padding-right:18px}
+  .tile-title{font-family:var(--font-cond);font-size:19px;font-weight:600;line-height:1.1;letter-spacing:.02em;text-transform:uppercase;padding-right:18px}
   .tile-sub{font-size:12.5px;color:var(--grey);line-height:1.25}
   .tile-status{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--ink);margin-top:auto;padding-top:8px;line-height:1.25}
   /* Three states, told apart by fill and ring weight — not by hue. The yellow
@@ -53,7 +56,7 @@
   .tile-status mark{background:var(--yellow);color:var(--ink);padding:1px 4px;font-weight:600}
   .tile.soon{border:1px dashed var(--dash);pointer-events:none;cursor:default}
   .tile.soon .tile-title,.tile.soon .tile-sub{color:var(--faint)}
-  .soon-pill{margin-top:auto;padding-top:8px;font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
+  .soon-pill{margin-top:auto;padding-top:8px;font-family:var(--font-cond);font-size:12px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
   .lock{position:absolute;top:10px;right:10px;color:var(--grey);line-height:0}
 
   /* ACTIVITY */
@@ -61,7 +64,7 @@
   .activity-row{display:grid;grid-template-columns:96px 1fr;gap:10px;align-items:center;min-height:46px;padding:7px 12px;border-top:1px solid var(--hair);font-size:13.5px;color:var(--ink)}
   .activity-row:first-child{border-top:none}
   .activity-row:hover{background:var(--press)}
-  .activity-when{font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;letter-spacing:.03em;color:var(--grey);text-transform:uppercase;line-height:1.2}
+  .activity-when{font-family:var(--font-cond);font-size:14px;font-weight:600;letter-spacing:.03em;color:var(--grey);text-transform:uppercase;line-height:1.2}
   .activity-what{line-height:1.25;min-width:0}
   .activity-what span{color:var(--grey)}
   .activity-msg{padding:12px 14px;font-size:.84rem;color:var(--grey)}
@@ -73,15 +76,15 @@
   @media (min-width:760px){.header{padding-left:calc((100% - 720px)/2 + 18px);padding-right:calc((100% - 720px)/2 + 18px)}}
 
   /* AUTH GATE */
-  .auth-gate{position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:var(--paper);padding:20px;font-family:'Barlow',sans-serif}
+  .auth-gate{position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:var(--paper);padding:20px;font-family:var(--font)}
   .auth-gate.unlocked{display:none}
   .auth-card{width:100%;max-width:380px;background:#fff;border:1px solid var(--ink);border-radius:10px;padding:32px 28px;display:flex;flex-direction:column;gap:16px}
-  .auth-title{font-family:'Playfair Display',serif;font-size:1.6rem;font-weight:900;color:var(--ink);text-align:center;line-height:1.2}
+  .auth-title{font-family:var(--font-display);font-size:1.6rem;font-weight:900;color:var(--ink);text-align:center;line-height:1.2}
   .auth-title span{color:var(--tomato)}
-  .auth-input{width:100%;min-height:48px;padding:12px 16px;background:var(--paper);border:1px solid var(--ink);border-radius:6px;color:var(--ink);font-family:'Barlow',sans-serif;font-size:1rem;outline:none;-webkit-appearance:none}
+  .auth-input{width:100%;min-height:48px;padding:12px 16px;background:var(--paper);border:1px solid var(--ink);border-radius:6px;color:var(--ink);font-family:var(--font);font-size:1rem;outline:none;-webkit-appearance:none}
   .auth-input:focus{border-color:var(--tomato);box-shadow:0 0 0 2px rgba(232,93,58,.2)}
   .auth-input::placeholder{color:var(--grey)}
-  .auth-submit{width:100%;min-height:48px;padding:12px 16px;background:var(--ink);border:none;border-radius:6px;color:#fff;font-family:'Barlow Condensed',sans-serif;font-size:1.1rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;-webkit-appearance:none}
+  .auth-submit{width:100%;min-height:48px;padding:12px 16px;background:var(--ink);border:none;border-radius:6px;color:#fff;font-family:var(--font-cond);font-size:1.1rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;-webkit-appearance:none}
   .auth-submit:active{opacity:0.85}
   .auth-error{display:none;color:#b42318;font-size:.85rem;text-align:center;font-weight:500}
   .auth-error.show{display:block}
