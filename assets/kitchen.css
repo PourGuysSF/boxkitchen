@@ -9,6 +9,26 @@
 
    Adopted page by page (see docs/page-restyle.md). Only add
    components here when a real page needs them.
+
+   ── How to read this file ──────────────────────────────────
+   This is one file, but it is not one system. Of ~274 screen
+   classes, only about 30 are used by every page — the header,
+   modal, toast, segmented toggle, bottom bar, PIN gate, spinner
+   and manager toggle. The rest are page-private and simply share
+   an address:
+
+       prep + line   task rows, sections, stations, progress, drag
+       orders        par editor, shelf-move, + the shared row bits
+       portion+meat  count rows and the manager add/retire controls
+       flash         vendor rows, report tables, manage-vendors
+       recipes       masthead, card grid, card actions, form modal
+       costing       toolbar, ingredient list, price history
+       notes         category picker, and the filter toggle
+
+   Every section banner below carries a "used by:" line saying
+   which pages actually reference it. Those lines are derived from
+   the markup and the JS, so treat them as a map, not a licence —
+   see the never-delete rule in CLAUDE.md before removing anything.
    ───────────────────────────────────────────────────────────── */
 
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -48,6 +68,7 @@
       --font-display:'Playfair Display',Georgia,serif}
 
 /* ── BASE ─────────────────────────────────────────────────── */
+/* used by: every page */
 /* 100px, not 80: .submit-bar/.save-bar measure ~75px and .nb-fab 76px.
    80px left ~5px of slack under the last row. Orders overrides to 144px. */
 body{font-family:var(--font);background:var(--paper);color:var(--ink);min-height:100vh;padding-bottom:100px;font-variant-numeric:tabular-nums}
@@ -69,15 +90,21 @@ a:focus-visible,button:focus-visible,[tabindex]:focus-visible{outline:2px solid 
 .h{font-family:var(--font-cond);font-size:14px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--grey)}
 
 /* ── HEADER ───────────────────────────────────────────────── */
+/* used by: every page */
 .header{position:sticky;top:0;z-index:100;background:rgba(251,250,246,0.96);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-bottom:3px solid var(--ink);padding:14px 18px 12px}
 .header-row{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px}
 .header h1{font-family:var(--font-display);font-size:1.4rem;font-weight:900;letter-spacing:-0.01em;line-height:1.1;flex:1;text-align:center}
 .header h1 span{color:var(--tomato)}
 .home-link{display:inline-flex;align-items:center;justify-content:center;min-height:44px;min-width:44px;padding:0 10px;margin-left:-10px;font-family:var(--font-cond);font-size:16px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--grey);transition:color 0.15s;flex-shrink:0;white-space:nowrap}
 .home-link:hover,.home-link:active{color:var(--tomato)}
+/* Centres the header in a 720px column on wide screens. Recipes deliberately
+   opts out — see .rec-page .header in the MASTHEAD section, which wins on
+   specificity (0,2,0 beats 0,1,0) and restores its 40px gutters. That is the
+   only thing keeping the two apart, ~280 lines from each other. */
 @media (min-width:760px){.header{padding-left:calc((100% - 720px)/2 + 18px);padding-right:calc((100% - 720px)/2 + 18px)}}
 
 /* ── BUTTONS ──────────────────────────────────────────────── */
+/* used by: notes, recipes */
 .new-btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 14px;background:var(--tomato);border:1px solid var(--tomato);border-radius:6px;color:#fff;font-family:var(--font-cond);font-size:1rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;flex-shrink:0;white-space:nowrap}
 .new-btn:active{opacity:0.85}
 
@@ -95,12 +122,14 @@ a:focus-visible,button:focus-visible,[tabindex]:focus-visible{outline:2px solid 
 .filter-btn.active,.mode-btn.active,.shift-btn.active,.guide-btn.active,.view-toggle button.active{background:var(--ink);border-color:var(--ink);color:var(--paper)}
 
 /* ── EMPTY / LOADING ──────────────────────────────────────── */
+/* used by: every tool page */
 .empty{text-align:center;color:var(--grey);padding:60px 20px;font-size:0.9rem;font-style:italic}
 .loading{display:flex;flex-direction:column;align-items:center;padding:80px 20px;color:var(--grey)}
 .spinner{width:30px;height:30px;border:3px solid var(--hair);border-top-color:var(--tomato);border-radius:50%;animation:spin 0.8s linear infinite;margin-bottom:14px}
 @keyframes spin{to{transform:rotate(360deg)}}
 
 /* ── MODAL ────────────────────────────────────────────────── */
+/* used by: every tool page — except .cat-picker/.cat-opt, which are notes only */
 .modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:300;align-items:center;justify-content:center;padding:16px}
 .modal-bg.show{display:flex}
 .modal{background:var(--paper);border:1px solid var(--ink);border-radius:10px;padding:22px;width:100%;max-width:380px;max-height:90vh;overflow-y:auto}
@@ -143,6 +172,7 @@ a:focus-visible,button:focus-visible,[tabindex]:focus-visible{outline:2px solid 
 .toast.err,.toast.error{background:var(--danger);color:#fff}
 
 /* ── MANAGER MODE ─────────────────────────────────────────── */
+/* used by: every tool page except costing and flash */
 .mgr-toggle{display:flex;align-items:center;gap:8px;font-family:var(--font-cond);font-size:14px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--grey);min-height:44px;flex-shrink:0}
 .mgr-switch{width:40px;height:22px;border-radius:11px;background:var(--paper);border:1px solid var(--ink);position:relative;cursor:pointer;transition:background 0.2s}
 .mgr-switch .knob{width:16px;height:16px;border-radius:50%;background:var(--ink);position:absolute;top:2px;left:2px;transition:left 0.2s,background 0.2s}
@@ -161,6 +191,7 @@ a:focus-visible,button:focus-visible,[tabindex]:focus-visible{outline:2px solid 
    ═══════════════════════════════════════════════════════════ */
 
 /* ── DATE / NAME / INTRO BARS ─────────────────────────────── */
+/* used by: portion, meat, orders — .date-bar also flash, line, prep */
 .date-bar{display:flex;justify-content:space-between;align-items:center;padding:10px 18px;border-bottom:1px solid var(--hair)}
 .date-display{font-family:var(--font-cond);font-size:1.05rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
 .date-sub{font-family:var(--font-cond);font-size:14px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--grey)}
@@ -180,6 +211,7 @@ a:focus-visible,button:focus-visible,[tabindex]:focus-visible{outline:2px solid 
 .cat-label{font-family:var(--font-cond);font-size:14px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--grey)}
 
 /* ── COUNT ROWS ───────────────────────────────────────────── */
+/* used by: portion, meat */
 .count-row{display:flex;align-items:center;gap:12px;padding:10px 18px;border-bottom:1px solid var(--hair);min-height:56px}
 .count-info{flex:1;min-width:0}
 .count-name{font-size:0.95rem;font-weight:500;line-height:1.25}
@@ -224,6 +256,7 @@ a:focus-visible,button:focus-visible,[tabindex]:focus-visible{outline:2px solid 
 .toast.success{background:var(--ink);color:var(--paper)}
 
 /* ── MANAGER-ONLY CONTROLS ────────────────────────────────── */
+/* used by: portion, meat, recipes */
 .row-mgr-actions{display:none;gap:6px;flex-shrink:0}
 .manager-mode .row-mgr-actions{display:flex}
 .mgr-retire-btn{min-width:52px;min-height:44px;display:flex;align-items:center;justify-content:center;background:transparent;border:1px solid rgba(232,93,58,0.5);border-radius:6px;color:var(--tomato);font-family:var(--font-cond);font-size:0.95rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;padding:0 8px}
@@ -242,6 +275,7 @@ a:focus-visible,button:focus-visible,[tabindex]:focus-visible{outline:2px solid 
 /* ── FULL-SCREEN PIN GATE ─────────────────────────────────────
    Sits over everything at z-index 1000 and must be fully opaque
    paper — the financials are behind it. ───────────────────── */
+/* used by: costing, flash */
 .gate{position:fixed;inset:0;z-index:1000;background:var(--paper);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:30px;text-align:center}
 .gate.hide{display:none}
 .gate h2{font-family:var(--font-display);font-size:1.6rem;font-weight:900;letter-spacing:-0.01em;line-height:1.15;margin-bottom:6px}
@@ -258,6 +292,7 @@ a:focus-visible,button:focus-visible,[tabindex]:focus-visible{outline:2px solid 
 .gate-btn.back:active{background:var(--press)}
 
 /* ── HEADER EXTRAS ────────────────────────────────────────── */
+/* used by: mixed — .lock-tag costing/flash, .manage-btn flash, .manage-sections-btn prep/line */
 .lock-tag{display:flex;align-items:center;gap:5px;flex-shrink:0;white-space:nowrap;font-family:var(--font-cond);font-size:14px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--grey)}
 .manage-btn,.manage-sections-btn{display:block;margin:10px auto 0;min-height:40px;padding:8px 12px;background:var(--paper);border:1px solid var(--ink);border-radius:6px;color:var(--ink);font-family:var(--font-cond);font-size:0.9rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;white-space:nowrap}
 .manage-btn:active,.manage-sections-btn:active{background:var(--press)}
@@ -266,6 +301,7 @@ a:focus-visible,button:focus-visible,[tabindex]:focus-visible{outline:2px solid 
 .manage-sections-btn{display:none}
 
 /* ── DATE STEPPER ─────────────────────────────────────────── */
+/* used by: flash, prep, line */
 .date-left{display:flex;align-items:center;gap:10px;min-width:0}
 .date-info{text-align:center;min-width:0}
 .date-arrow{width:36px;height:36px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:var(--paper);border:1px solid var(--ink);border-radius:6px;color:var(--ink);font-size:0.85rem;cursor:pointer}
@@ -286,6 +322,7 @@ a:focus-visible,button:focus-visible,[tabindex]:focus-visible{outline:2px solid 
 .stat-sub{font-size:11px;line-height:1.2;color:var(--grey);margin-top:2px}
 
 /* ── VENDOR / SALES ROWS ──────────────────────────────────── */
+/* used by: flash */
 .flash-row{display:flex;align-items:center;gap:10px;min-height:56px;padding:9px 18px;border-bottom:1px solid var(--hair)}
 .flash-row.sales{background:var(--press);border-top:1px solid var(--ink)}
 .vname{flex:1;min-width:0;font-size:0.9rem;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -312,6 +349,7 @@ a:focus-visible,button:focus-visible,[tabindex]:focus-visible{outline:2px solid 
 /* ── REPORT TABLES ────────────────────────────────────────────
    Paper ground, hairline row rules, no fills. .rscroll owns the
    horizontal scroll so the page body never scrolls sideways. ── */
+/* used by: flash */
 .rsection{padding:16px 0 4px;border-bottom:1px solid var(--hair)}
 .rsection-title{font-family:var(--font-cond);font-size:14px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--grey);padding:0 18px 10px}
 .rscroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
@@ -324,6 +362,7 @@ a:focus-visible,button:focus-visible,[tabindex]:focus-visible{outline:2px solid 
 .rempty{padding:36px 20px;text-align:center;font-size:0.9rem;font-style:italic;color:var(--grey)}
 
 /* ── MANAGE VENDORS ───────────────────────────────────────── */
+/* used by: flash */
 .nb-label{font-family:var(--font-cond);font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--grey);margin:14px 0 7px}
 .vrow{display:flex;align-items:center;gap:7px;padding:7px 0;border-bottom:1px solid var(--hair)}
 .vrow.retired .vname-input{opacity:0.5}
@@ -347,8 +386,12 @@ a:focus-visible,button:focus-visible,[tabindex]:focus-visible{outline:2px solid 
    ═══════════════════════════════════════════════════════════ */
 
 /* ── MASTHEAD ─────────────────────────────────────────────── */
+/* used by: recipes */
 /* the old tomato gradient wash is dropped — flat paper, and the
    3px ink rule that every other page's header carries */
+/* Overrides the 720px-column rule in the HEADER section by specificity, not
+   source order: recipes is the one desktop-first page and keeps 40px gutters
+   and a non-sticky masthead. Do not weaken this selector. */
 .rec-page .header{position:static;padding:40px 40px 20px;border-bottom:3px solid var(--ink);background:var(--paper);backdrop-filter:none;-webkit-backdrop-filter:none}
 .rec-page .header h1{font-family:var(--font-display);font-size:2.4rem;font-weight:900;letter-spacing:-0.02em;line-height:1.05;flex:none;text-align:left}
 .rec-page .header h1 span{color:var(--tomato)}
@@ -364,6 +407,7 @@ a:focus-visible,button:focus-visible,[tabindex]:focus-visible{outline:2px solid 
 .status-text{font-family:var(--font-cond);font-size:14px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--grey)}
 
 /* ── CONTROLS ─────────────────────────────────────────────── */
+/* used by: recipes */
 .controls{display:flex;gap:12px;padding:20px 40px;flex-wrap:wrap;align-items:center}
 .search-box,.search{flex:1;min-width:200px;min-height:44px;padding:10px 16px;background:var(--paper);border:1px solid var(--ink);border-radius:6px;color:var(--ink);font-family:var(--font);font-size:0.95rem;outline:none;-webkit-appearance:none;appearance:none}
 .search-box::placeholder,.search::placeholder{color:var(--grey)}
@@ -384,6 +428,7 @@ a:focus-visible,button:focus-visible,[tabindex]:focus-visible{outline:2px solid 
 .rec-page .mgr-add-bar{padding:10px 40px 0;border-bottom:none}
 
 /* ── CARD GRID ────────────────────────────────────────────── */
+/* used by: recipes */
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:20px;padding:10px 40px 60px}
 .card{background:var(--paper);border:1px solid var(--ink);border-radius:8px;padding:22px;cursor:pointer;transition:background 0.15s,box-shadow 0.15s}
 .card:hover{background:var(--press);box-shadow:0 2px 0 var(--ink)}
@@ -427,6 +472,7 @@ a:focus-visible,button:focus-visible,[tabindex]:focus-visible{outline:2px solid 
 .grid .loading{grid-column:1 / -1;padding:80px 20px}
 
 /* ── CARD MANAGER ACTIONS ─────────────────────────────────── */
+/* used by: recipes */
 .card-mgr-actions{display:none;gap:8px;margin-top:14px;padding-top:14px;border-top:1px solid var(--hair)}
 body.manager-mode .card-mgr-actions{display:flex}
 .card-mgr-actions .mgr-edit-btn,.mgr-archive-btn,.mgr-unarchive-btn,.card-mgr-actions .mgr-delete-btn{flex:1;min-height:44px;display:flex;align-items:center;justify-content:center;background:transparent;border:1px solid var(--edge);border-radius:6px;cursor:pointer;font-family:var(--font-cond);font-size:0.9rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:0 10px}
@@ -446,6 +492,7 @@ body.manager-mode .card-mgr-actions{display:flex}
 .card-mgr-actions .mgr-delete-btn:hover,.card-mgr-actions .mgr-delete-btn:active{background:rgba(180,35,24,0.10)}
 
 /* ── RECIPE FORM MODAL ────────────────────────────────────── */
+/* used by: recipes */
 .modal.modal-lg{max-width:560px}
 /* Was byte-identical to .modal-btn.save. Across ~20 modals the solid tomato
    block on the right is Save; on the delete modal it was Delete permanently. */
@@ -467,6 +514,7 @@ body.manager-mode .card-mgr-actions{display:flex}
 .add-comp-btn:hover,.add-comp-btn:active{background:var(--press)}
 
 /* ── NARROW ───────────────────────────────────────────────── */
+/* used by: recipes */
 @media (max-width:600px){
   .rec-page .header{padding:24px 20px 16px}
   .rec-page .header h1{font-size:1.6rem}
@@ -494,6 +542,7 @@ body.manager-mode .card-mgr-actions{display:flex}
       --st-salad:#2d6a4f;--st-grill:#b42318;--st-saute:#22457f;--st-kits:#5f4589;--st-none:#6a6a6a}
 
 /* ── PROGRESS ─────────────────────────────────────────────── */
+/* used by: prep, line */
 .progress-wrap{display:flex;align-items:center;gap:8px}
 .progress-bar{width:100px;height:6px;background:var(--hair);border-radius:3px;overflow:hidden}
 /* done is solid ink, never green */
@@ -525,6 +574,7 @@ body.manager-mode .card-mgr-actions{display:flex}
 .add-staff-btn:active{background:var(--press)}
 
 /* ── SECTIONS ─────────────────────────────────────────────── */
+/* used by: prep, line, orders */
 .section{border-bottom:1px solid var(--hair)}
 .section-header{display:flex;justify-content:space-between;align-items:center;padding:12px 18px;background:var(--press);cursor:pointer}
 .section-header:active{background:var(--hair)}
@@ -540,6 +590,7 @@ body.manager-mode .card-mgr-actions{display:flex}
 .section.open .section-body{display:block}
 
 /* ── STATION SUB-GROUPS ───────────────────────────────────── */
+/* used by: prep, line */
 .station-group{border-top:1px solid var(--hair)}
 .station-header{display:flex;justify-content:space-between;align-items:center;padding:7px 18px;background:var(--paper)}
 .station-title{font-family:var(--font-cond);font-size:13px;font-weight:700;letter-spacing:.1em;text-transform:uppercase}
@@ -559,6 +610,7 @@ body.manager-mode .card-mgr-actions{display:flex}
 .mode-pill.mode-make{background:var(--tomato);border-color:var(--tomato);color:#fff;animation:notePulse 2s infinite}
 
 /* ── TASK ROW ─────────────────────────────────────────────── */
+/* used by: prep, line */
 .task{display:flex;align-items:center;gap:8px;padding:10px 18px;border-bottom:1px solid var(--hair)}
 /* done reads as struck off, not faded — opacity washes out on paper */
 .task.done .task-name{text-decoration:line-through;color:var(--grey)}
@@ -596,6 +648,7 @@ body.manager-mode .card-mgr-actions{display:flex}
 .note-input:focus{border-color:var(--ink);box-shadow:0 0 0 2px var(--yellow)}
 
 /* ── MANAGER-ONLY ROW CONTROLS ────────────────────────────── */
+/* used by: prep, line, orders */
 .delete-btn{display:none;width:22px;height:22px;flex-shrink:0;align-items:center;justify-content:center;background:transparent;border:1px solid rgba(232,93,58,0.5);border-radius:5px;color:var(--tomato);font-size:0.8rem;cursor:pointer}
 .manager-mode .delete-btn{display:flex}
 .delete-btn:active{background:rgba(232,93,58,0.10)}
@@ -607,6 +660,7 @@ body.manager-mode .card-mgr-actions{display:flex}
    touch-action:none belongs here and on .staff-grip, nowhere else.
    Ghost and chosen use outline/inset shadow rather than border so
    grabbing a row never shifts the layout mid-drag. ──────────── */
+/* used by: prep, line, orders */
 .drag-handle{display:flex;align-items:center;justify-content:center;width:22px;height:30px;color:var(--grey);cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none}
 .drag-handle:active{cursor:grabbing;color:var(--tomato)}
 .drag-handle svg{display:block;pointer-events:none}
@@ -629,6 +683,7 @@ body.manager-mode .card-mgr-actions{display:flex}
 .nb-toast.show{opacity:1}
 
 /* ── COMPLETION CELEBRATION ───────────────────────────────── */
+/* used by: prep, line */
 .celebrate-canvas{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:9998}
 /* the highlighter moment: yellow ground, ink type */
 .celebrate-banner{position:fixed;left:50%;top:38%;transform:translate(-50%,-50%) scale(0.9);z-index:9999;max-width:80vw;padding:16px 28px;background:var(--yellow);border:1px solid var(--ink);border-radius:6px;color:var(--ink);font-family:var(--font-display);font-size:1.25rem;font-weight:900;text-align:center;opacity:0;pointer-events:none;box-shadow:0 8px 40px rgba(0,0,0,0.25)}
@@ -651,6 +706,7 @@ body.manager-mode .card-mgr-actions{display:flex}
 .shelf-btn:active{background:var(--press)}
 
 /* ── PAR EDITOR ───────────────────────────────────────────── */
+/* used by: orders */
 /* the dashed underline is the affordance that says "tap to edit" */
 .item-par.mgr-edit{border-bottom:1px dashed var(--dash)}
 .item-par .par-input{width:46px;padding:3px 5px;background:var(--paper);border:1px solid var(--ink);border-radius:5px;color:var(--ink);font-family:var(--font);font-size:0.85rem;font-variant-numeric:tabular-nums;text-align:center;outline:none;-webkit-appearance:none;appearance:none}
@@ -679,6 +735,7 @@ body.manager-mode .card-mgr-actions{display:flex}
 .unit-add-row button:active{opacity:0.85}
 
 /* ── SHELF-MOVE MODAL ─────────────────────────────────────── */
+/* used by: orders */
 .shelf-vendor-hd{margin:12px 0 4px;font-family:var(--font-cond);font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--grey)}
 .shelf-vendor-hd:first-child{margin-top:0}
 .shelf-moves{display:flex;flex-direction:column;gap:1px;flex-shrink:0}
@@ -692,6 +749,7 @@ body.manager-mode .card-mgr-actions{display:flex}
    ═══════════════════════════════════════════════════════════ */
 
 /* ── TOOLBAR ──────────────────────────────────────────────── */
+/* used by: costing */
 .toolbar{display:flex;gap:8px;align-items:center;margin-top:10px}
 .subrow{display:flex;justify-content:space-between;align-items:center;margin-top:9px}
 .count-tag{font-family:var(--font-cond);font-size:13px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--grey)}
@@ -699,6 +757,7 @@ body.manager-mode .card-mgr-actions{display:flex}
 .toggle{padding:6px 2px;min-height:32px;background:transparent;border:none;color:var(--ink);font-family:var(--font-cond);font-size:13px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
 
 /* ── INGREDIENT LIST ──────────────────────────────────────── */
+/* used by: costing */
 /* vendor heading takes the same voice as every other section label */
 .vhead{padding:14px 20px 6px;font-family:var(--font-cond);font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--grey)}
 .ing-row{display:flex;align-items:center;gap:12px;padding:11px 20px;border-bottom:1px solid var(--hair);cursor:pointer}
@@ -720,6 +779,7 @@ body.manager-mode .card-mgr-actions{display:flex}
 .uc-unit{font-size:0.68rem;color:var(--grey);margin-top:1px}
 
 /* ── COSTING MODAL ────────────────────────────────────────── */
+/* used by: costing */
 .modal .msub{font-size:0.78rem;color:var(--grey);margin-bottom:14px}
 .field-row{display:flex;gap:10px}
 .field-row>div{flex:1}
@@ -738,6 +798,7 @@ body.manager-mode .card-mgr-actions{display:flex}
 .link-btn.retire.restore{color:var(--ink);border-color:var(--ink)}
 
 /* ── PRICE HISTORY ────────────────────────────────────────── */
+/* used by: costing */
 .hist-row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--hair);font-size:0.85rem}
 .hist-row .hdate{color:var(--grey);font-size:0.78rem}
 .hist-row .hprice{font-weight:700;font-variant-numeric:tabular-nums}
@@ -756,6 +817,7 @@ body.manager-mode .card-mgr-actions{display:flex}
    that the page is still loading, and a frozen spinner reads as a hung
    app. It is 30px and rotates in place, which is not the kind of motion
    the preference is asking about. */
+/* used by: every page */
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation-duration:0.01ms !important;
     animation-iteration-count:1 !important;transition-duration:0.01ms !important;
@@ -777,6 +839,7 @@ body.manager-mode .card-mgr-actions{display:flex}
 
    Overriding the tokens does most of the work — every rule that reads
    var(--hair), var(--edge) and so on inherits the print values. */
+/* used by: every page */
 @media print{
   :root{
     --paper:#fff;   --press:#fff;         /* cream over a full page is wasted toner */

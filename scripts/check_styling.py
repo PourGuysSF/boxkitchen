@@ -206,6 +206,25 @@ for sel in CONTROL_SELECTORS:
         fail(SHEET, 1, f"CONTROL_SELECTORS lists {sel}, which no longer exists - "
                        f"update scripts/check_styling.py")
 
+# 10 - every section banner in the sheet says which pages use it. The file is
+#      one address shared by ten pages' rules; without the map, the next person
+#      cannot tell a shared component from a page-private one, and the
+#      never-delete rule leaves them no safe way to find out.
+_raw_sheet = open(SHEET).read().split("\n")
+_banner = re.compile(r"/\* \u2500\u2500 ([A-Z][A-Z /\u2014\u2013-]+?) \u2500")
+for _i, _l in enumerate(_raw_sheet):
+    _m = _banner.match(_l)
+    if not _m:
+        continue
+    _j = _i
+    while _j < len(_raw_sheet) and "*/" not in _raw_sheet[_j]:
+        _j += 1
+    _next = _raw_sheet[_j + 1] if _j + 1 < len(_raw_sheet) else ""
+    if not _next.startswith("/* used by:"):
+        fail(SHEET, _i + 1,
+             f'section "{_m.group(1).strip()}" has no "/* used by: ... */" line - '
+             f"say which pages reference it")
+
 if fails:
     print(f"styling guard: {len(fails)} problem(s)\n")
     for x in fails:
