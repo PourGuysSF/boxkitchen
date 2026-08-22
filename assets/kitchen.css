@@ -732,3 +732,77 @@ body.manager-mode .card-mgr-actions{display:flex}
 .hist-row .hprice{font-weight:700;font-variant-numeric:tabular-nums}
 .hist-row .hsrc{margin-left:8px;font-family:var(--font-cond);font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
 .hist-empty{padding:18px 0;text-align:center;color:var(--grey);font-size:0.85rem;font-style:italic}
+
+/* ── PRINT ─────────────────────────────────────────────────
+   Paper is the backup when the power, the wifi or the site is gone —
+   a document someone runs a shift from with a pen, not a pretty
+   rendering of the screen.
+
+   The governing constraint: **browsers do not print background colours
+   by default.** Anything drawn as "white text on a filled block" prints
+   as white on white and disappears. So every state that mattered on
+   screen as a fill is re-expressed here as a border or a glyph, which
+   always print. Nothing below relies on print-color-adjust.
+
+   Overriding the tokens does most of the work — every rule that reads
+   var(--hair), var(--edge) and so on inherits the print values. */
+@media print{
+  :root{
+    --paper:#fff;   --press:#fff;         /* cream over a full page is wasted toner */
+    --ink:#000;     --grey:#333;  --faint:#555;
+    --hair:#bbb;    --dash:#999;          /* 1.27:1 does not print; these do */
+    --edge:#000;                          /* the checkbox has to be tickable */
+    --yellow:#eee;                        /* a highlight, not a colour wash */
+    --tomato:#000;  --danger:#000;        /* assume a mono printer */
+  }
+  @page{margin:12mm}
+  body{padding:0;background:#fff}
+
+  /* Anything you cannot use on paper. */
+  .submit-bar,.save-bar,.nb-fab,.toast,.nb-toast,.modal-bg,.gate,
+  .celebrate-canvas,.celebrate-banner,.spinner,.loading,
+  .new-btn,.home-link,.mgr-toggle,.mgr-controls,.mgr-add-bar,.mgr-add-btn,
+  .filter-toggle,.mode-toggle,.shift-toggle,.guide-toggle,.view-toggle,
+  .staff-bar,.viewas-bar,.toolbar,.progress-bar,
+  .manage-btn,.manage-sections-btn,.manage-units-btn,
+  .add-btn,.add-comp-btn,.add-staff-btn,.link-btn,
+  .drag-handle,.staff-grip,.move-btn,.shelf-btn,.note-btn,.delete-btn,
+  .expand-hint{display:none !important}
+
+  /* The header carries the date, so it prints — it just stops floating. */
+  .header{position:static;background:#fff;backdrop-filter:none;-webkit-backdrop-filter:none;
+          border-bottom:2px solid #000;padding:0 0 8px}
+
+  /* A box you can tick, and a tick you can see. Checked stays outlined
+     rather than a solid ink square: 351 rows of filled black is a lot of
+     toner, and the glyph prints even when backgrounds don't. */
+  .checkbox{background:#fff !important;border:2px solid #000 !important}
+  .checkbox.checked{color:#000 !important}
+
+  /* Fields become ruled blanks to write in. */
+  .count-input,.count-value,.money-input,.money-wrap,.note-input,.task-input,
+  .vname-input,.who-select,.station-assign,.unit-select,.entered-bar input,
+  .item-par .par-input{background:#fff !important;border:none !important;
+    border-bottom:1px solid #000 !important;border-radius:0 !important;box-shadow:none !important}
+
+  /* Filled pills would print as white-on-white. Re-drawn as outlines. */
+  .task-day,.note-badge,.mode-pill,.mode-pill.mode-make,.card-station,.count-tag,
+  .section-count,.station-count{background:#fff !important;color:#000 !important;
+    border:1px solid #000 !important;animation:none !important}
+
+  /* Same trap on the home page's status dots: "done" is a background fill,
+     so it would print as an empty ring — identical to "nothing scheduled".
+     A thick border fills the 9px without relying on backgrounds. */
+  .tile-status i{border-color:#000 !important}
+  .tile-status i.done{border-width:4px !important}
+  .tile-status i.due{border-width:2px !important}
+  .tile-status i.none{border-width:1px !important;border-color:#999 !important}
+
+  /* Don't split a row, or orphan a heading from what it heads. */
+  .task,.count-row,.item-row,.flash-row,.ing-row,.hist-row,.vrow,.unit-row,
+  .card,.tile{break-inside:avoid;page-break-inside:avoid}
+  .cat-header,.section-title,.station-title,.rsection-title,.shelf-vendor-hd,
+  .vhead{break-after:avoid;page-break-after:avoid}
+
+  a{text-decoration:none;color:#000}
+}

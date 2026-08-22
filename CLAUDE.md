@@ -90,6 +90,20 @@ serves `.submit-bar` and `.save-bar`. **`.toast.err, .toast.error` must stay gro
 sets `.err`, every other page sets `.error`, and an error rendering as a success is the worst
 failure this stylesheet can produce.
 
+### Printing is a backup, not a nicety
+
+`kitchen.css` ends with an `@media print` block. Paper is what the kitchen falls back to
+when the power, the wifi or the site is gone, so it has to be a document someone can run a
+shift from with a pen.
+
+The trap to remember when adding anything: **browsers do not print background colours by
+default.** Anything drawn as white text on a filled block prints as white on white and
+disappears. Every such state has to be re-expressed for print as a border or a glyph, which
+always print. Nothing in that block relies on `print-color-adjust`.
+
+Print has its own greyscale palette (`PRINT_PALETTE` in `scripts/check_styling.py`), allowed
+only inside that block — those greys must never appear on a screen rule.
+
 ### Where the detail lives
 
 - **`docs/page-restyle.md`** — what was built, slice by slice, and the justified page overrides.

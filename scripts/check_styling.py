@@ -42,6 +42,12 @@ CORE_TOKENS = {
     "--font", "--font-cond", "--font-display",
 }
 
+# Greyscale allowed ONLY inside the @media print block. Print is a separate,
+# deliberate palette: paper is white not cream, and every hue collapses to
+# black because we assume a mono printer. These stay out of PALETTE so they
+# can never leak onto a screen rule, where --ink and --grey are the answer.
+PRINT_PALETTE = {"#fff", "#ffffff", "#eee", "#bbb", "#999", "#555", "#333", "#000"}
+
 # Selectors that are the visible edge of something you tap. These may never
 # use --hair. The heuristic below also catches new ones, but it is a
 # heuristic - .money-wrap slipped past it because nothing in the selector
@@ -72,6 +78,30 @@ def strip_comments(t):
 
 def lineno(text, idx):
     return text.count("\n", 0, idx) + 1
+
+def print_span(text):
+    """(start, end) of the @media print block in comment-stripped text, or None."""
+    i = text.find("@media print")
+    if i == -1:
+        return None
+    j = text.index("{", i)
+    depth = 0
+    for k in range(j, len(text)):
+        if text[k] == "{":
+            depth += 1
+        elif text[k] == "}":
+            depth -= 1
+            if depth == 0:
+                return (i, k)
+    return (i, len(text))          # unbalanced; treat the rest as print
+
+_spans = {}
+def in_print(f, idx):
+    """Is this offset inside that file's @media print block?"""
+    if f not in _spans:
+        _spans[f] = print_span(strip_comments(open(f).read()))
+    sp = _spans[f]
+    return bool(sp and sp[0] <= idx <= sp[1])
 
 pages = sorted(glob.glob("*.html"))
 assert pages, "run me from the repo root"
@@ -123,12 +153,15 @@ for f in pages + [SHEET]:
         if i != -1:
             fail(f, lineno(bare, i), f"dark-theme leftover: {d}")
 
-    # 4 - only sanctioned colours (covers %23 inside SVG data URIs too)
+    # 4 - only sanctioned colours (covers %23 inside SVG data URIs too).
+    #     Inside @media print, PRINT_PALETTE is allowed as well.
     for m in re.finditer(r"#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{3}\b|%23[0-9a-fA-F]{6}\b", bare):
         h = m.group(0).replace("%23", "#").lower()
-        if h not in PALETTE:
+        allowed = PALETTE | PRINT_PALETTE if in_print(f, m.start()) else PALETTE
+        if h not in allowed:
+            where = " (inside @media print)" if in_print(f, m.start()) else ""
             fail(f, lineno(bare, m.start()),
-                 f"colour {h} is not in the palette - add it to PALETTE in "
+                 f"colour {h} is not in the palette{where} - add it to PALETTE in "
                  f"scripts/check_styling.py on purpose, or use a token")
 
     # 5 - no page redeclares a core token
