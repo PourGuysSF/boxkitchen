@@ -43,12 +43,12 @@ a{color:inherit;text-decoration:none}
    .view-toggle > button. JS sets all three, so all three names
    stay; only one set of rules describes them.
    Active state is an ink fill, never a hue. ─────────────────── */
-.filter-toggle,.mode-toggle,.shift-toggle{display:flex;background:var(--paper);border:1px solid var(--ink);border-radius:6px;overflow:hidden}
-.filter-btn,.mode-btn,.shift-btn,.view-toggle button{flex:1;min-height:40px;padding:9px;text-align:center;font-family:'Barlow Condensed',sans-serif;font-size:0.95rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;background:transparent;color:var(--grey);cursor:pointer}
+.filter-toggle,.mode-toggle,.shift-toggle,.guide-toggle{display:flex;background:var(--paper);border:1px solid var(--ink);border-radius:6px;overflow:hidden}
+.filter-btn,.mode-btn,.shift-btn,.guide-btn,.view-toggle button{flex:1;min-height:40px;padding:9px;text-align:center;font-family:'Barlow Condensed',sans-serif;font-size:0.95rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;background:transparent;color:var(--grey);cursor:pointer}
 /* joined variant: the container carries the border */
-.filter-btn,.mode-btn,.shift-btn{border:none}
-.filter-btn+.filter-btn,.mode-btn+.mode-btn,.shift-btn+.shift-btn{border-left:1px solid var(--ink)}
-.filter-btn.active,.mode-btn.active,.shift-btn.active,.view-toggle button.active{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+.filter-btn,.mode-btn,.shift-btn,.guide-btn{border:none}
+.filter-btn+.filter-btn,.mode-btn+.mode-btn,.shift-btn+.shift-btn,.guide-btn+.guide-btn{border-left:1px solid var(--ink)}
+.filter-btn.active,.mode-btn.active,.shift-btn.active,.guide-btn.active,.view-toggle button.active{background:var(--ink);border-color:var(--ink);color:var(--paper)}
 
 /* ── EMPTY / LOADING ──────────────────────────────────────── */
 .empty{text-align:center;color:var(--grey);padding:60px 20px;font-size:0.9rem;font-style:italic}
