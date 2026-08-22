@@ -14,7 +14,11 @@
 @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=Playfair+Display:wght@700;900&display=swap');
 
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-:root{--paper:#fbfaf6;--ink:#121212;--grey:#6a6a6a;--hair:#e2e0d8;--faint:#a9a7a0;--dash:#b8b6ae;--yellow:#ffe600;--tomato:#e85d3a;--press:#f3f1ea}
+/* color-scheme:light is load-bearing, not cosmetic. Without it Chrome's Auto
+   Dark Theme algorithmically inverts this page on any Android phone in dark
+   mode or battery saver, and iOS renders native pickers, autofill and
+   confirm() dialogs dark against paper. The old dark theme never needed it. */
+:root{color-scheme:light;--paper:#fbfaf6;--ink:#121212;--grey:#6a6a6a;--hair:#e2e0d8;--faint:#a9a7a0;--dash:#b8b6ae;--yellow:#ffe600;--tomato:#e85d3a;--press:#f3f1ea}
 
 /* ── BASE ─────────────────────────────────────────────────── */
 body{font-family:'Barlow',-apple-system,sans-serif;background:var(--paper);color:var(--ink);min-height:100vh;padding-bottom:80px;font-variant-numeric:tabular-nums}
