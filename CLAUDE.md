@@ -35,10 +35,63 @@ There are **two separate gates**:
 
 Both are shipped in public client code, so neither is real security — actual data protection depends on Supabase Row Level Security. **Secret hygiene:** never reproduce the password or PIN values in plans, summaries, comments, or output; refer to the latter only as "the manager PIN."
 
-## Styling — in migration, do not assume
+## Styling — one stylesheet, and rules that outlive it
 
-The site is mid-migration from the original dark theme to a light "Expo Board" look (paper `#fbfaf6` / ink / yellow / tomato, Barlow + Playfair), moving to a **shared stylesheet at `assets/kitchen.css`** one page per PR.
+**The migration is finished.** All ten pages share `assets/kitchen.css` — 9 core tokens, the
+font import, the reset, and every shared component. There is no second palette anywhere in the
+repo and no page carries an inline dark `<style>` block. A page's own `<style>` holds page-only
+rules and a handful of justified overrides, nothing more.
 
-**Do not copy styling from a page without checking which side of the migration it is on.** Converted pages link `assets/kitchen.css`; unconverted pages still carry an inline dark `<style>` block. `recipe_dashboard.html` is the outlier — it hard-codes hex values with no CSS variables at all.
+Run this before opening any PR that touches a page or the stylesheet:
 
-Plan, slice order, decisions, and per-page detail: **`docs/page-restyle.md`**.
+```
+python3 scripts/check_styling.py
+```
+
+It is the #114 consistency sweep, made runnable. CI runs it too.
+
+### The four rules that matter
+
+**1. Never bulk-delete "unused" CSS from `kitchen.css`.** Many class names are composed at
+runtime and appear in no markup: SortableJS injects `.sortable-ghost` / `-chosen` / `-drag`;
+stations are built as `'st-'+station`, categories as `'cat-'+category`; also
+`cleaning`/`daily`/`weekly`, `mode-kit`/`mode-make`, `filled`, `locked`, `has-qty`, `retired`,
+`assigned`, `tempest`/`showdown`. A rule is only dead once you have proven no page composes
+that name at runtime. Grep the JS for the *string fragment*, not the full class name.
+
+**2. Class names are load-bearing.** The JS reaches for them by name — `classList.add('done')`,
+`querySelector('.modal')`. Renaming a CSS class silently breaks behaviour that no visual review
+will catch. Change rules, never names.
+
+**3. A new page links `kitchen.css` and declares no `:root` of its own.** Scoped tokens are
+fine (`--cat-*` on Notes, `--sec-*` / `--st-*` in the shared sheet); redeclaring a core token
+is not, because then there are two sources of truth. `color-scheme:light` on `:root` must stay
+— without it Chrome's Auto Dark Theme inverts the whole site on any Android phone in dark mode.
+
+**4. State is expressed by fill, weight and border — never hue.** Filled / checked / active is
+an ink fill. "Done" is never green; it is struck through, because opacity washes out on paper.
+
+### What each colour is for
+
+| token | for | never |
+|---|---|---|
+| `--ink` 17.9:1 | body text, filled/active state | — |
+| `--grey` 5.18:1 | live secondary text | — |
+| `--faint` 2.31:1 | inactive or locked text **only** | live content, placeholders that carry meaning |
+| `--hair` 1.27:1 | list separators **only** | the edge of anything you tap |
+| `--edge` 3.23:1 | the visible boundary of a control (WCAG 1.4.11 wants 3:1) | text |
+| `--tomato` 3.32:1 | "the thing you meant to do" — Save, primary | destructive actions, small text |
+| `--danger` 6.29:1 | destructive and error only | anything reversible (retire stays tomato) |
+| `--yellow` 1.21:1 | highlighter fill behind text | text, or a signal on its own |
+
+One rule, many class names: the segmented toggle serves `.filter-btn` / `.mode-btn` /
+`.shift-btn` / `.guide-btn` / `.view-toggle button` across six pages; the fixed bottom bar
+serves `.submit-bar` and `.save-bar`. **`.toast.err, .toast.error` must stay grouped** — Flash
+sets `.err`, every other page sets `.error`, and an error rendering as a success is the worst
+failure this stylesheet can produce.
+
+### Where the detail lives
+
+- **`docs/page-restyle.md`** — what was built, slice by slice, and the justified page overrides.
+- **`docs/restyle-review.md`** — the adversarial review of it, the fixes that shipped, and the
+  findings still open. Read this before assuming the restyle is finished business.
