@@ -135,8 +135,12 @@ if "@import" in sheet_bare:
     fail(SHEET, 1, "@import re-introduced - it costs a serialised round trip "
                    "before any text renders in the right face")
 for f in pages:
-    if "fonts.googleapis.com" not in open(f).read():
-        fail(f, 1, "no Google Fonts <link> in <head> - text will fall back")
+    # Must be the stylesheet <link>, not just any mention: the preconnect hint
+    # also contains fonts.googleapis.com, so a bare substring test passes even
+    # when the actual stylesheet link has been removed.
+    if not re.search(r'<link[^>]+rel="stylesheet"[^>]+fonts\.googleapis\.com/css2', open(f).read()):
+        fail(f, 1, "no Google Fonts stylesheet <link> in <head> - every face "
+                   "falls back, and the fallbacks are not condensed")
 
 # 2 - the shared sheet still opts out of OS re-theming
 if "color-scheme:light" not in sheet_bare:
