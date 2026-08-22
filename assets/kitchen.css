@@ -18,7 +18,11 @@
    Dark Theme algorithmically inverts this page on any Android phone in dark
    mode or battery saver, and iOS renders native pickers, autofill and
    confirm() dialogs dark against paper. The old dark theme never needed it. */
-:root{color-scheme:light;--paper:#fbfaf6;--ink:#121212;--grey:#6a6a6a;--hair:#e2e0d8;--faint:#a9a7a0;--dash:#b8b6ae;--yellow:#ffe600;--tomato:#e85d3a;--press:#f3f1ea}
+:root{color-scheme:light;--paper:#fbfaf6;--ink:#121212;--grey:#6a6a6a;--hair:#e2e0d8;--faint:#a9a7a0;--dash:#b8b6ae;--yellow:#ffe600;--tomato:#e85d3a;--press:#f3f1ea;
+      /* --edge: the boundary of a control you can tap. --hair (1.27:1) is a
+         list separator and fails WCAG 1.4.11, which wants 3:1 for a control's
+         visible edge. --edge is 3.23:1 on paper. Separators keep --hair. */
+      --edge:#8e8c84}
 
 /* ── BASE ─────────────────────────────────────────────────── */
 body{font-family:'Barlow',-apple-system,sans-serif;background:var(--paper);color:var(--ink);min-height:100vh;padding-bottom:80px;font-variant-numeric:tabular-nums}
@@ -89,7 +93,7 @@ a{color:inherit;text-decoration:none}
    Notes calls the chip .cat-opt, Prep's staff-note modal calls it
    .nb-cat. One control, one rule. ─────────────────────────── */
 .cat-picker,.nb-cats{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
-.cat-opt,.nb-cat{padding:9px 12px;min-height:44px;display:flex;align-items:center;gap:5px;background:var(--paper);border:1px solid var(--hair);border-radius:6px;color:var(--ink);font-family:'Barlow',sans-serif;font-size:0.85rem;font-weight:600;cursor:pointer}
+.cat-opt,.nb-cat{padding:9px 12px;min-height:44px;display:flex;align-items:center;gap:5px;background:var(--paper);border:1px solid var(--edge);border-radius:6px;color:var(--ink);font-family:'Barlow',sans-serif;font-size:0.85rem;font-weight:600;cursor:pointer}
 .cat-opt:active,.nb-cat:active{background:var(--press)}
 .cat-opt.sel,.nb-cat.sel{background:var(--ink);border-color:var(--ink);color:var(--paper)}
 
@@ -148,7 +152,7 @@ a{color:inherit;text-decoration:none}
    boxes are still EMPTY. Filled = ink border + press fill, so it
    reads by weight and fill rather than hue. Inputs don't inherit
    font or numeric settings, so both are restated here. */
-.count-input{width:118px;min-height:44px;padding:8px 10px;background:var(--paper);border:1px solid var(--hair);border-radius:6px;color:var(--ink);font-family:'Barlow',sans-serif;font-size:0.95rem;font-variant-numeric:tabular-nums;text-align:center;outline:none;flex-shrink:0;-webkit-appearance:none;appearance:none}
+.count-input{width:118px;min-height:44px;padding:8px 10px;background:var(--paper);border:1px solid var(--edge);border-radius:6px;color:var(--ink);font-family:'Barlow',sans-serif;font-size:0.95rem;font-variant-numeric:tabular-nums;text-align:center;outline:none;flex-shrink:0;-webkit-appearance:none;appearance:none}
 .count-input::placeholder{color:var(--faint)}
 .count-input:focus{border-color:var(--tomato);box-shadow:0 0 0 2px rgba(232,93,58,.2)}
 .count-input.filled{border:1.5px solid var(--ink);background:var(--press);font-weight:600}
@@ -253,7 +257,7 @@ a{color:inherit;text-decoration:none}
 /* Same "filled" reading as .count-input.filled on the count sheets —
    ink border and a press fill. A cook must read it the same way on
    both pages. */
-.money-wrap{display:flex;align-items:center;gap:2px;width:140px;flex-shrink:0;padding:0 10px;background:var(--paper);border:1px solid var(--hair);border-radius:6px;transition:border-color 0.15s,background 0.15s}
+.money-wrap{display:flex;align-items:center;gap:2px;width:140px;flex-shrink:0;padding:0 10px;background:var(--paper);border:1px solid var(--edge);border-radius:6px;transition:border-color 0.15s,background 0.15s}
 .money-wrap:focus-within{border-color:var(--tomato);box-shadow:0 0 0 2px rgba(232,93,58,.2)}
 .money-wrap.filled{border:1.5px solid var(--ink);background:var(--press)}
 .money-wrap .dollar{color:var(--grey);font-size:0.85rem}
@@ -288,7 +292,7 @@ a{color:inherit;text-decoration:none}
 .vmove{display:flex;flex-direction:column;gap:2px;flex-shrink:0}
 .vmini{width:26px;height:17px;padding:0;background:var(--paper);border:1px solid var(--ink);border-radius:3px;color:var(--ink);font-size:0.6rem;line-height:1;cursor:pointer}
 .vmini:active{background:var(--ink);color:var(--paper)}
-.vname-input{flex:1;min-width:0;min-height:40px;padding:8px;background:var(--paper);border:1px solid var(--hair);border-radius:6px;color:var(--ink);font-family:'Barlow',sans-serif;font-size:0.88rem;outline:none;-webkit-appearance:none;appearance:none}
+.vname-input{flex:1;min-width:0;min-height:40px;padding:8px;background:var(--paper);border:1px solid var(--edge);border-radius:6px;color:var(--ink);font-family:'Barlow',sans-serif;font-size:0.88rem;outline:none;-webkit-appearance:none;appearance:none}
 .vname-input:focus{border-color:var(--tomato);box-shadow:0 0 0 2px rgba(232,93,58,.2)}
 .vretire{flex-shrink:0;min-height:36px;padding:7px 9px;background:transparent;border:1px solid rgba(232,93,58,0.5);border-radius:6px;color:var(--tomato);font-family:'Barlow Condensed',sans-serif;font-size:0.85rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;cursor:pointer}
 .vretire:active{background:rgba(232,93,58,0.10)}
@@ -387,7 +391,7 @@ a{color:inherit;text-decoration:none}
 /* ── CARD MANAGER ACTIONS ─────────────────────────────────── */
 .card-mgr-actions{display:none;gap:8px;margin-top:14px;padding-top:14px;border-top:1px solid var(--hair)}
 body.manager-mode .card-mgr-actions{display:flex}
-.card-mgr-actions .mgr-edit-btn,.mgr-archive-btn,.mgr-unarchive-btn,.card-mgr-actions .mgr-delete-btn{flex:1;min-height:44px;display:flex;align-items:center;justify-content:center;background:transparent;border:1px solid var(--hair);border-radius:6px;cursor:pointer;font-family:'Barlow Condensed',sans-serif;font-size:0.9rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:0 10px}
+.card-mgr-actions .mgr-edit-btn,.mgr-archive-btn,.mgr-unarchive-btn,.card-mgr-actions .mgr-delete-btn{flex:1;min-height:44px;display:flex;align-items:center;justify-content:center;background:transparent;border:1px solid var(--edge);border-radius:6px;cursor:pointer;font-family:'Barlow Condensed',sans-serif;font-size:0.9rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:0 10px}
 .card-mgr-actions .mgr-edit-btn{color:var(--ink);border-color:var(--ink)}
 .card-mgr-actions .mgr-edit-btn:hover,.card-mgr-actions .mgr-edit-btn:active{background:var(--press)}
 .mgr-archive-btn{color:var(--tomato);border-color:rgba(232,93,58,0.5)}
@@ -504,11 +508,11 @@ body.manager-mode .card-mgr-actions{display:flex}
 .st-kits{color:var(--st-kits)}
 .st-none{color:var(--st-none)}
 .station-right{display:flex;align-items:center;gap:8px}
-.station-assign{max-width:112px;padding:2px 5px;background:var(--paper);border:1px solid var(--hair);border-radius:6px;color:var(--grey);font-family:'Barlow',sans-serif;font-size:0.7rem;outline:none}
+.station-assign{max-width:112px;padding:2px 5px;background:var(--paper);border:1px solid var(--edge);border-radius:6px;color:var(--grey);font-family:'Barlow',sans-serif;font-size:0.7rem;outline:none}
 .station-assign:focus{border-color:var(--tomato);box-shadow:0 0 0 2px rgba(232,93,58,.2)}
 
 /* Kit/Make pill — "MAKE" is an alert and stays the loudest thing on the row */
-.mode-pill{display:inline-block;margin-left:6px;padding:2px 7px;border:1px solid var(--hair);border-radius:4px;font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;vertical-align:middle;cursor:pointer}
+.mode-pill{display:inline-block;margin-left:6px;padding:2px 7px;border:1px solid var(--edge);border-radius:4px;font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;vertical-align:middle;cursor:pointer}
 .mode-pill.mode-kit{background:var(--paper);color:var(--grey)}
 .mode-pill.mode-make{background:var(--tomato);border-color:var(--tomato);color:#fff;animation:notePulse 2s infinite}
 
@@ -518,7 +522,7 @@ body.manager-mode .card-mgr-actions{display:flex}
 .task.done .task-name{text-decoration:line-through;color:var(--grey)}
 .mgr-controls{display:none;flex-direction:column;gap:1px;flex-shrink:0}
 .manager-mode .mgr-controls{display:flex}
-.checkbox{width:26px;height:26px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:var(--paper);border:2px solid var(--hair);border-radius:6px;color:transparent;font-size:0.85rem;cursor:pointer;transition:all 0.15s}
+.checkbox{width:26px;height:26px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:var(--paper);border:2px solid var(--edge);border-radius:6px;color:transparent;font-size:0.85rem;cursor:pointer;transition:all 0.15s}
 /* same reading as .count-input.filled and .money-wrap.filled: fill, not hue */
 .checkbox.checked{background:var(--ink);border-color:var(--ink);color:var(--paper)}
 .task-info{flex:1;min-width:0}
@@ -529,24 +533,24 @@ body.manager-mode .card-mgr-actions{display:flex}
 .task-fields{display:flex;gap:5px;align-items:center;flex-shrink:0}
 /* the chevron is an inline SVG with a hard-coded fill — it must be
    restated in the new grey or it keeps the old dark-theme muted */
-.who-select{width:132px;padding:5px 4px;padding-right:16px;background:var(--paper);border:1px solid var(--hair);border-radius:6px;color:var(--ink);font-family:'Barlow',sans-serif;font-size:0.78rem;outline:none;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Cpath d='M0 2l4 4 4-4' fill='%236a6a6a'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 6px center}
+.who-select{width:132px;padding:5px 4px;padding-right:16px;background:var(--paper);border:1px solid var(--edge);border-radius:6px;color:var(--ink);font-family:'Barlow',sans-serif;font-size:0.78rem;outline:none;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Cpath d='M0 2l4 4 4-4' fill='%236a6a6a'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 6px center}
 .who-select:focus{border-color:var(--tomato);box-shadow:0 0 0 2px rgba(232,93,58,.2)}
 /* assigned = somebody's on it. Weight and border, not hue. */
 .who-select.assigned{border-color:var(--ink);color:var(--ink);font-weight:600}
-.task-input{padding:5px 8px;background:var(--paper);border:1px solid var(--hair);border-radius:6px;color:var(--ink);font-family:'Barlow',sans-serif;font-size:0.78rem;font-variant-numeric:tabular-nums;outline:none}
+.task-input{padding:5px 8px;background:var(--paper);border:1px solid var(--edge);border-radius:6px;color:var(--ink);font-family:'Barlow',sans-serif;font-size:0.78rem;font-variant-numeric:tabular-nums;outline:none}
 .task-input:focus{border-color:var(--tomato);box-shadow:0 0 0 2px rgba(232,93,58,.2)}
 .task-input::placeholder{color:var(--faint)}
 .task-input.qty{width:48px;text-align:center}
 
 /* ── NOTES ON A TASK — yellow is the note colour ──────────── */
-.note-btn{width:26px;height:26px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:var(--paper);border:1px solid var(--hair);border-radius:6px;color:var(--grey);font-size:0.7rem;cursor:pointer}
+.note-btn{width:26px;height:26px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:var(--paper);border:1px solid var(--edge);border-radius:6px;color:var(--grey);font-size:0.7rem;cursor:pointer}
 /* yellow as a fill, not as text — #ffe600 on paper is unreadable */
 .note-btn.has-note{background:var(--yellow);border-color:var(--yellow);color:var(--ink)}
 .note-badge{display:inline-block;margin-left:5px;padding:1px 5px;background:var(--yellow);border-radius:3px;color:var(--ink);font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;vertical-align:middle;animation:notePulse 2s infinite}
 @keyframes notePulse{0%,100%{opacity:1}50%{opacity:0.6}}
 .note-row{display:none;padding:4px 18px 10px 62px}
 .note-row.show{display:block}
-.note-input{width:100%;padding:6px 10px;background:var(--paper);border:1px solid var(--hair);border-radius:6px;color:var(--ink);font-family:'Barlow',sans-serif;font-size:0.82rem;outline:none}
+.note-input{width:100%;padding:6px 10px;background:var(--paper);border:1px solid var(--edge);border-radius:6px;color:var(--ink);font-family:'Barlow',sans-serif;font-size:0.82rem;outline:none}
 .note-input:focus{border-color:var(--ink);box-shadow:0 0 0 2px var(--yellow)}
 
 /* ── MANAGER-ONLY ROW CONTROLS ────────────────────────────── */
@@ -598,9 +602,9 @@ body.manager-mode .card-mgr-actions{display:flex}
 /* ── ROW CONTROLS (manager mode) ──────────────────────────── */
 /* hairline outlines with grey glyphs — these sit on every row, so
    they must not compete with the item name for attention */
-.move-btn{display:flex;align-items:center;justify-content:center;width:20px;height:14px;padding:0;background:transparent;border:1px solid var(--hair);border-radius:3px;color:var(--grey);font-size:0.55rem;cursor:pointer}
+.move-btn{display:flex;align-items:center;justify-content:center;width:20px;height:14px;padding:0;background:transparent;border:1px solid var(--edge);border-radius:3px;color:var(--grey);font-size:0.55rem;cursor:pointer}
 .move-btn:active{background:var(--ink);border-color:var(--ink);color:var(--paper)}
-.shelf-btn{display:none;align-items:center;justify-content:center;width:22px;height:22px;margin-left:4px;flex-shrink:0;background:transparent;border:1px solid var(--hair);border-radius:5px;color:var(--grey);font-size:0.8rem;cursor:pointer}
+.shelf-btn{display:none;align-items:center;justify-content:center;width:22px;height:22px;margin-left:4px;flex-shrink:0;background:transparent;border:1px solid var(--edge);border-radius:5px;color:var(--grey);font-size:0.8rem;cursor:pointer}
 .manager-mode .shelf-btn{display:flex}
 .shelf-btn:active{background:var(--press)}
 
@@ -611,7 +615,7 @@ body.manager-mode .card-mgr-actions{display:flex}
 .item-par .par-input:focus{border-color:var(--tomato);box-shadow:0 0 0 2px rgba(232,93,58,.2)}
 
 /* ── UNIT SELECT + MANAGE UNITS ───────────────────────────── */
-.unit-select{width:100%;max-width:90px;padding:4px;background:var(--paper);border:1px solid var(--hair);border-radius:5px;color:var(--ink);font-family:'Barlow',sans-serif;font-size:0.8rem;outline:none;cursor:pointer;-webkit-appearance:none;appearance:none}
+.unit-select{width:100%;max-width:90px;padding:4px;background:var(--paper);border:1px solid var(--edge);border-radius:5px;color:var(--ink);font-family:'Barlow',sans-serif;font-size:0.8rem;outline:none;cursor:pointer;-webkit-appearance:none;appearance:none}
 .unit-select:focus{border-color:var(--tomato);box-shadow:0 0 0 2px rgba(232,93,58,.2)}
 .manage-units-btn{display:none;padding:5px 9px;background:transparent;border:1px solid var(--ink);border-radius:6px;color:var(--ink);font-family:'Barlow Condensed',sans-serif;font-size:0.8rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;cursor:pointer}
 .manage-units-btn:active{background:var(--press)}
@@ -621,7 +625,7 @@ body.manager-mode .card-mgr-actions{display:flex}
 .unit-row input.unit-name{flex:1;margin:0;padding:7px 9px}
 /* retired reads as struck-out grey, not faded — opacity washes out on paper */
 .unit-row.retired input.unit-name{color:var(--grey);text-decoration:line-through}
-.unit-row .u-btn{padding:6px 10px;background:transparent;border:1px solid var(--hair);border-radius:6px;color:var(--grey);font-family:'Barlow Condensed',sans-serif;font-size:0.8rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;cursor:pointer}
+.unit-row .u-btn{padding:6px 10px;background:transparent;border:1px solid var(--edge);border-radius:6px;color:var(--grey);font-family:'Barlow Condensed',sans-serif;font-size:0.8rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;cursor:pointer}
 .unit-row .u-btn.retire{color:var(--tomato);border-color:rgba(232,93,58,0.5)}
 .unit-row .u-btn.retire:active{background:rgba(232,93,58,0.10)}
 /* restore is a return to normal, not a success signal — ink, not green */
@@ -683,7 +687,7 @@ body.manager-mode .card-mgr-actions{display:flex}
 .uc-preview.none{background:var(--press);border-color:var(--hair);color:var(--grey);font-weight:600}
 
 .row-actions{display:flex;gap:10px;margin-top:12px;align-items:center}
-.link-btn{padding:9px 11px;min-height:40px;background:transparent;border:1px solid var(--hair);border-radius:6px;font-family:'Barlow Condensed',sans-serif;font-size:0.85rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;cursor:pointer}
+.link-btn{padding:9px 11px;min-height:40px;background:transparent;border:1px solid var(--edge);border-radius:6px;font-family:'Barlow Condensed',sans-serif;font-size:0.85rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;cursor:pointer}
 .link-btn.hist{color:var(--ink);border-color:var(--ink)}
 .link-btn.hist:active{background:var(--press)}
 .link-btn.retire{margin-left:auto;color:var(--tomato);border-color:rgba(232,93,58,0.5)}
