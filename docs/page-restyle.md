@@ -1,7 +1,53 @@
 # Page Restyle — carry the Expo Board look across the whole site
 
-Status: **plan only, no code written.** Drafted 2026-08-21.
-Worktree: `~/Developer/boxkitchen-page-restyle`, branch `page-restyle`, off live `origin/main` @ `5780efc`.
+Status: **DONE.** Drafted and completed 2026-08-21. Ten PRs, #102 → #114.
+This file is now a record of what was done, not a to-do list.
+
+## Done — the end state
+
+All **ten pages** share one stylesheet: `assets/kitchen.css`. There is no second palette
+anywhere in the repo.
+
+| where | what lives there |
+|---|---|
+| `assets/kitchen.css` | the 9 design tokens, the font `@import`, the reset, and every shared component |
+| each page's `<style>` | page-only rules, and a handful of justified overrides (listed below) |
+
+**Design tokens** (`:root` in `kitchen.css`, copied verbatim from the home page):
+`--paper #fbfaf6` · `--ink #121212` · `--grey #6a6a6a` · `--hair #e2e0d8` ·
+`--faint #a9a7a0` · `--dash #b8b6ae` · `--yellow #ffe600` · `--tomato #e85d3a` ·
+`--press #f3f1ea`. All nine are in use; none should be removed.
+
+**The retuned accent hues** (chosen against cream, reused across pages):
+red `#b42318` · ochre `#a25c00` · blue `#22457f` · plum `#5f4589` · green `#2d6a4f`.
+Notes declares them as `--cat-*` in its own block; Prep declares `--sec-*`/`--st-*` in
+`kitchen.css`; Orders' five vendor colours use the same values inline.
+
+**Principles that were settled and should hold for anything new:**
+- State is expressed by **fill, weight and border — never hue**. Filled / checked / active
+  is an ink fill. "Done" is never green.
+- `--faint` is for inactive or locked text only; it is ~2.4:1 on paper and unreadable at
+  small sizes. Use `--grey` for live text.
+- Yellow is a **highlighter fill**, never text. Error text is `#b42318`.
+- One rule, many class names. The segmented toggle serves `.filter-btn` / `.mode-btn` /
+  `.shift-btn` / `.guide-btn` / `.view-toggle button` across six pages. The fixed bottom bar
+  serves `.submit-bar` and `.save-bar`. **`.toast.err, .toast.error` must stay grouped** —
+  Flash sets `.err`, every other page sets `.error`.
+
+**Justified page overrides** (deliberate, not drift):
+`index.html` — `.header` is a flex row with 18px padding, and `.header h1` is 1.5rem;
+it is the front door and has no buttons competing for the row.
+`tempest_orders.html` — `.header h1` is 1.2rem with `nowrap` (longest title in the app),
+plus `body`, `.nb-fab` and `.nb-toast` offsets for its fixed submit bar.
+`tempest_flash.html` / `tempest_costing.html` — wider modals for their list content.
+`tempest_prep.html` / `tempest_line.html` — a shared 3-rule modal margin rhythm.
+
+**⚠️ Never bulk-delete "unused" CSS from `kitchen.css`.** Many class names are composed at
+runtime and never appear in markup: SortableJS injects `.sortable-ghost` / `-chosen` /
+`-drag`; stations are built as `'st-'+station`; section types and the kit/make pill likewise.
+A rule is only dead once you have proven no page composes that name at runtime.
+
+Worktree used: `~/Developer/boxkitchen-page-restyle`, off live `origin/main` @ `5780efc`.
 
 ## The problem
 
@@ -223,16 +269,25 @@ blindness costs least.
 a data-entry job or a feature to retire. Worth deciding before spending review time on it.
 **Risk:** low. **Done when:** the page renders correctly and the PIN gate still gates.
 
-### Slice 9 — consistency sweep — **NEXT, and the only slice left**
-**Every page is now on `assets/kitchen.css`.** The repo-wide greps for `DM+Sans`,
-`--surface`, `--dim`, `#0f1115`, `--muted`, `--accent`, `--text` and `--border` all come
-back empty as of slice 8, so the sweep is no longer a hunt for leftovers. What remains:
-`index.html` still carries its own inline styles and should join the shared sheet, and
-the whole site wants one walk on one phone looking for drift.
-Delete leftover duplicated rules, confirm no page still imports DM Sans or references a
-dead `--surface`/`--green`/`--blue`, and walk the whole site on one phone looking for drift.
-**Delivers:** one coherent product; `kitchen.css` as the single source of styling truth.
-**Done when:** grep finds no old tokens and no page feels foreign.
+### Slice 9 — consistency sweep — ✅ **MERGED (#114)**
+Closed the project. `index.html` joined `assets/kitchen.css` — it had carried its own copy
+of the palette since #98, a second source of truth that could silently drift. Its `:root`,
+reset, `body`, `a`, `[hidden]`, `.h` and `.header h1 span` were byte-identical to the shared
+sheet and were deleted; `.header` and `.header h1` genuinely differ and stayed as overrides.
+Verified **pixel-identical**: 39 selectors compared on rendered geometry and computed style,
+zero differences, identical page height.
+
+The repo-wide greps (`DM+Sans`, `--surface`, `--dim`, old dark hexes, pages missing the
+`<link>`) all came back clean.
+
+Drift audit: every page-level override was enumerated and checked against the shared rule.
+All are justified — see "Justified page overrides" above. Three pages
+(`recipe_dashboard`, `tempest_portion`, `tempest_meat`) carry **no local block at all**.
+The known prep/line modal duplication was considered and deliberately left: consolidating
+six lines would either change the shared modal for all ten pages or add a modifier class to
+markup, and a sweep should not introduce risk to save three lines.
+
+**Delivered:** one coherent product; `kitchen.css` as the single source of styling truth.
 
 ## Verifying a page with no data — standing rule
 Notes (slice 1) and Costing (slice 8) render empty. Any test rows created to review styling
