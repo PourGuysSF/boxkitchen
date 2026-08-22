@@ -204,7 +204,7 @@ new order survives a reload.
 962 lines, 160 CSS; 21 CSS lines differ from prep. Applies the pattern slice 5 proved.
 **Risk:** medium. **Done when:** same checklist as slice 5, plus the SUN–SAT dropdown renders.
 
-### Slice 7 — `tempest_orders.html` — **split, too big as one**
+### Slice 7 — `tempest_orders.html` — ✅ **MERGED (7a #111, 7b #112)**
 1137 lines, 171 CSS, 277 rows, 25 modal references, 24 manager references, SortableJS.
 Largest page, most modal-heavy, and where an order actually gets submitted.
 - **7a — layout, typography, shelves, item rows.** The page reads correctly at rest.

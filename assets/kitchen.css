@@ -582,3 +582,54 @@ body.manager-mode .card-mgr-actions{display:flex}
 .celebrate-canvas{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:9998}
 /* the highlighter moment: yellow ground, ink type */
 .celebrate-banner{position:fixed;left:50%;top:38%;transform:translate(-50%,-50%) scale(0.9);z-index:9999;max-width:80vw;padding:16px 28px;background:var(--yellow);border:1px solid var(--ink);border-radius:6px;color:var(--ink);font-family:'Playfair Display',serif;font-size:1.25rem;font-weight:900;text-align:center;opacity:0;pointer-events:none;box-shadow:0 8px 40px rgba(0,0,0,0.25)}
+
+/* ═══════════════════════════════════════════════════════════
+   ORDER GUIDES — tempest_orders.html (slice 7b)
+   Manager-mode controls, the shelf-move and unit modals, and
+   the par editor. Everything here is orders-only; the modals,
+   drag affordances, delete/add buttons and note-modal parts
+   are inherited from the shared components above.
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── ROW CONTROLS (manager mode) ──────────────────────────── */
+/* hairline outlines with grey glyphs — these sit on every row, so
+   they must not compete with the item name for attention */
+.move-btn{display:flex;align-items:center;justify-content:center;width:20px;height:14px;padding:0;background:transparent;border:1px solid var(--hair);border-radius:3px;color:var(--grey);font-size:0.55rem;cursor:pointer}
+.move-btn:active{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+.shelf-btn{display:none;align-items:center;justify-content:center;width:22px;height:22px;margin-left:4px;flex-shrink:0;background:transparent;border:1px solid var(--hair);border-radius:5px;color:var(--grey);font-size:0.8rem;cursor:pointer}
+.manager-mode .shelf-btn{display:flex}
+.shelf-btn:active{background:var(--press)}
+
+/* ── PAR EDITOR ───────────────────────────────────────────── */
+/* the dashed underline is the affordance that says "tap to edit" */
+.item-par.mgr-edit{border-bottom:1px dashed var(--dash)}
+.item-par .par-input{width:46px;padding:3px 5px;background:var(--paper);border:1px solid var(--ink);border-radius:5px;color:var(--ink);font-family:'Barlow',sans-serif;font-size:0.85rem;font-variant-numeric:tabular-nums;text-align:center;outline:none;-webkit-appearance:none;appearance:none}
+.item-par .par-input:focus{border-color:var(--tomato);box-shadow:0 0 0 2px rgba(232,93,58,.2)}
+
+/* ── UNIT SELECT + MANAGE UNITS ───────────────────────────── */
+.unit-select{width:100%;max-width:90px;padding:4px;background:var(--paper);border:1px solid var(--hair);border-radius:5px;color:var(--ink);font-family:'Barlow',sans-serif;font-size:0.8rem;outline:none;cursor:pointer;-webkit-appearance:none;appearance:none}
+.unit-select:focus{border-color:var(--tomato);box-shadow:0 0 0 2px rgba(232,93,58,.2)}
+.manage-units-btn{display:none;padding:5px 9px;background:transparent;border:1px solid var(--ink);border-radius:6px;color:var(--ink);font-family:'Barlow Condensed',sans-serif;font-size:0.8rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;cursor:pointer}
+.manage-units-btn:active{background:var(--press)}
+
+.unit-list{max-height:50vh;overflow-y:auto;margin-bottom:12px}
+.unit-row{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--hair)}
+.unit-row input.unit-name{flex:1;margin:0;padding:7px 9px}
+/* retired reads as struck-out grey, not faded — opacity washes out on paper */
+.unit-row.retired input.unit-name{color:var(--grey);text-decoration:line-through}
+.unit-row .u-btn{padding:6px 10px;background:transparent;border:1px solid var(--hair);border-radius:6px;color:var(--grey);font-family:'Barlow Condensed',sans-serif;font-size:0.8rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;cursor:pointer}
+.unit-row .u-btn.retire{color:var(--tomato);border-color:rgba(232,93,58,0.5)}
+.unit-row .u-btn.retire:active{background:rgba(232,93,58,0.10)}
+/* restore is a return to normal, not a success signal — ink, not green */
+.unit-row .u-btn.restore{color:var(--ink);border-color:var(--ink)}
+.unit-row .u-btn.restore:active{background:var(--press)}
+.unit-add-row{display:flex;gap:8px;margin-bottom:6px}
+.unit-add-row input{flex:1;margin:0}
+.unit-add-row button{padding:8px 12px;background:var(--tomato);border:1px solid var(--tomato);border-radius:6px;color:#fff;font-family:'Barlow Condensed',sans-serif;font-size:0.9rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;cursor:pointer}
+.unit-add-row button:active{opacity:0.85}
+
+/* ── SHELF-MOVE MODAL ─────────────────────────────────────── */
+.shelf-vendor-hd{margin:12px 0 4px;font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--grey)}
+.shelf-vendor-hd:first-child{margin-top:0}
+.shelf-moves{display:flex;flex-direction:column;gap:1px;flex-shrink:0}
+.shelf-body{flex:1;min-width:0}
