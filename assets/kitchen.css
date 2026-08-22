@@ -52,6 +52,17 @@
    80px left ~5px of slack under the last row. Orders overrides to 144px. */
 body{font-family:var(--font);background:var(--paper);color:var(--ink);min-height:100vh;padding-bottom:100px;font-variant-numeric:tabular-nums}
 a{color:inherit;text-decoration:none}
+
+/* Keyboard focus. Buttons and links were never given a ring of their own —
+   nothing sets outline:none on them, so they fell through to whatever the
+   browser draws, which differs between Chrome and Safari and is not
+   guaranteed to hold up against cream. This is one explicit ring instead.
+   outline-offset puts it 2px outside the element, on paper, so it stays
+   17.9:1 even around an ink-filled button.
+   Note what this does NOT fix: 29 click-handling <div>/<span> elements are
+   not focusable at all, so no CSS can give them a focus state. That needs
+   tabindex, a role and key handlers - markup work, tracked separately. */
+a:focus-visible,button:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 [hidden]{display:none !important}
 
 /* Barlow Condensed uppercase — the label voice of the whole site */
@@ -180,12 +191,12 @@ a{color:inherit;text-decoration:none}
    reads by weight and fill rather than hue. Inputs don't inherit
    font or numeric settings, so both are restated here. */
 .count-input{width:118px;min-height:44px;padding:8px 10px;background:var(--paper);border:1px solid var(--edge);border-radius:6px;color:var(--ink);font-family:var(--font);font-size:0.95rem;font-variant-numeric:tabular-nums;text-align:center;outline:none;flex-shrink:0;-webkit-appearance:none;appearance:none}
-.count-input::placeholder{color:var(--faint)}
+.count-input::placeholder{color:var(--grey)}
 .count-input:focus{border-color:var(--tomato);box-shadow:0 0 0 2px rgba(232,93,58,.2)}
 .count-input.filled{border:1.5px solid var(--ink);background:var(--press);font-weight:600}
 
 .count-value{width:118px;min-height:44px;padding:8px 10px;color:var(--ink);font-family:var(--font);font-size:0.95rem;font-variant-numeric:tabular-nums;font-weight:600;text-align:center;flex-shrink:0;display:flex;align-items:center;justify-content:center}
-.count-value.blank{color:var(--faint);font-weight:400}
+.count-value.blank{color:var(--grey);font-weight:400}
 
 /* separated variant: a full-width bar, so each button is outlined */
 .view-toggle{display:flex;gap:8px;padding:10px 18px;border-bottom:1px solid var(--hair);background:var(--press)}
@@ -204,7 +215,7 @@ a{color:inherit;text-decoration:none}
 .submit-summary strong,.save-summary b{color:var(--ink);font-weight:600}
 .submit-btn,.save-btn{padding:12px 28px;min-height:48px;background:var(--tomato);border:1px solid var(--tomato);border-radius:6px;color:#fff;font-family:var(--font-cond);font-size:1rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;flex-shrink:0;white-space:nowrap}
 .submit-btn:active,.save-btn:active{opacity:0.85}
-.submit-btn:disabled,.save-btn:disabled{background:var(--hair);border-color:var(--hair);color:var(--faint);cursor:default;opacity:1}
+.submit-btn:disabled,.save-btn:disabled{background:var(--hair);border-color:var(--hair);color:var(--grey);cursor:default;opacity:1}
 @media (min-width:760px){.submit-bar,.save-bar{padding-left:calc((100% - 720px)/2 + 18px);padding-right:calc((100% - 720px)/2 + 18px)}}
 
 /* toast clears the fixed bottom bar on these pages */
@@ -290,13 +301,13 @@ a{color:inherit;text-decoration:none}
 .money-wrap .dollar{color:var(--grey);font-size:0.85rem}
 .money-wrap.filled .dollar{color:var(--ink)}
 .money-input{flex:1;min-width:0;min-height:44px;padding:9px 0;background:transparent;border:none;outline:none;color:var(--ink);font-family:var(--font);font-size:0.95rem;font-weight:600;font-variant-numeric:tabular-nums;text-align:right}
-.money-input::placeholder{color:var(--faint);font-weight:400}
+.money-input::placeholder{color:var(--grey);font-weight:400}
 
 .entered-bar{display:flex;align-items:center;gap:10px;padding:10px 18px;border-bottom:1px solid var(--hair)}
 .entered-bar label{font-family:var(--font-cond);font-size:14px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--grey);white-space:nowrap}
 .entered-bar input{flex:1;min-width:0;min-height:44px;padding:9px 10px;background:var(--paper);border:1px solid var(--ink);border-radius:6px;color:var(--ink);font-family:var(--font);font-size:0.9rem;outline:none;-webkit-appearance:none;appearance:none}
 .entered-bar input:focus{border-color:var(--tomato);box-shadow:0 0 0 2px rgba(232,93,58,.2)}
-.entered-bar input::placeholder{color:var(--faint)}
+.entered-bar input::placeholder{color:var(--grey)}
 
 /* ── REPORT TABLES ────────────────────────────────────────────
    Paper ground, hairline row rules, no fills. .rscroll owns the
@@ -349,13 +360,13 @@ a{color:inherit;text-decoration:none}
 .status-bar{display:flex;align-items:center;gap:10px;margin-top:16px}
 /* the dot no longer pulses — it was decorative motion reading as a
    live connection signal */
-.status-dot{width:8px;height:8px;border-radius:50%;background:var(--faint);flex-shrink:0}
+.status-dot{width:8px;height:8px;border-radius:50%;background:var(--edge);flex-shrink:0}
 .status-text{font-family:var(--font-cond);font-size:14px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--grey)}
 
 /* ── CONTROLS ─────────────────────────────────────────────── */
 .controls{display:flex;gap:12px;padding:20px 40px;flex-wrap:wrap;align-items:center}
 .search-box,.search{flex:1;min-width:200px;min-height:44px;padding:10px 16px;background:var(--paper);border:1px solid var(--ink);border-radius:6px;color:var(--ink);font-family:var(--font);font-size:0.95rem;outline:none;-webkit-appearance:none;appearance:none}
-.search-box::placeholder,.search::placeholder{color:var(--faint)}
+.search-box::placeholder,.search::placeholder{color:var(--grey)}
 .search-box:focus,.search:focus{border-color:var(--tomato);box-shadow:0 0 0 2px rgba(232,93,58,.2)}
 
 /* These filter buttons are standalone pills in a control row, NOT a
@@ -385,7 +396,7 @@ a{color:inherit;text-decoration:none}
 .location-tag{font-family:var(--font-cond);font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.12em;padding:3px 8px;border-radius:4px;white-space:nowrap;background:transparent;border:1px solid var(--hair);color:var(--grey)}
 .location-tag.tempest{background:transparent;border-color:var(--hair);color:var(--grey)}
 .location-tag.showdown{background:transparent;border-color:var(--tomato);color:var(--tomato)}
-.location-tag.archived{background:var(--press);border-color:var(--dash);color:var(--faint)}
+.location-tag.archived{background:var(--press);border-color:var(--dash);color:var(--grey)}
 
 .card-category{display:inline-block;font-family:var(--font-cond);font-size:13px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--grey);background:var(--press);padding:3px 10px;border-radius:4px;margin-bottom:14px}
 /* station is the one tag that actually varies — it keeps tomato */
@@ -397,7 +408,7 @@ a{color:inherit;text-decoration:none}
 .ingredients-full{font-size:0.88rem;color:var(--ink);line-height:1.6;display:none}
 .method-full{font-size:0.88rem;color:var(--ink);line-height:1.8;display:none}
 .method-full .step{margin-bottom:4px}
-.expand-hint{font-family:var(--font-cond);font-size:12px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);margin-top:12px;text-align:center}
+.expand-hint{font-family:var(--font-cond);font-size:12px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--grey);margin-top:12px;text-align:center}
 .card.open .ingredients-preview{display:none}
 .card.open .ingredients-full{display:block}
 .card.open .method-full{display:block}
@@ -570,7 +581,7 @@ body.manager-mode .card-mgr-actions{display:flex}
 .who-select.assigned{border-color:var(--ink);color:var(--ink);font-weight:600}
 .task-input{padding:5px 8px;background:var(--paper);border:1px solid var(--edge);border-radius:6px;color:var(--ink);font-family:var(--font);font-size:0.78rem;font-variant-numeric:tabular-nums;outline:none}
 .task-input:focus{border-color:var(--tomato);box-shadow:0 0 0 2px rgba(232,93,58,.2)}
-.task-input::placeholder{color:var(--faint)}
+.task-input::placeholder{color:var(--grey)}
 .task-input.qty{width:48px;text-align:center}
 
 /* ── NOTES ON A TASK — yellow is the note colour ──────────── */
@@ -697,7 +708,7 @@ body.manager-mode .card-mgr-actions{display:flex}
 .ing-row.retired .ing-name{text-decoration:line-through}
 .ing-main{flex:1;min-width:0}
 .ing-name{font-size:0.9rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ing-alias{color:var(--faint);font-weight:400;font-size:0.8rem}
+.ing-alias{color:var(--grey);font-weight:400;font-size:0.8rem}
 .ing-pack{font-size:0.76rem;color:var(--grey);margin-top:2px}
 /* "no price yet" is a to-do, and yellow highlighter is what a to-do
    looks like everywhere else in this app */
@@ -705,7 +716,7 @@ body.manager-mode .card-mgr-actions{display:flex}
 .ing-cost{flex:0 0 auto;text-align:right;font-variant-numeric:tabular-nums}
 /* the headline number on the row: ink and heavy, never green */
 .uc{font-size:1rem;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums}
-.uc.none{color:var(--faint);font-size:0.82rem;font-weight:600}
+.uc.none{color:var(--grey);font-size:0.82rem;font-weight:600}
 .uc-unit{font-size:0.68rem;color:var(--grey);margin-top:1px}
 
 /* ── COSTING MODAL ────────────────────────────────────────── */
@@ -730,8 +741,28 @@ body.manager-mode .card-mgr-actions{display:flex}
 .hist-row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--hair);font-size:0.85rem}
 .hist-row .hdate{color:var(--grey);font-size:0.78rem}
 .hist-row .hprice{font-weight:700;font-variant-numeric:tabular-nums}
-.hist-row .hsrc{margin-left:8px;font-family:var(--font-cond);font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+.hist-row .hsrc{margin-left:8px;font-family:var(--font-cond);font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--grey)}
 .hist-empty{padding:18px 0;text-align:center;color:var(--grey);font-size:0.85rem;font-style:italic}
+
+/* ── REDUCED MOTION ────────────────────────────────────────
+   .mode-pill.mode-make pulses every two seconds forever, and these pages
+   sit open on the line for a whole shift. Anyone who has asked their OS
+   for less motion gets none of it.
+
+   The confetti is pure motion with no informational content, so it goes
+   entirely rather than being sped up to nothing.
+
+   The spinner is the exception and keeps turning: it is the only signal
+   that the page is still loading, and a frozen spinner reads as a hung
+   app. It is 30px and rotates in place, which is not the kind of motion
+   the preference is asking about. */
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:0.01ms !important;
+    animation-iteration-count:1 !important;transition-duration:0.01ms !important;
+    scroll-behavior:auto !important}
+  .spinner{animation-duration:0.8s !important;animation-iteration-count:infinite !important}
+  .celebrate-canvas,.celebrate-banner{display:none !important}
+}
 
 /* ── PRINT ─────────────────────────────────────────────────
    Paper is the backup when the power, the wifi or the site is gone —
