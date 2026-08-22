@@ -17,7 +17,9 @@
 :root{--paper:#fbfaf6;--ink:#121212;--grey:#6a6a6a;--hair:#e2e0d8;--faint:#a9a7a0;--dash:#b8b6ae;--yellow:#ffe600;--tomato:#e85d3a;--press:#f3f1ea}
 
 /* ── BASE ─────────────────────────────────────────────────── */
-body{font-family:'Barlow',-apple-system,sans-serif;background:var(--paper);color:var(--ink);min-height:100vh;padding-bottom:80px;font-variant-numeric:tabular-nums}
+/* 100px, not 80: .submit-bar/.save-bar measure ~75px and .nb-fab 76px.
+   80px left ~5px of slack under the last row. Orders overrides to 144px. */
+body{font-family:'Barlow',-apple-system,sans-serif;background:var(--paper);color:var(--ink);min-height:100vh;padding-bottom:100px;font-variant-numeric:tabular-nums}
 a{color:inherit;text-decoration:none}
 [hidden]{display:none !important}
 
