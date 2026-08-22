@@ -14,99 +14,115 @@
   })();
 </script>
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#fbfaf6">
 <title>Tempest Order Guide</title>
+<link rel="stylesheet" href="assets/kitchen.css">
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@700;900&display=swap');
-  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  /* ═══════════════════════════════════════════════════════════
+     Tempest Orders — SLICE 7a.
+
+     This page is converted in two passes. 7a is everything visible
+     AT REST: no modal open, manager mode OFF. 7b converts the
+     manager and modal surfaces, which are still using the old dark
+     rules at the bottom of this block.
+
+     The page is deliberately half-converted. The old @import and
+     :root below exist only to keep those unconverted rules working;
+     7b deletes both along with everything under NOT YET CONVERTED.
+     ═══════════════════════════════════════════════════════════ */
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
   :root{--bg:#0f1115;--surface:#1a1d24;--surface2:#22262f;--border:#2a2d35;--accent:#e85d3a;--accent-dim:rgba(232,93,58,0.15);--green:#22c55e;--green-dim:rgba(34,197,94,0.12);--yellow:#f59e0b;--blue:#3b82f6;--purple:#a855f7;--red:#ef4444;--text:#e8e6e3;--muted:#8a8a8a;--dim:#555}
-  body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding-bottom:144px}
 
-  .header{position:sticky;top:0;z-index:100;background:rgba(15,17,21,0.95);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-bottom:1px solid var(--border);padding:14px 20px 12px}
-  .header-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
-  .header h1{font-family:'Playfair Display',serif;font-size:1.4rem;font-weight:900}
-  .header h1 span{color:var(--accent)}
-  .home-link{display:inline-flex;align-items:center;justify-content:center;min-height:44px;min-width:44px;padding:0 10px;margin-left:-10px;font-family:'DM Sans',sans-serif;font-size:0.85rem;font-weight:500;color:rgba(232,230,227,0.75);text-decoration:none;transition:color 0.15s}
-  .home-link:hover,.home-link:active{color:var(--accent)}
-  .mgr-toggle{display:flex;align-items:center;gap:8px;font-size:0.78rem;color:var(--muted)}
-  .mgr-switch{width:40px;height:22px;border-radius:11px;background:var(--border);position:relative;cursor:pointer;transition:background 0.2s}
-  .mgr-switch.on{background:var(--accent)}
-  .mgr-switch .knob{width:18px;height:18px;border-radius:50%;background:#fff;position:absolute;top:2px;left:2px;transition:left 0.2s}
-  .mgr-switch.on .knob{left:20px}
-  .guide-toggle{display:flex;background:var(--surface);border-radius:10px;border:1px solid var(--border);overflow:hidden}
-  .guide-btn{flex:1;padding:9px;text-align:center;font-family:'DM Sans',sans-serif;font-size:0.82rem;font-weight:600;border:none;background:transparent;color:var(--muted);cursor:pointer}
-  .guide-btn.active{background:var(--accent);color:#fff}
+  /* ── 7a: CONVERTED ─────────────────────────────────────────── */
 
-  .date-bar{display:flex;justify-content:space-between;align-items:center;padding:10px 20px;border-bottom:1px solid var(--border)}
-  .date-display{font-size:0.9rem;font-weight:600}
-  .delivery-info{font-size:0.75rem;color:var(--yellow);font-weight:600}
+  /* clears the fixed submit bar plus the note FAB stacked above it */
+  body{padding-bottom:144px}
+  /* "Tempest Orders" is the longest title in the app; at the shared 1.4rem
+     it wraps to two lines between the home link and the manager toggle.
+     The old page fit it on one line, so it keeps one here too. */
+  .header h1{font-size:1.2rem;white-space:nowrap}
+  .name-bar input{flex:1;min-width:0;min-height:44px;padding:8px 12px;background:var(--paper);border:1px solid var(--ink);border-radius:6px;color:var(--ink);font-family:'Barlow',sans-serif;font-size:0.9rem;outline:none;-webkit-appearance:none;appearance:none}
+  .name-bar input:focus{border-color:var(--tomato);box-shadow:0 0 0 2px rgba(232,93,58,.2)}
+  .name-bar input::placeholder{color:var(--faint)}
+  /* delivery day reads better as a highlighter than as yellow text */
+  .delivery-info{font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;background:var(--yellow);color:var(--ink);padding:2px 6px}
 
-  .name-bar{display:flex;align-items:center;gap:10px;padding:10px 20px;border-bottom:1px solid var(--border);background:var(--surface)}
-  .name-bar label{font-size:0.8rem;color:var(--muted);font-weight:600}
-  .name-bar input{flex:1;padding:8px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:0.9rem;outline:none}
-  .name-bar input:focus{border-color:var(--accent)}
-
-  /* VENDOR SECTION */
-  .vendor-section{border-bottom:1px solid var(--border)}
-  .vendor-header{display:flex;justify-content:space-between;align-items:center;padding:12px 20px;background:var(--surface);cursor:pointer}
-  .vendor-header:active{background:var(--surface2)}
-  .vendor-name{font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px}
-  .vendor-name.birite{color:var(--blue)}.vendor-name.dairy{color:var(--purple)}.vendor-name.schmitz{color:var(--accent)}.vendor-name.asia{color:var(--yellow)}.vendor-name.cooks{color:var(--green)}
+  /* VENDOR SECTION — same voice as prep's .section-header */
+  .vendor-section{border-bottom:1px solid var(--hair)}
+  .vendor-header{display:flex;justify-content:space-between;align-items:center;padding:12px 18px;background:var(--press);cursor:pointer}
+  .vendor-header:active{background:var(--hair)}
+  .vendor-name{font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}
+  /* Vendor hues retuned for cream, reusing the values already proven on
+     Notes and Prep. Purple had no equivalent in the new palette; it takes
+     the same plum those pages use. */
+  .vendor-name.birite{color:#22457f}
+  .vendor-name.dairy{color:#5f4589}
+  .vendor-name.schmitz{color:var(--tomato)}
+  .vendor-name.asia{color:#a25c00}
+  .vendor-name.cooks{color:#2d6a4f}
   .vendor-right{display:flex;align-items:center;gap:8px}
-  .vendor-count{font-size:0.72rem;color:var(--dim);background:var(--border);padding:2px 8px;border-radius:10px}
-  .vendor-count.has{color:var(--green)}
-  .chevron{font-size:0.65rem;color:var(--dim);transition:transform 0.2s}
+  .vendor-count{font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:600;letter-spacing:.04em;color:var(--grey);background:var(--paper);border:1px solid var(--hair);padding:2px 8px;border-radius:10px;font-variant-numeric:tabular-nums}
+  /* "this vendor has items on the order" — weight and border, not hue */
+  .vendor-count.has{color:var(--ink);font-weight:700;border-color:var(--ink)}
   .vendor-section.open .chevron{transform:rotate(180deg)}
   .vendor-body{display:none}
   .vendor-section.open .vendor-body{display:block}
 
-  /* CATEGORY HEADER */
-  .cat-header{padding:8px 20px;background:rgba(232,93,58,0.08);border-bottom:1px solid var(--border);border-top:1px solid var(--border)}
-  .cat-label{font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--accent)}
+  /* ITEM HEADER STRIP — .ih-* widths must stay identical to the .item-*
+     widths below or the columns stop lining up */
+  .item-header{display:flex;align-items:center;padding:6px 18px;background:var(--press);border-bottom:1px solid var(--hair)}
+  .item-header span{font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--grey)}
+  .ih-name{flex:1}
+  .ih-par{width:50px;text-align:center}
+  .ih-unit{width:42px;text-align:center}
+  .ih-qty{width:58px;text-align:center}
 
   /* ITEM ROW */
-  .item-header{display:flex;align-items:center;padding:6px 20px;border-bottom:1px solid rgba(42,45,53,0.4);background:rgba(42,45,53,0.3)}
-  .item-header span{font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--dim)}
-  .ih-name{flex:1}.ih-par{width:50px;text-align:center}.ih-unit{width:42px;text-align:center}.ih-qty{width:58px;text-align:center}
-
-  .item-row{display:flex;align-items:center;padding:8px 20px;border-bottom:1px solid rgba(42,45,53,0.3)}
-  .item-row.has-qty{background:var(--green-dim)}
-  .item-name{flex:1;font-size:0.85rem;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .item-par{width:50px;text-align:center;font-size:0.78rem;color:var(--muted);font-weight:600}
-  .item-unit{width:42px;text-align:center;font-size:0.72rem;color:var(--dim)}
+  .item-row{display:flex;align-items:center;padding:8px 18px;border-bottom:1px solid var(--hair)}
+  /* subtle — a whole tinted row gets loud fast on paper */
+  .item-row.has-qty{background:var(--press)}
+  .item-name{flex:1;min-width:0;font-size:0.85rem;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .item-par{width:50px;text-align:center;font-size:0.78rem;font-weight:600;color:var(--grey);font-variant-numeric:tabular-nums}
+  .item-unit{width:42px;text-align:center;font-size:0.72rem;color:var(--grey)}
   .item-qty{width:58px}
-  .qty-input{width:100%;padding:5px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:0.85rem;text-align:center;outline:none}
-  .qty-input:focus{border-color:var(--accent)}
-  .qty-input.filled{border-color:var(--green);background:var(--green-dim)}
-  .qty-input.locked{opacity:0.55;background:var(--bg);color:var(--muted);cursor:not-allowed;border-color:var(--border)}
-  .qty-input.locked.filled{border-color:var(--border);background:var(--bg)}
-  .lock-banner{margin:10px 20px;padding:10px 14px;background:var(--green-dim);border:1px solid var(--green);border-radius:8px;color:var(--green);font-size:0.85rem;font-weight:600;line-height:1.4}
-
-  /* TODAY / PREVIOUS TOGGLE */
-  .view-toggle{display:flex;gap:8px;padding:10px 20px;border-bottom:1px solid var(--border);background:var(--surface)}
-  .view-toggle button{flex:1;min-height:40px;padding:8px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--muted);font-family:'DM Sans',sans-serif;font-size:0.85rem;font-weight:600;cursor:pointer;transition:background 0.15s,border-color 0.15s,color 0.15s}
-  .view-toggle button.active{background:var(--accent);border-color:var(--accent);color:#fff}
-  .prev-date-label{display:none;padding:10px 20px;background:rgba(232,93,58,0.06);border-bottom:1px solid var(--border);font-size:0.82rem;color:var(--text)}
-  .prev-date-label.show{display:block}
-  .prev-date-label .by{color:var(--muted);font-size:0.75rem;margin-left:6px}
+  .qty-input{width:100%;padding:5px;background:var(--paper);border:1px solid var(--hair);border-radius:6px;color:var(--ink);font-family:'Barlow',sans-serif;font-size:0.85rem;font-variant-numeric:tabular-nums;text-align:center;outline:none;-webkit-appearance:none;appearance:none}
+  .qty-input:focus{border-color:var(--tomato);box-shadow:0 0 0 2px rgba(232,93,58,.2)}
+  /* the same reading as .count-input.filled and .money-wrap.filled */
+  .qty-input.filled{border:1.5px solid var(--ink);background:var(--press);font-weight:600}
+  /* locked: faint on paper rather than 55% opacity, which washes out */
+  .qty-input.locked{background:var(--paper);border-color:var(--hair);color:var(--faint);cursor:not-allowed}
+  .qty-input.locked.filled{border:1px solid var(--hair);background:var(--paper);font-weight:400}
+  /* information, not an error — ink, never tomato */
+  .lock-banner{margin:10px 18px;padding:10px 14px;background:var(--paper);border:1px solid var(--ink);border-radius:6px;color:var(--ink);font-size:0.85rem;font-weight:600;line-height:1.4}
 
   /* PREVIOUS ORDER CARDS */
-  .prev-card{margin:14px 20px;border:1px solid var(--border);border-radius:12px;overflow:hidden;background:var(--surface)}
-  .prev-card-head{padding:10px 14px;background:rgba(232,93,58,0.06);border-bottom:1px solid var(--border);font-size:0.85rem;font-weight:600;color:var(--text)}
-  .prev-card-head .by{display:block;color:var(--muted);font-size:0.75rem;font-weight:500;margin-top:2px}
-  .prev-vendor{padding:8px 14px 4px;font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted)}
-  .prev-item{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 14px;border-top:1px solid rgba(42,45,53,0.3);font-size:0.85rem}
-  .prev-item .pi-name{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .prev-item .pi-unit{color:var(--dim);font-size:0.72rem}
-  .prev-item .pi-qty{font-weight:700;color:var(--accent);min-width:42px;text-align:right}
-  .prev-empty{padding:60px 20px;text-align:center;color:var(--muted);font-size:0.9rem}
+  .prev-card{margin:14px 18px;background:var(--paper);border:1px solid var(--ink);border-radius:6px;overflow:hidden}
+  .prev-card-head{padding:10px 14px;background:var(--press);border-bottom:1px solid var(--ink);font-size:0.85rem;font-weight:600;color:var(--ink)}
+  .prev-card-head .by{display:block;margin-top:2px;color:var(--grey);font-size:0.75rem;font-weight:400}
+  .prev-vendor{padding:8px 14px 4px;font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--grey)}
+  .prev-item{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 14px;border-top:1px solid var(--hair);font-size:0.85rem}
+  .prev-item .pi-name{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .prev-item .pi-unit{color:var(--grey);font-size:0.72rem}
+  /* the number that matters on a previous order */
+  .prev-item .pi-qty{min-width:42px;text-align:right;font-weight:700;color:var(--tomato);font-variant-numeric:tabular-nums}
+  .prev-empty{padding:60px 20px;text-align:center;color:var(--grey);font-size:0.9rem;font-style:italic}
 
-  /* MANAGER */
+  /* the FAB stacks above the fixed submit bar on this page */
+  .nb-fab{bottom:84px}
+
+  /* ── NOT YET CONVERTED — 7b owns everything below ──────────────
+     Manager controls, drag affordances, every modal, and the staff
+     note modal. These still use the old dark palette above and will
+     look out of place until 7b lands. That is expected. ────────── */
+
   .mgr-controls{display:none;flex-direction:column;gap:1px;margin-right:6px;flex-shrink:0}
   .manager-mode .mgr-controls{display:flex}
   .move-btn{width:20px;height:14px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:0.55rem;cursor:pointer;border-radius:3px;display:flex;align-items:center;justify-content:center;padding:0}
   .move-btn:active{background:var(--accent);color:#fff}
-  /* DRAG-TO-REORDER (manager mode) */
+  /* DRAG-TO-REORDER (manager mode) — touch-action:none belongs on the
+     handle ONLY; widening it kills scrolling on a phone. 7b restyles
+     these but must not move the touch-action declaration. */
   .drag-handle{display:flex;align-items:center;justify-content:center;width:22px;height:30px;color:var(--muted);cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none}
   .drag-handle:active{cursor:grabbing;color:var(--accent)}
   .drag-handle svg{display:block;pointer-events:none}
@@ -140,19 +156,11 @@
   .shelf-vendor-hd:first-child{margin-top:0}
   .shelf-moves{display:flex;flex-direction:column;gap:1px;flex-shrink:0}
 
-  /* SUBMIT BAR */
-  .submit-bar{position:fixed;bottom:0;left:0;right:0;padding:12px 20px;background:rgba(15,17,21,0.95);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-top:1px solid var(--border);display:flex;gap:12px;align-items:center;z-index:100}
-  .submit-summary{flex:1;font-size:0.85rem;color:var(--muted)}
-  .submit-summary strong{color:var(--text)}
-  .submit-btn{padding:12px 28px;background:var(--accent);border:none;border-radius:10px;color:#fff;font-family:'DM Sans',sans-serif;font-size:0.95rem;font-weight:700;cursor:pointer}
-  .submit-btn:active{opacity:0.8}
-  .submit-btn:disabled{background:var(--border);color:var(--dim);cursor:default}
-
   /* MODAL */
   .modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:300;align-items:center;justify-content:center}
   .modal-bg.show{display:flex}
   .modal{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:24px;width:90%;max-width:360px}
-  .modal h3{font-size:1rem;margin-bottom:14px}
+  .modal h3{font-size:1rem;margin-bottom:14px;font-family:'DM Sans',sans-serif;color:var(--text)}
   .modal .pin-input{text-align:center;letter-spacing:0.5em;font-size:1.4rem;font-weight:700}
   .modal-err{display:none;color:var(--red);font-size:0.83rem;font-weight:600;margin-top:12px}
   .modal-err.show{display:block}
@@ -162,19 +170,9 @@
   .modal-btn{flex:1;padding:10px;border:none;border-radius:8px;font-family:'DM Sans',sans-serif;font-size:0.9rem;font-weight:600;cursor:pointer}
   .modal-btn.cancel{background:var(--border);color:var(--text)}
   .modal-btn.save{background:var(--accent);color:#fff}
+  .modal-btn:disabled{opacity:0.6;cursor:default}
 
-  .toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%);padding:10px 24px;border-radius:10px;font-size:0.85rem;font-weight:600;opacity:0;transition:opacity 0.3s;pointer-events:none;z-index:200;box-shadow:0 4px 20px rgba(0,0,0,0.4)}
-  .toast.show{opacity:1}
-  .toast.success{background:var(--green);color:#fff}
-  .toast.error{background:var(--red);color:#fff}
-
-  .loading{display:flex;flex-direction:column;align-items:center;padding:80px 20px;color:var(--muted)}
-  .spinner{width:30px;height:30px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;margin-bottom:14px}
-  @keyframes spin{to{transform:rotate(360deg)}}
-
-  /* STAFF NOTE FAB + MODAL */
-  .nb-fab{position:fixed;right:20px;bottom:84px;width:56px;height:56px;border-radius:50%;background:var(--accent);border:none;color:#fff;font-size:2rem;font-weight:300;line-height:1;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,0.45);z-index:250;display:flex;align-items:center;justify-content:center;padding-bottom:3px}
-  .nb-fab:active{transform:scale(0.94);opacity:0.9}
+  /* STAFF NOTE MODAL (the .nb-fab itself is converted, above) */
   .nb-label{display:block;font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:7px}
   .nb-cats{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
   .nb-cat{padding:9px 12px;min-height:44px;display:flex;align-items:center;gap:5px;background:var(--bg);border:1px solid var(--border);border-radius:9px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:0.82rem;font-weight:600;cursor:pointer}
@@ -183,7 +181,6 @@
   .nb-textarea:focus{border-color:var(--accent)}
   .nb-err{display:none;color:var(--red);font-size:0.82rem;font-weight:600;margin-bottom:10px}
   .nb-err.show{display:block}
-  .modal-btn:disabled{opacity:0.6;cursor:default}
   .nb-toast{position:fixed;left:50%;bottom:160px;transform:translateX(-50%);background:var(--green);color:#fff;padding:10px 24px;border-radius:10px;font-size:0.85rem;font-weight:600;opacity:0;transition:opacity 0.3s;pointer-events:none;z-index:400;box-shadow:0 4px 20px rgba(0,0,0,0.4)}
   .nb-toast.show{opacity:1}
 </style>
