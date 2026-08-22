@@ -93,5 +93,8 @@ failure this stylesheet can produce.
 ### Where the detail lives
 
 - **`docs/page-restyle.md`** — what was built, slice by slice, and the justified page overrides.
-- **`docs/restyle-review.md`** — the adversarial review of it, the fixes that shipped, and the
-  findings still open. Read this before assuming the restyle is finished business.
+- **`docs/review-checklist.md`** — how to review a change to this site: the failure shapes
+  worth hunting, why contrast is arithmetic, and the class names that exist only at runtime.
+  Read it before reviewing anything here.
+- **GitHub issues** — what the restyle review left open. Don't assume the restyle is
+  finished business.
