@@ -20,19 +20,13 @@
 <link rel="stylesheet" href="assets/kitchen.css">
 <style>
   /* ═══════════════════════════════════════════════════════════
-     Tempest Orders — SLICE 7a.
+     Tempest Orders — page-level overrides only.
 
-     This page is converted in two passes. 7a is everything visible
-     AT REST: no modal open, manager mode OFF. 7b converts the
-     manager and modal surfaces, which are still using the old dark
-     rules at the bottom of this block.
-
-     The page is deliberately half-converted. The old @import and
-     :root below exist only to keep those unconverted rules working;
-     7b deletes both along with everything under NOT YET CONVERTED.
+     Converted in two passes: 7a took everything visible at rest,
+     7b the manager and modal surfaces. Both are done — every
+     component now lives in assets/kitchen.css and the rules kept
+     here are genuine page-level overrides.
      ═══════════════════════════════════════════════════════════ */
-  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
-  :root{--bg:#0f1115;--surface:#1a1d24;--surface2:#22262f;--border:#2a2d35;--accent:#e85d3a;--accent-dim:rgba(232,93,58,0.15);--green:#22c55e;--green-dim:rgba(34,197,94,0.12);--yellow:#f59e0b;--blue:#3b82f6;--purple:#a855f7;--red:#ef4444;--text:#e8e6e3;--muted:#8a8a8a;--dim:#555}
 
   /* ── 7a: CONVERTED ─────────────────────────────────────────── */
 
@@ -111,78 +105,14 @@
   /* the FAB stacks above the fixed submit bar on this page */
   .nb-fab{bottom:84px}
 
-  /* ── NOT YET CONVERTED — 7b owns everything below ──────────────
-     Manager controls, drag affordances, every modal, and the staff
-     note modal. These still use the old dark palette above and will
-     look out of place until 7b lands. That is expected. ────────── */
+  /* ── 7b: page-level overrides ──────────────────────────────── */
 
-  .mgr-controls{display:none;flex-direction:column;gap:1px;margin-right:6px;flex-shrink:0}
-  .manager-mode .mgr-controls{display:flex}
-  .move-btn{width:20px;height:14px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:0.55rem;cursor:pointer;border-radius:3px;display:flex;align-items:center;justify-content:center;padding:0}
-  .move-btn:active{background:var(--accent);color:#fff}
-  /* DRAG-TO-REORDER (manager mode) — touch-action:none belongs on the
-     handle ONLY; widening it kills scrolling on a phone. 7b restyles
-     these but must not move the touch-action declaration. */
-  .drag-handle{display:flex;align-items:center;justify-content:center;width:22px;height:30px;color:var(--muted);cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none}
-  .drag-handle:active{cursor:grabbing;color:var(--accent)}
-  .drag-handle svg{display:block;pointer-events:none}
-  .item-row.sortable-ghost{opacity:0.35}
-  .item-row.sortable-chosen{background:var(--surface2)}
-  .item-row.sortable-drag{background:var(--surface2);box-shadow:0 6px 20px rgba(0,0,0,0.5)}
-  .delete-btn{display:none;width:22px;height:22px;border-radius:5px;border:1px solid var(--border);background:transparent;color:var(--red);font-size:0.8rem;cursor:pointer;align-items:center;justify-content:center;flex-shrink:0;margin-left:4px}
-  .manager-mode .delete-btn{display:flex}
-  .shelf-btn{display:none;width:22px;height:22px;border-radius:5px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:0.8rem;cursor:pointer;align-items:center;justify-content:center;flex-shrink:0;margin-left:4px}
-  .manager-mode .shelf-btn{display:flex}
-  .manager-mode .item-name{cursor:pointer}
-  .add-btn{display:none;padding:10px 20px;color:var(--accent);font-size:0.85rem;font-weight:600;cursor:pointer;background:transparent;border:none;font-family:'DM Sans',sans-serif;width:100%;text-align:left}
-  .manager-mode .add-btn{display:block}
-  .manager-mode .item-par{cursor:pointer}
-  .item-par.mgr-edit{border-bottom:1px dashed var(--border)}
-  .item-par .par-input{width:46px;font-size:0.85rem;background:var(--surface);border:1px solid var(--accent);border-radius:5px;color:var(--text);padding:3px 5px;font-family:'DM Sans',sans-serif;outline:none;text-align:center}
-  .unit-select{width:100%;max-width:90px;font-size:0.8rem;background:var(--surface);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:4px 4px;font-family:'DM Sans',sans-serif;outline:none;cursor:pointer}
-  .unit-select:focus{border-color:var(--accent)}
-  .manage-units-btn{display:none;background:transparent;border:1px solid var(--border);border-radius:7px;color:var(--accent);font-family:'DM Sans',sans-serif;font-size:0.72rem;font-weight:600;padding:5px 9px;cursor:pointer;white-space:nowrap}
-  .unit-list{max-height:50vh;overflow-y:auto;margin-bottom:12px}
-  .unit-row{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid rgba(42,45,53,0.4)}
-  .unit-row input.unit-name{flex:1;margin:0;padding:7px 9px}
-  .unit-row.retired input.unit-name{opacity:0.5;text-decoration:line-through}
-  .unit-row .u-btn{padding:6px 10px;border:1px solid var(--border);border-radius:7px;background:transparent;color:var(--muted);font-family:'DM Sans',sans-serif;font-size:0.72rem;font-weight:600;cursor:pointer;white-space:nowrap}
-  .unit-row .u-btn.retire{color:var(--red)}
-  .unit-row .u-btn.restore{color:var(--green)}
-  .unit-add-row{display:flex;gap:8px;margin-bottom:6px}
-  .unit-add-row input{flex:1;margin:0}
-  .unit-add-row button{padding:8px 12px;border:none;border-radius:8px;background:var(--accent);color:#fff;font-family:'DM Sans',sans-serif;font-size:0.82rem;font-weight:600;cursor:pointer}
-  .shelf-vendor-hd{font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin:12px 0 4px}
-  .shelf-vendor-hd:first-child{margin-top:0}
-  .shelf-moves{display:flex;flex-direction:column;gap:1px;flex-shrink:0}
-
-  /* MODAL */
-  .modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:300;align-items:center;justify-content:center}
-  .modal-bg.show{display:flex}
-  .modal{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:24px;width:90%;max-width:360px}
-  .modal h3{font-size:1rem;margin-bottom:14px;font-family:'DM Sans',sans-serif;color:var(--text)}
-  .modal .pin-input{text-align:center;letter-spacing:0.5em;font-size:1.4rem;font-weight:700}
-  .modal-err{display:none;color:var(--red);font-size:0.83rem;font-weight:600;margin-top:12px}
-  .modal-err.show{display:block}
-  .modal input,.modal select{width:100%;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:0.9rem;margin-bottom:10px;outline:none}
-  .modal input:focus{border-color:var(--accent)}
-  .modal-btns{display:flex;gap:10px;margin-top:6px}
-  .modal-btn{flex:1;padding:10px;border:none;border-radius:8px;font-family:'DM Sans',sans-serif;font-size:0.9rem;font-weight:600;cursor:pointer}
-  .modal-btn.cancel{background:var(--border);color:var(--text)}
-  .modal-btn.save{background:var(--accent);color:#fff}
-  .modal-btn:disabled{opacity:0.6;cursor:default}
-
-  /* STAFF NOTE MODAL (the .nb-fab itself is converted, above) */
-  .nb-label{display:block;font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:7px}
-  .nb-cats{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
-  .nb-cat{padding:9px 12px;min-height:44px;display:flex;align-items:center;gap:5px;background:var(--bg);border:1px solid var(--border);border-radius:9px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:0.82rem;font-weight:600;cursor:pointer}
-  .nb-cat.sel{border-color:var(--accent);background:var(--accent-dim);color:var(--accent)}
-  .nb-textarea{width:100%;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:0.9rem;margin-bottom:10px;outline:none;resize:vertical;min-height:90px}
-  .nb-textarea:focus{border-color:var(--accent)}
-  .nb-err{display:none;color:var(--red);font-size:0.82rem;font-weight:600;margin-bottom:10px}
-  .nb-err.show{display:block}
-  .nb-toast{position:fixed;left:50%;bottom:160px;transform:translateX(-50%);background:var(--green);color:#fff;padding:10px 24px;border-radius:10px;font-size:0.85rem;font-weight:600;opacity:0;transition:opacity 0.3s;pointer-events:none;z-index:400;box-shadow:0 4px 20px rgba(0,0,0,0.4)}
-  .nb-toast.show{opacity:1}
+  /* Orders is the only page with BOTH a fixed submit bar and the note
+     FAB stacked above it (hence body padding-bottom:144px). The shared
+     .nb-toast sits at 90px, which is behind that bar here. */
+  .nb-toast{bottom:160px}
+  /* the row's move buttons need clearance from the item name */
+  .mgr-controls{margin-right:6px}
 </style>
 <script src="vendor/sortablejs-1.15.7.min.js"></script>
 </head>
@@ -242,7 +172,7 @@
 <div class="modal-bg" id="moveModal">
   <div class="modal">
     <h3>Move Item to Shelf</h3>
-    <div id="moveItemName" style="color:var(--muted);font-size:0.85rem;margin-bottom:10px"></div>
+    <div id="moveItemName" style="color:var(--grey);font-size:0.85rem;margin-bottom:10px"></div>
     <select id="moveShelf"></select>
     <div class="modal-btns"><button class="modal-btn cancel" onclick="closeMove()">Cancel</button><button class="modal-btn save" onclick="saveMove()">Move</button></div>
   </div>
@@ -622,7 +552,7 @@ function renderShelfList(){
   for(var vi=0;vi<vs.length;vi++){
     var v=vs[vi],list=catByVendor[v]||[];
     h+='<div class="shelf-vendor-hd">'+esc(v)+'</div>';
-    if(!list.length){h+='<div style="padding:6px 0;color:var(--dim);font-size:0.8rem">No shelves yet</div>';continue;}
+    if(!list.length){h+='<div style="padding:6px 0;color:var(--faint);font-size:0.8rem">No shelves yet</div>';continue;}
     for(var i=0;i<list.length;i++){
       var c=list[i];
       h+='<div class="unit-row'+(c.active?'':' retired')+'" data-cid="'+c.id+'">';
@@ -879,7 +809,7 @@ function submitOrder(){
 
 function editName(id,el){
   if(!mgr)return;var cur=el.textContent;
-  el.innerHTML='<input style="font-size:0.85rem;background:var(--surface);border:1px solid var(--accent);border-radius:5px;color:var(--text);padding:4px 8px;width:100%;font-family:DM Sans,sans-serif;outline:none" value="'+esc(cur)+'" onblur="saveName('+id+',this)" onkeydown="if(event.key===\'Enter\')this.blur()">';
+  el.innerHTML='<input style="font-size:0.85rem;background:var(--paper);border:1px solid var(--ink);border-radius:5px;color:var(--ink);padding:4px 8px;width:100%;font-family:Barlow,sans-serif;outline:none" value="'+esc(cur)+'" onblur="saveName('+id+',this)" onkeydown="if(event.key===\'Enter\')this.blur()">';
   el.querySelector('input').focus();
 }
 function saveName(id,inp){
