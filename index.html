@@ -41,10 +41,15 @@
   .tile-title{font-family:'Barlow Condensed',sans-serif;font-size:19px;font-weight:600;line-height:1.1;letter-spacing:.02em;text-transform:uppercase;padding-right:18px}
   .tile-sub{font-size:12.5px;color:var(--grey);line-height:1.25}
   .tile-status{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--ink);margin-top:auto;padding-top:8px;line-height:1.25}
+  /* Three states, told apart by fill and ring weight — not by hue. The yellow
+     fill alone was 1.21:1 against paper, so at 9px "due" and "nothing
+     scheduled" were the same dot at arm's length under kitchen light. Now:
+     done = solid ink disc · due = bold ink ring, light centre · none = faint
+     thin ring. Yellow stays as garnish; the ring does the work. */
   .tile-status i{width:9px;height:9px;border-radius:50%;flex-shrink:0;border:1.5px solid var(--ink)}
   .tile-status i.done{background:var(--ink)}
   .tile-status i.due{background:var(--yellow)}
-  .tile-status i.none{background:transparent}
+  .tile-status i.none{background:transparent;border:1px solid var(--edge)}
   .tile-status mark{background:var(--yellow);color:var(--ink);padding:1px 4px;font-weight:600}
   .tile.soon{border:1px dashed var(--dash);pointer-events:none;cursor:default}
   .tile.soon .tile-title,.tile.soon .tile-sub{color:var(--faint)}
