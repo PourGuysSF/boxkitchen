@@ -42,6 +42,31 @@ plus `body`, `.nb-fab` and `.nb-toast` offsets for its fixed submit bar.
 `tempest_flash.html` / `tempest_costing.html` — wider modals for their list content.
 `tempest_prep.html` / `tempest_line.html` — a shared 3-rule modal margin rhythm.
 
+**Correction, 2026-08-22 (issue #129).** The list above enumerates overrides that live in a
+page's own `<style>` block, and on that basis slice 9 concluded that `recipe_dashboard`,
+`tempest_portion` and `tempest_meat` "carry no local block at all". That is true of the page
+files and misleading about the repo: **`recipe_dashboard`'s overrides were moved into
+`assets/kitchen.css`, not eliminated.** Twelve `.rec-page`-scoped rules live there —
+
+    .rec-page .header · .header h1 · .header h1 span · .header p · .home-link ·
+    .header-row · .mgr-add-bar · .modal label · .modal label:first-of-type ·
+    .modal input · .modal textarea · .modal-btns
+
+— covering a static (non-sticky) masthead, 40px desktop gutters, a 2.4rem title and its own
+modal rhythm. They are justified: recipes is the only desktop-first page. But they are page
+overrides, and the drift audit's premise — "every page-level override was enumerated" — was
+false, because it only ever looked in the page files.
+
+`index.html` also carries more than the two rules listed above: its whole `.auth-gate` /
+`.board` / `.tickets` / `.tile` front-door vocabulary is local, which is correct — nothing
+else uses it — but it was never enumerated either.
+
+**Related fragility, now commented in the stylesheet at both ends.** The `@media
+(min-width:760px)` rule that centres `.header` in a 720px column and `.rec-page .header`
+(40px gutters, `position:static`) would collide, and don't — only because `.rec-page .header`
+wins on specificity, 0,2,0 against 0,1,0. They sit ~280 lines apart with nothing marking the
+dependency. It works; nothing told the next person why.
+
 **⚠️ Never bulk-delete "unused" CSS from `kitchen.css`.** Many class names are composed at
 runtime and never appear in markup: SortableJS injects `.sortable-ghost` / `-chosen` /
 `-drag`; stations are built as `'st-'+station`; section types and the kit/make pill likewise.
