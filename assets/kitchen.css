@@ -22,7 +22,10 @@
       /* --edge: the boundary of a control you can tap. --hair (1.27:1) is a
          list separator and fails WCAG 1.4.11, which wants 3:1 for a control's
          visible edge. --edge is 3.23:1 on paper. Separators keep --hair. */
-      --edge:#8e8c84}
+      --edge:#8e8c84;
+      /* --danger: destructive and error only. Was six loose #b42318 literals.
+         Never --tomato: tomato is "the thing you meant to do". */
+      --danger:#b42318}
 
 /* ── BASE ─────────────────────────────────────────────────── */
 body{font-family:'Barlow',-apple-system,sans-serif;background:var(--paper);color:var(--ink);min-height:100vh;padding-bottom:80px;font-variant-numeric:tabular-nums}
@@ -78,7 +81,7 @@ a{color:inherit;text-decoration:none}
 .modal textarea::placeholder{color:var(--grey)}
 /* error text: same dark red index.html uses for .auth-error — tomato is
    too light to read at this size on paper */
-.modal-err{display:none;color:#b42318;font-size:0.83rem;font-weight:600;margin-bottom:12px}
+.modal-err{display:none;color:var(--danger);font-size:0.83rem;font-weight:600;margin-bottom:12px}
 .modal-err.show{display:block}
 .modal-btns{display:flex;gap:10px}
 .modal-btn{flex:1;padding:12px;min-height:48px;border:1px solid var(--ink);border-radius:6px;font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;cursor:pointer}
@@ -102,7 +105,9 @@ a{color:inherit;text-decoration:none}
 .toast.show{opacity:1}
 /* Flash's JS sets .err, Notes' and Counts' set .error. Both names
    must keep working or a failure renders as a success. */
-.toast.err,.toast.error{background:var(--tomato);color:#fff}
+/* 6.57:1. Was white-on-tomato at 3.47:1 — the failure message was harder to
+   read than the success one, and indistinguishable from it at a glance. */
+.toast.err,.toast.error{background:var(--danger);color:#fff}
 
 /* ── MANAGER MODE ─────────────────────────────────────────── */
 .mgr-toggle{display:flex;align-items:center;gap:8px;font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--grey);min-height:44px;flex-shrink:0}
@@ -113,7 +118,7 @@ a{color:inherit;text-decoration:none}
 .mgr-edit-btn,.mgr-delete-btn{min-height:40px;min-width:44px;display:inline-flex;align-items:center;justify-content:center;background:transparent;border:1px solid var(--ink);border-radius:6px;cursor:pointer;font-family:'Barlow Condensed',sans-serif;font-size:0.95rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:0 12px}
 .mgr-edit-btn{color:var(--ink)}
 .mgr-edit-btn:active{background:var(--press)}
-.mgr-delete-btn{color:var(--tomato);border-color:rgba(232,93,58,0.5)}
+.mgr-delete-btn{color:var(--danger);border-color:rgba(180,35,24,0.5)}
 .mgr-delete-btn:active{background:rgba(232,93,58,0.10)}
 
 /* ═══════════════════════════════════════════════════════════
@@ -210,7 +215,7 @@ a{color:inherit;text-decoration:none}
 .gate p{color:var(--grey);font-size:0.9rem;line-height:1.4;max-width:320px;margin-bottom:22px}
 .gate .pin-input{width:180px;min-height:56px;padding:12px;background:var(--paper);border:1px solid var(--ink);border-radius:6px;color:var(--ink);font-family:'Barlow',sans-serif;font-size:1.5rem;outline:none;-webkit-appearance:none;appearance:none}
 .gate .pin-input:focus{border-color:var(--tomato);box-shadow:0 0 0 2px rgba(232,93,58,.2)}
-.gate-err{display:none;color:#b42318;font-size:0.85rem;font-weight:600;margin-top:14px}
+.gate-err{display:none;color:var(--danger);font-size:0.85rem;font-weight:600;margin-top:14px}
 .gate-err.show{display:block}
 .gate-btns{display:flex;gap:10px;margin-top:20px}
 .gate-btn{padding:11px 20px;min-height:48px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--ink);border-radius:6px;font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;white-space:nowrap}
@@ -399,15 +404,19 @@ body.manager-mode .card-mgr-actions{display:flex}
 /* unarchive is a restore, not a warning — ink, not green */
 .mgr-unarchive-btn{color:var(--ink);border-color:var(--ink)}
 .mgr-unarchive-btn:hover,.mgr-unarchive-btn:active{background:var(--press)}
-/* delete is permanent: it stays the most dangerous-looking control on
-   the page — the only solid fill among the card actions. Scoped to the
-   card row so Notes' outline delete button is unaffected. */
-.card-mgr-actions .mgr-delete-btn{background:var(--tomato);border-color:var(--tomato);color:#fff}
-.card-mgr-actions .mgr-delete-btn:hover,.card-mgr-actions .mgr-delete-btn:active{background:#c9451f;border-color:#c9451f}
+/* Outlined, not filled. Delete was the only solid fill among the card
+   actions, which in this design language reads as the primary action.
+   Scoped to the card row so Notes' outline delete button is unaffected.
+   Hover is a danger tint, matching .mgr-archive-btn's tomato tint — the
+   old #c9451f fill would put red text on dark orange. */
+.card-mgr-actions .mgr-delete-btn{background:var(--paper);border-color:var(--danger);color:var(--danger)}
+.card-mgr-actions .mgr-delete-btn:hover,.card-mgr-actions .mgr-delete-btn:active{background:rgba(180,35,24,0.10)}
 
 /* ── RECIPE FORM MODAL ────────────────────────────────────── */
 .modal.modal-lg{max-width:560px}
-.modal-btn.danger{background:var(--tomato);border-color:var(--tomato);color:#fff}
+/* Was byte-identical to .modal-btn.save. Across ~20 modals the solid tomato
+   block on the right is Save; on the delete modal it was Delete permanently. */
+.modal-btn.danger{background:var(--danger);border-color:var(--danger);color:#fff}
 .rec-page .modal label{margin-top:14px}
 .rec-page .modal label:first-of-type{margin-top:0}
 .rec-page .modal input,.rec-page .modal select,.rec-page .modal textarea{margin-bottom:0}
@@ -581,7 +590,7 @@ body.manager-mode .card-mgr-actions{display:flex}
 .nb-textarea{width:100%;min-height:90px;padding:10px;margin-bottom:10px;background:var(--paper);border:1px solid var(--ink);border-radius:6px;color:var(--ink);font-family:'Barlow',sans-serif;font-size:0.9rem;resize:vertical;outline:none}
 .nb-textarea:focus{border-color:var(--tomato);box-shadow:0 0 0 2px rgba(232,93,58,.2)}
 .nb-textarea::placeholder{color:var(--grey)}
-.nb-err{display:none;color:#b42318;font-size:0.82rem;font-weight:600;margin-bottom:10px}
+.nb-err{display:none;color:var(--danger);font-size:0.82rem;font-weight:600;margin-bottom:10px}
 .nb-err.show{display:block}
 .nb-toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);z-index:400;padding:10px 24px;background:var(--ink);border-radius:6px;color:var(--paper);font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;opacity:0;transition:opacity 0.3s;pointer-events:none;box-shadow:0 4px 20px rgba(0,0,0,0.22)}
 .nb-toast.show{opacity:1}
