@@ -21,7 +21,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=Playfair+Display:wght@700;900&display=swap">
-<link rel="stylesheet" href="assets/kitchen.css?v=2026-08-22">
+<link rel="stylesheet" href="assets/kitchen.css?v=2026-09-16">
 <style>
   /* Recipe Costing — page-level overrides only. Every component
      lives in assets/kitchen.css. */
@@ -209,13 +209,13 @@ function render(){
     rows.sort(function(a,b){return nameOf(a).toLowerCase().localeCompare(nameOf(b).toLowerCase());});
     h+='<div class="vhead">'+esc(vn)+'</div>';
     for(var j=0;j<rows.length;j++){
-      var it=rows[j],uc=unitCost(it),alias=it.invoice_alias?' <span class="ing-alias">· '+esc(it.invoice_alias)+'</span>':'';
+      var it=rows[j],uc=unitCost(it),alias=it.invoice_alias?'<div class="ing-alias-line">'+esc(it.invoice_alias)+'</div>':'';
       var packTxt,packCls='';
       if(uc!=null){packTxt=num(it.pack_qty)+' '+esc(it.pack_unit||'')+' · '+money(it.pack_price)+'/pack';}
       else{packTxt='Tap to set price';packCls=' unset';}
       var costCell=(uc!=null)?('<div class="uc">'+ucFmt(uc)+'</div><div class="uc-unit">/'+esc(it.pack_unit||'unit')+'</div>'):'<div class="uc none">— set —</div>';
       h+='<div class="ing-row'+(it.active?'':' retired')+'" onclick="openEdit('+it.id+')">'+
-           '<div class="ing-main"><div class="ing-name">'+esc(nameOf(it))+alias+(it.active?'':' <span class="ing-alias">(retired)</span>')+'</div>'+
+           '<div class="ing-main"><div class="ing-name">'+esc(nameOf(it))+(it.active?'':' <span class="ing-alias">(retired)</span>')+'</div>'+alias+
            '<div class="ing-pack'+packCls+'">'+packTxt+'</div></div>'+
            '<div class="ing-cost">'+costCell+'</div>'+
          '</div>';
