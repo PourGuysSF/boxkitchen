@@ -200,3 +200,171 @@ Findings logged during the build that aren't worth stopping for. Append, don't c
 something minor in this slice is often a blocker in the next one.
 
 _(empty — nothing built yet)_
+
+---
+
+## Adversarial review
+
+Reviewed 2026-09-16 against `tempest_costing.html` at `71fca66`, `assets/kitchen.css`,
+`CLAUDE.md`, `docs/review-checklist.md`, and read-only GETs of `order_items`,
+`ingredient_costs` and `ingredient_price_history`. Nothing was written to the database.
+
+**Verdict: No, not safe to build from as written.** The plan makes its own worst risk
+worse. It removes the one signal that tells you nobody picked an item (Custom being the
+default), then automatically picks an item on every keystroke and after every save. And
+the only fix it offers for a stale selection ("set `.value` to the first match") is itself
+how a price ends up on the wrong item. A wrong price saved this way looks exactly like a
+real one, and nothing in the data would tell you afterwards. Two of the plan's stated
+facts about the existing code are also wrong (B4, M1).
+
+### Blockers
+
+**B1. Defaulting to the first item turns "didn't look" into "priced the wrong item."**
+Today, if you don't touch the picker you get a Custom item, and saving fails unless you
+type a name. Under the plan, the same inattention saves a price against whatever item
+happens to be first. On a run it gets worse: after each Save & next the item you just
+saved drops out of the list, so the *next* item in the guide is selected automatically.
+Guide order is `sort_order`. Invoice order is not. A chef reading down a Birite invoice,
+eyes on the paper and one thumb on the phone, types qty, price, Save & next. Every price
+lands on the next guide item, not the next invoice line. Nothing errors. The only check
+is the greyed-out name field, and it shows no vendor.
+*Required:* no item is selected after a save or a filter change. Saving should need an
+explicit pick in that cycle (e.g. an empty "— choose item —" option that blocks Save).
+
+**B2. The fix for the stale selection is itself a wrong-item bug.** Risk 2's mitigation
+re-picks the first match after *every* filter keystroke. Picture the 40th item: the item
+is picked, qty and price are typed, then the chef touches the filter. Maybe to double-check
+the item, maybe a stray tap, maybe a colleague takes the phone. The selection silently
+jumps to a different item, but `fQty`/`fPrice` keep their values. `onPick()` only fills
+`fUnit` when it is empty (`tempest_costing.html:255`), so the old unit stays too. Save now
+writes item A's pack onto item B.
+Concrete case in today's data: `Slab bacon` is on the guide twice, Asia Intl (id 169) and
+Birite (id 88). Filter `bacon` and the first match is Asia Intl, because the list sorts
+by vendor. The disabled name field reads "Slab bacon" either way.
+*Required:* changing the filter clears the selection *and* the value fields. Or: changing
+the filter after any value is typed asks first. Show the vendor next to the locked name.
+
+**B3. A wrong price can't be traced afterwards, and the obvious fix makes it permanent.**
+- No row records who entered it or from which invoice. Price history is written
+  `source:'manual', invoice_ref:null` (`:320`), and `effective_date` defaults to the day
+  you type it, not the invoice date. Entering a stack of last month's invoices records
+  them all as today.
+- `logPrice` has no callback. If it fails, the price is in the ledger with no history row.
+- Say Birite slab bacon's price gets saved against Asia Intl. The natural fix is **Retire**
+  on the Asia Intl row. But `costedOrderIds()` (`:229`) counts retired rows, so Asia Intl
+  slab bacon can then never be added again. The page also has no way to re-link a row to
+  the right item (`pickWrap` is hidden on edit, `:262`). The only correct fix is to edit
+  the wrong row's price to the right value, and a false price-history entry stays behind.
+- There is no sanity check at all: no warning when unit cost is 10× out, or when qty/price
+  look swapped.
+*Required, in this slice:* capture the invoice ref and invoice date on entry (that means
+#140's `invoice_ref` is not separable, see S1). Check that the history POST succeeded
+before clearing fields. Write down the recovery path for a mispick.
+
+**B4. The double-submit mitigation rests on something the code doesn't do.** Risk 4 says
+"`saveItem()` already disables the button". It disables `#saveBtn` by id (`:289`), and
+nothing else. A new Save & next button stays live while the request is in flight, and so
+does Save once Save & next was the one pressed. The duplicate check reads `items`, which
+only changes when a response comes back (`:301`), so two POSTs in flight both pass it.
+Kitchen wifi makes this worse. `api()` has no timeout, and `onerror` passes `null`, so a
+POST that *succeeded* but lost its response shows "Add failed — try again". Retrying then
+creates a duplicate row. I could not confirm read-only whether
+`ingredient_costs(location, order_item_id)` has a unique constraint. **If it doesn't,
+duplicates are guaranteed eventually.**
+*Required:* disable both buttons and the picker while a save is in flight, with a timeout.
+Before a retry, re-GET the row by `order_item_id`. Add or confirm a unique partial index
+(a migration, so ask first).
+
+### Majors
+
+**M1. The claim that the filter is already 16px is false.** `.search` is `font-size:0.95rem`,
+about 15.2px (`kitchen.css:412`). iOS will zoom on focus, which is exactly the #135 bug
+the plan says it will avoid. `user-scalable=no` (`:5`) doesn't stop that on iOS. It also
+has `min-width:200px`, which was made for the header toolbar, not a 440px modal with 22px
+padding.
+
+**M2. Matching on the whole phrase breaks the plan's own workflow.** `render()` checks
+whether the full query appears as one unbroken string (`:190`). The plan keeps `birite`
+in the filter across saves. To find an item you then type `birite oregano`. That doesn't
+match `Birite Dried oregano, Mexican`, because "dried" sits in between. So you either
+clear the vendor text every time, or scroll up to ~150 options. That's the problem the
+plan set out to remove, still there on the 40th item. Also, the list's search looks at
+`invoice_alias` and the picker's wouldn't, so "behave identically" isn't true either.
+Match word by word.
+
+**M3. The search only knows the guide's names, but the chef is holding an invoice.** The
+paper says `CHKN BRST BNLS 40#`. The guide says `Chicken breast`. The hard part is
+matching one to the other in your head, and the plan doesn't touch it. At minimum, don't
+promise "a keystroke or two".
+
+**M4. The auto-filled unit is the order unit, not the pack unit, and a run will skip it.**
+`order_items.unit` is `EA` for 103 items, `CS` for 78, `lb` for only 39. The existing
+ledger rows use `lb`/`oz`. Save & next clears Unit and then `onPick()` fills in `CS`. A chef
+types `40` and `139.60` and moves on, and the row saves as "40 CS", i.e. **$3.49 per case**.
+It looks plausible and it's wrong for recipe costing. The plan calls pack size "the one
+value the whole model hinges on" and then adds a step that fills in the wrong unit for it.
+Either don't fill Unit during a run, or make it look unconfirmed until someone touches it.
+
+**M5. Interruptions and handing the phone over aren't designed for.**
+- A tap outside the modal closes it (`:352`) and throws away typed values and the filter.
+  One-handed use makes that tap likely.
+- A reload or iOS dropping the tab loses everything. PIN unlock survives in
+  `sessionStorage`, so it *looks* like you picked up where you left off. You didn't.
+- A handoff keeps the filter and the picked item. The next person can't tell those were
+  picked for them.
+- There's no running count *inside* the modal. The header count the plan relies on for
+  feedback is behind a 70% black backdrop (`.modal-bg`, `kitchen.css:133`), and the toast
+  shows for only 1.6s.
+
+**M6. "Remaining work" means "no row", not "unpriced".** Row id 3 (`order_item_id` 33)
+has no price, but because the row exists it's filtered out of the picker. It can only be
+reached from the list. Goal 2's "first unpriced item" is therefore wrong, and the "249
+remaining" figure is wrong too: 4 of the 5 rows are linked, so the picker holds 250. Any
+unpriced row left behind by an interrupted entry disappears from the run. If the fix for
+a network failure is "save with no price", that item drops out of the run for good.
+
+**M7. The live table may already contain test data.** Price history for row 1 has
+`effective_date` 2026-06-15 and 2026-07-20, both created 2026-09-02 within a minute of
+each other, and one says `source:'invoice', invoice_ref:'SR-88214'`. The UI can't create
+any of that. Before building "you'd be able to tell afterwards" on this table, confirm
+which of the 5 rows are real.
+
+### Minors
+
+- m1. Focusing the filter from inside the XHR callback won't open the iOS keyboard, since
+  it isn't a direct tap. When it does open, it covers most of an 88vh modal.
+- m2. Three buttons in `.modal-btns` at 390px. Check that "Save & next" doesn't wrap, and
+  that Save vs Save & next can't be mis-tapped with a thumb. They do different things.
+- m3. The "(optional …)" span sets its colour inline (`:89`). If the build touches that
+  area, move it into a class so `check_styling.py` can see it.
+- m4. Every screen-only element added to the modal needs to be confirmed hidden under
+  `@media print` (`kitchen.css:865` hides `.modal-bg`). The plan says to confirm, so do it.
+- m5. The `curV` variable in `openAdd()` (`:238`) is dead code. It's harmless, but anyone
+  "building the option array once" will read it as grouping that doesn't exist.
+- m6. "Done when: verified by saving a filtered pick and reading the row back" breaks the
+  rule against test rows in the live table. It has to be done against a stubbed `api()`
+  (checklist §10), not production.
+
+### On the plan's five risks
+
+| # | verdict |
+|---|---|
+| 1 Rebuild cost | Not a real risk. 254 short strings is nothing. It crowds out the real ones. |
+| 2 Stale selection | Real, but framed backwards. The mitigation causes wrong-item saves (B1, B2). The real issue is that the item and the values can get out of step. |
+| 3 `fName` disabled | Mostly already handled: `onPick()` sets `disabled` both ways. The real danger is `fUnit` carrying over (B2, M4). |
+| 4 Double-fire | Mitigation is based on a misreading (B4). The lost-response retry is missing. |
+| 5 Sub-16px input | Real, and the plan's claim about it is false (M1). |
+
+**What the list missed:** recording where a price came from (B3), fixing a mispick (B3),
+unit auto-fill (M4), items with the same name (B2), interruptions and handoffs (M5), and
+unpriced rows dropping out of the run (M6).
+
+### Scope that can't be separated
+
+- **S1. `invoice_ref` / invoice date (#140, B4.2).** This build is invoice entry in all but
+  name: prices typed off paper invoices. Without the ref and date there's no way to audit
+  the few hundred prices it exists to collect. Pull #140 in, at least as a sticky "Invoice
+  #, date" field at the top of the run.
+- **S2. Correcting a wrong link.** You can't ship a faster way to make mistakes without a
+  way to fix them. Either allow re-linking on edit, or stop retired rows from blocking the
+  picker.
