@@ -768,6 +768,11 @@ body.manager-mode .card-mgr-actions{display:flex}
 .ing-main{flex:1;min-width:0}
 .ing-name{font-size:0.9rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ing-alias{color:var(--grey);font-weight:400;font-size:0.8rem}
+/* The invoice alias is the string that pairs a delivery to this item, so it
+   gets its own line. Sharing the name's line meant it was the first thing
+   ellipsed, and ellipsed on exactly the longest-named items — the ones most
+   likely to need it. Live content, so --grey, never --faint. */
+.ing-alias-line{color:var(--grey);font-weight:400;font-size:0.78rem;margin-top:2px;overflow-wrap:anywhere}
 .ing-pack{font-size:0.76rem;color:var(--grey);margin-top:2px}
 /* "no price yet" is a to-do, and yellow highlighter is what a to-do
    looks like everywhere else in this app */
@@ -788,7 +793,9 @@ body.manager-mode .card-mgr-actions{display:flex}
 .uc-preview{margin-top:14px;padding:11px 14px;background:var(--paper);border:1px solid var(--ink);border-radius:6px;color:var(--ink);font-size:0.88rem;font-weight:700;font-variant-numeric:tabular-nums;text-align:center}
 .uc-preview.none{background:var(--press);border-color:var(--hair);color:var(--grey);font-weight:600}
 
-.row-actions{display:flex;gap:10px;margin-top:12px;align-items:center}
+/* stretch, not center: the history button carries an emoji and renders 2px
+   taller than Retire, which left the pair visibly misaligned. */
+.row-actions{display:flex;gap:10px;margin-top:12px;align-items:stretch}
 .link-btn{padding:9px 11px;min-height:40px;background:transparent;border:1px solid var(--edge);border-radius:6px;font-family:var(--font-cond);font-size:0.85rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;cursor:pointer}
 .link-btn.hist{color:var(--ink);border-color:var(--ink)}
 .link-btn.hist:active{background:var(--press)}
@@ -803,6 +810,8 @@ body.manager-mode .card-mgr-actions{display:flex}
 .hist-row .hdate{color:var(--grey);font-size:0.78rem}
 .hist-row .hprice{font-weight:700;font-variant-numeric:tabular-nums}
 .hist-row .hsrc{margin-left:8px;font-family:var(--font-cond);font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--grey)}
+/* the trailing divider collided with the Done button below it */
+.hist-row:last-child{border-bottom:none}
 .hist-empty{padding:18px 0;text-align:center;color:var(--grey);font-size:0.85rem;font-style:italic}
 
 /* ── REDUCED MOTION ────────────────────────────────────────
