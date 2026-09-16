@@ -1,207 +1,318 @@
 # Costing — make the ledger fillable
 
-Status: **PLANNED, not built.** Written 2026-09-16, after the #128 walk.
-This is a build doc. Nothing in it has been implemented.
+Status: **PLANNED, not built.** v2, rewritten 2026-09-16 after the v1 plan was
+reviewed and rejected. The review that rejected it is preserved verbatim in the
+appendix; read it before this, because this document is the answer to it.
 
-Target file: `tempest_costing.html` (plus a small addition to `assets/kitchen.css`).
-
----
-
-## The problem, in numbers
-
-`ingredient_costs` holds **5 rows**. The order guide holds **254 active items**. Everything
-downstream of the ledger — recipe costing %, inventory value, invoice pairing — is waiting
-behind those 5 rows.
-
-Entry stalled for two reasons. The first is now fixed: the **＋ Add button was invisible**
-on the live page from the restyle until PR #138 (`.add-btn` is `display:none` outside
-`.manager-mode`, which this page never sets). The second is not fixed, and is what this
-doc is about: **entering an item is slow enough that entering 250 of them is not a job
-anyone finishes.**
-
-### What one item costs today
-
-Read from `openAdd()` / `onPick()` / `saveItem()`:
-
-1. Tap **＋ Add**. Modal opens.
-2. The order-guide picker is a **flat `<select>` of up to 254 `<option>`s**, each formatted
-   `Vendor » Name`, in `vendor.asc, sort_order.asc` order. There is **no search**. On a
-   phone this is a native scroll wheel through 254 entries.
-3. The picker **defaults to `✎ Custom (not on order guide)`**, and focus goes to the *name*
-   field — so the path of least resistance creates an unlinked off-guide item rather than
-   one tied to the order guide.
-4. Fill invoice name, pack qty, unit, pack price.
-5. Save → `closeEdit(); render();` — **the modal closes.** There is no "add another".
-
-So every item is a full open → hunt → four fields → save → close cycle, and the fastest
-available mistake is to create a duplicate that isn't linked to the guide.
-
-### Where the items actually are
-
-| vendor | active items | share |
-|---|---:|---:|
-| Birite | 151 | 59% |
-| Cooks Produce | 78 | 31% |
-| Dairy | 16 | 6% |
-| Schmitz Ranch | 6 | 2% |
-| Asia Intl | 3 | 1% |
-| **total** | **254** | |
-
-**Two vendors are 90% of the guide.** Entry will in practice be done vendor by vendor,
-against one invoice or one order guide at a time — which is also how the paper arrives.
+Target file: `tempest_costing.html`, plus additions to `assets/kitchen.css`.
 
 ---
 
-## Goals
+## What the review changed
 
-1. Entering a run of items is a **run**, not a sequence of separate tasks.
-2. Finding an item in the picker takes a keystroke or two, not a scroll through 254.
-3. The default action links to the order guide; going off-guide is deliberate.
-4. Nothing about the existing edit-an-item flow changes.
+v1 proposed: filter a native `<select>`, auto-select the first match, add "Save & next".
+The review's verdict was **not safe to build**, and it was right. Four of v1's factual
+claims about the existing code were wrong, and — worse — v1's central mechanism *was* the
+bug. Auto-selecting the first match is precisely how a price lands on the wrong item
+without anyone noticing.
 
-## Non-goals — deliberately out of this slice
+The corrections that reshape this plan:
 
-- **Invoice entry (B4.2).** Still the next build after this one. It updates prices on items
-  already in the ledger, so it wants a populated ledger first. Building it now would repeat
-  exactly the #128 mistake of shipping against an empty table.
-- **Recipe costing (B4.3), inventory (B4.4), the Dropbox OCR feed (Phase 2).**
-- **Showing `invoice_ref`** — that is issue #140, and it belongs with B4.2.
-- **Bulk import from a CSV or a paste.** Tempting given `~/Downloads/Tempest_ingredient_costs_DRAFT.csv`,
-  but that file is a scraped draft with OCR duplicates and unconfirmed pack sizes. Pack size
-  is the one value the whole model hinges on and the one OCR gets wrong most often. Confirming
-  a pack once, by hand, on an item you actually use, is the design — not a bulk load of
-  values nobody checked.
-
----
-
-## Design
-
-### 1. Filter the picker instead of building a typeahead
-
-**No page in this app has a searchable picker.** All eight pages with a `<select>` use a
-plain one. Introducing a custom typeahead means a new component, new CSS, new focus and
-keyboard behaviour, and a new thing to get wrong on a phone.
-
-Instead, compose two controls that already exist:
-
-```
-┌─ Order-guide item ─────────────────────────┐
-│ [ Filter items…                          ] │  ← .search, the input the list already uses
-│ [ Birite » Dried oregano, Mexican      ▾ ] │  ← the existing <select>, options filtered
-└────────────────────────────────────────────┘
-```
-
-Typing in the filter rebuilds the `<option>` list. The select stays a native select, so it
-keeps native phone behaviour for free. The filter input reuses `.search`, already defined
-and already on this page.
-
-Match against `vendor + name`, the same `hay` shape `render()` already uses for the list
-search — so the picker and the list behave identically, which is the point.
-
-### 2. Default to the first unpriced order-guide item, not Custom
-
-`✎ Custom` moves to the **bottom** of the option list and stops being the default. The
-default becomes the first option in the filtered list. Going off-guide stays one tap away,
-but it stops being what happens when you don't look.
-
-Note `openAdd()` already excludes items that are costed (`costedOrderIds()`), so the picker
-is a list of *remaining work* — 249 items today. That is a useful property; keep it.
-
-### 3. Save & add next
-
-Add a third button to the modal's `.modal-btns`, and keep the current two:
-
-| button | behaviour |
+| v1 said | actually |
 |---|---|
-| Cancel | unchanged |
-| Save | unchanged — saves and closes |
-| **Save & next** | saves, keeps the modal open, clears qty/unit/price/alias, re-runs the picker, leaves the filter text alone, focuses the filter |
+| `.search` is 16px, so no #135 risk | `0.95rem` = **15.2px**. v1 would have added a sub-16px input while claiming it didn't |
+| `saveItem()` already disables the button | it disables `#saveBtn` **by id only** |
+| the picker lists remaining work, 249 items | **250**, and `costedOrderIds()` keys on `order_item_id != null` regardless of priced-or-retired |
+| "first unpriced item" | no such concept exists — any row that *exists* drops out |
 
-After a Save & next the count in the header updates and the toast fires, so there is still
-feedback per item — you just don't lose your place. The vendor filter surviving the save is
-the whole point: working Birite's 151 means typing `birite` once, not 151 times.
-
-### 4. Nothing else moves
-
-The edit path, retire/restore, price history and the unit-cost preview are untouched.
+And the data facts that drive the design: `order_items.unit` is **EA 103 / CS 78 / lb 39**,
+so auto-filling unit writes `40 CS` — $3.49 per *case* — which looks right and poisons every
+recipe cost downstream. `Slab bacon` is on the guide **twice** (Asia Intl 169, Birite 88) and
+is the only duplicated name, so a wrong-item save is not hypothetical.
 
 ---
 
-## Constraints this must respect
+## The spine
 
-From `CLAUDE.md` and `docs/review-checklist.md`:
+> **Speed is the dangerous part. Every slice before the fast one must make a wrong
+> entry harder to make, easier to spot, and possible to undo.**
 
-- **Class names are load-bearing.** The JS reaches for them by name. Add names; never rename
-  one. `.ing-alias` vs the new `.ing-alias-line` in PR #139 is the pattern to follow.
-- **No new `:root`,** no redeclared core token. Scoped tokens only.
-- **State is fill, weight and border — never hue.** A filtered-empty picker is not a red error.
-- **`--faint` is for inactive or locked text only.** The filter's placeholder carries meaning,
-  so it is `--grey`, matching `.search::placeholder` as it already renders.
-- **Run `python3 scripts/check_styling.py` before the PR.** CI runs it too.
-- **Bump `?v=` on all ten pages** if and only if `assets/kitchen.css` changes. Ten must agree.
-- **Print:** anything added inside the modal is screen-only; the print block already hides
-  `.modal-bg`. Confirm rather than assume.
-- **The database is live.** Read-only queries are fine. Do not write test rows into
-  `ingredient_costs` — entry is in progress and a stray row lands inside someone's real work.
+Two rules follow, and everything below obeys them:
+
+1. **The app never chooses an item on your behalf.** Not on open, not on filter, not
+   after a save. Picking is always something a person did.
+2. **No slice ships a speed increase before the safety it depends on.** If the work
+   stops after any slice, the page is strictly safer than it was — never faster-but-looser.
 
 ---
 
-## Risks
+## The design change that matters
 
-| risk | why it matters | mitigation |
-|---|---|---|
-| Rebuilding `<option>`s on every keystroke | 254 options re-rendered per key on a phone | Build the option string once into an array at `openAdd()`; filter that array, don't re-read the DOM |
-| The native select keeps a stale selection after filtering | You think you picked item A and save item B — a wrong price on a real item | After every filter, explicitly set `.value` to the first match and re-run `onPick()`; never leave the selection implicit |
-| `onPick()` disables `#fName` for guide items | Save & next must re-enable it before the next entry or a Custom entry silently can't be typed | Reset `disabled=false` in the clear step, not only in `openAdd()` |
-| Save & next double-fires on a slow connection | Duplicate rows against the same `order_item_id` | `saveItem()` already disables the button and guards duplicates via `costedOrderIds()`; keep both, and re-enable only in the callback |
-| Filter input is below 16px | iOS zooms the page on focus — the live bug in #135 | `.search` is already 16px. Do not introduce a smaller input here; this slice must not add to #135's list |
+**v1's blockers B1 and B2 are both artifacts of a `<select>`.** A select holds a selection
+as *state*, independently of the fields next to it. That state can drift — a filter
+rebuild, a stray tap, a colleague taking the phone — while `fQty` and `fPrice` keep the
+values you typed for a different item. Every mitigation v1 offered was discipline applied
+on top of a widget that wants to drift.
+
+So: **replace the select with a filtered list you tap.**
+
+```
+┌─ Order-guide item ─────────────────────────────┐
+│ [ Filter…                                    ] │   16px input
+│ 3 of 250 match                                 │
+│ ┌────────────────────────────────────────────┐ │
+│ │ Birite » Slab bacon                        │ │ ← tap = the pick
+│ │ Asia Intl » Slab bacon                     │ │
+│ │ ✎ Custom (not on order guide)              │ │
+│ └────────────────────────────────────────────┘ │
+└────────────────────────────────────────────────┘
+        ↓ after a tap
+┌────────────────────────────────────────────────┐
+│ Birite » Slab bacon                 [ Change ] │   vendor always visible
+└────────────────────────────────────────────────┘
+```
+
+Why this kills the bug class rather than managing it:
+
+- **Selection becomes an event, not a state.** There is no widget holding a choice that can
+  go stale. You tapped a row; that row's id is written to a variable at that instant.
+- **The vendor is on the row you tap and stays on screen after.** `Slab bacon` is
+  disambiguated at the moment of choosing, which is the only moment it matters.
+- **Filtering cannot change your pick,** because the filter only exists before a pick. Once
+  picked, the list collapses to a confirmation line with a **Change** button. Changing is
+  deliberate, and per Slice 1 it clears the value fields.
+- **Nothing is picked by default**, so "didn't look" produces no save at all rather than a
+  save against whatever sorted first.
+
+This is a new component — the app has none — which the review's own logic argues for: a
+structural fix beats five behavioural mitigations. It reuses the row shape and type scale
+`.ing-row` already establishes, so it is new CSS, not a new visual language.
 
 ---
 
 ## Slices
 
-This is **one slice**. It is a single page, one modal, four behaviours, and it can be
-reviewed in one sitting. If it grows past that while being built, the split is:
+Seven, deliberately small, ordered so the risky capability is last. Each is reviewable in
+one sitting, and each leaves the page safer than it found it.
 
-- **1a** — filter + default-to-first-unpriced (changes what you see)
-- **1b** — Save & next (changes what happens after Save)
+### Slice 0 — Ground truth *(no app code)*
 
-## Done when
+Nothing can be reasoned about until these are known. **Blocks everything.**
 
-- [ ] Typing in the filter narrows the picker, matching on vendor and name
-- [ ] The picker defaults to the first unpriced guide item; `✎ Custom` is last
-- [ ] Save & next saves, keeps the modal open, clears the value fields, and keeps the filter
-- [ ] The selected option always matches what the fields show — verified by saving a filtered pick and reading the row back
-- [ ] Editing, retire/restore and price history behave exactly as before
-- [ ] `check_styling.py` clean; `?v=` bumped on all ten pages iff `kitchen.css` changed
-- [ ] Walked at 390px with real rows before the PR — see the method note below
+- Confirm which of the 5 `ingredient_costs` rows are real vs test. Review finding M7: row 1's
+  history has `effective_date` 2026-06-15 and 2026-07-20 both created 2026-09-02 a minute
+  apart, one with `source:'invoice'` — the UI cannot produce that, so it was hand-backfilled.
+- Confirm whether `ingredient_costs` has a unique constraint on `(location, order_item_id)`.
+  Not in the repo (`supabase/` holds only the two Edge Functions) and not exposed to the anon
+  role via the REST spec. **Needs a SQL check.** If absent, adding one is a **migration —
+  ask before running it.**
 
-## How to see it before shipping
+**Done when:** both answers are written into this doc, and the constraint exists or has been
+consciously declined.
 
-There is no browser tool in this repo's sessions. The #128 walk used headless Chrome from
-Bash, and two traps will silently give wrong answers:
+### Slice 1 — You save what you meant
 
-1. **`--window-size` does not set the layout viewport.** It stays 500px; only the capture is
-   resized, so a screenshot looks catastrophically clipped when nothing is wrong. Simulate a
-   phone with a `<div style="width:390px">` wrapper and measure inside it.
-2. **Keep the real viewport under 760px.** `kitchen.css` has `@media (min-width:760px)` rules
-   that re-pad `.header` with `calc((100% - 720px)/2 + 18px)`; against a 390px wrapper that
-   computes negative and clamps to zero, silently deleting the header padding.
+No speed. Correctness of a single entry.
 
-Build the harness by replaying the page's own string-building against rows pulled read-only
-from PostgREST, link the real `assets/kitchen.css`, and assert on `scrollWidth > clientWidth`
-rather than eyeballing. Screenshot to confirm; measure to conclude.
+- Replace the select with the filtered tap-to-pick list above. **Nothing preselected.**
+- Save is blocked until an item is picked (or Custom is chosen explicitly).
+- The picked item stays on screen **with its vendor**.
+- **Change** clears qty, unit, price and alias along with the pick — you cannot carry one
+  item's numbers onto another.
+- **Stop auto-filling Unit from `order_items.unit`.** It is the *order* unit (CS/EA), not
+  the *pack* unit. Leave it empty; it is a required field.
+- Unpriced-but-linked rows (today: *Distilled white vinegar*) **appear in the picker**, marked
+  `needs price`, instead of vanishing because a row exists.
+- Tapping the backdrop no longer discards typed values — confirm first.
+
+**Done when:** no code path selects an item; saving without a pick is impossible; Change
+clears the numbers; Unit is never auto-filled; the unpriced row is reachable from ＋ Add.
+
+### Slice 2 — Mistakes can be undone
+
+Still no speed. This exists because Slice 5 and 6 make mistakes faster to create.
+
+- **Re-link on edit.** `pickWrap` is hidden on edit today, so a row bound to the wrong guide
+  item can never be corrected. Show the picker on edit.
+- **Retired rows stop blocking the picker.** `costedOrderIds()` counts them, so retiring a
+  mis-linked row permanently removes that guide item from ever being added. Exclude
+  `active=false` from the block set.
+- **`logPrice` gets a callback.** It is fire-and-forget today, so a failed history write
+  leaves a price with no trail and nobody knows.
+- **Magnitude check on edit:** if a new unit cost is ≥10× or ≤1/10th the previous one,
+  confirm before saving. This is where a `lb`/`CS` mix-up surfaces.
+
+**Done when:** a mis-linked row can be corrected without retiring it; retiring frees the
+guide item; a failed history write is surfaced; a 10× price change asks.
+
+### Slice 3 — Every price has a provenance *(absorbs #140)*
+
+The review's S1 is correct: this feature *is* invoice entry in all but name, and v1 was
+wrong to push provenance to B4.2. Typing several hundred prices off paper with no record of
+which paper is not auditable.
+
+- A **sticky invoice header** for the entry session: invoice number and invoice date, set
+  once, applied to every row saved in that session.
+- `effective_date` comes from the **invoice date**, not today. A stack of last month's
+  invoices currently all record as the day they were typed.
+- `logPrice` passes the real `invoice_ref` and `source` instead of `null`/`'manual'`.
+- **Display `invoice_ref` in the price-history modal** — closes #140. The data is already
+  there (`SR-88214`) and invisible.
+
+**Done when:** a price saved in a session carries its invoice number and date; history shows
+the reference; #140 closes.
+
+### Slice 4 — The write path cannot double-fire
+
+Hardening before anyone is given a reason to go fast.
+
+- Disable **every** control in flight — both save buttons and the picker — not just `#saveBtn`.
+- Add a **timeout** to `api()`. There is none, and `onerror` passes `null`, so a POST that
+  *succeeded* but lost its response reports "Add failed — try again". Retrying duplicates.
+- **Before any retry, re-GET by `order_item_id`** and reconcile rather than blindly POSTing.
+
+**Done when:** a save in flight cannot be triggered twice; a dropped response cannot create a
+duplicate; behaviour verified against a stubbed `api()` that simulates loss and delay.
+
+### Slice 5 — Find the item fast
+
+The first slice that adds speed, and only now.
+
+- **Word-by-word matching.** `render()` uses `hay.indexOf(q)`, so `birite oregano` fails to
+  match `Birite Dried oregano, Mexican`. Split the query on whitespace; every token must
+  appear somewhere in `vendor + name + invoice_alias`.
+- **Match `invoice_alias` too.** This is the compounding win: the paper says
+  `CHKN BRST BNLS 40#` and the guide says `Chicken breast`. Every alias entered makes the
+  *next* invoice easier to work from. The bridge is built by using it.
+- **The filter input is 16px**, not `.search`'s 15.2px. It is a new class, scoped to the
+  picker — do **not** change `.search` globally, which would reach into six other pages and
+  belongs to #135.
+- Show `N of 250 match`, and say so plainly when nothing matches.
+
+**Done when:** `birite oregano` finds the item; an aliased item is findable by its invoice
+string; the filter input computes to ≥16px; zero matches reads as a statement, not an error.
+
+### Slice 6 — Run the run
+
+Everything above exists so that this is safe.
+
+- **Save & next**: saves, keeps the modal open, clears the pick and all value fields, keeps
+  the **filter text** and the **invoice header**, and returns to an unpicked state.
+- A **running count inside the modal** — "12 saved this session". The header count is behind
+  a 70% black backdrop and the toast lasts 1.6s, so neither is feedback during a run.
+- Three buttons in `.modal-btns` at 390px: verify Save and Save & next cannot be
+  thumb-mistaken for each other, and that nothing wraps.
+
+**Done when:** a run of ten items is possible without losing the filter or the invoice
+header, every one of them required an explicit pick, and the in-modal count is accurate.
+
+---
+
+## What is still out of scope
+
+- **Recipe costing (B4.3), inventory (B4.4), Dropbox OCR (Phase 2).**
+- **Bulk CSV import.** `~/Downloads/Tempest_ingredient_costs_DRAFT.csv` is a scraped draft
+  with OCR duplicates and unconfirmed pack sizes. Pack size is the value the model hinges on
+  and the one OCR gets wrong most. Parser proposes, human confirms once.
+- **B4.2 as a separate module.** Slice 3 absorbs the part that cannot be separated
+  (provenance). Whole-invoice entry — one invoice, many lines, totals reconciled — remains a
+  later build.
+- **Fixing #135 globally.** Slice 5 adds one correctly-sized input. It must not make #135
+  worse, and it does not attempt to fix the other fourteen.
+
+---
+
+## Constraints
+
+From `CLAUDE.md` and `docs/review-checklist.md`:
+
+- **Class names are load-bearing.** Add names, never rename. New picker classes need a
+  `used by:` banner or the guard fails.
+- **No new `:root`**, no redeclared core token.
+- **State is fill, weight and border — never hue.** A zero-match filter is not red. `needs
+  price` is the existing yellow highlighter (`.ing-pack.unset`), not a colour of its own.
+- **`--faint` is inactive/locked text only.** Live secondary text is `--grey`.
+- **`python3 scripts/check_styling.py` before every PR.** CI runs it on `**.html`,
+  `assets/**`, `scripts/check_styling.py`.
+- **Bump `?v=` on all ten pages** iff `assets/kitchen.css` changes. Ten must agree.
+- **Print:** confirm every new modal element is hidden under `@media print`.
+- **The database is live and someone is entering real data into it.** Read-only GETs are
+  fine. **Never write test rows.**
+
+---
+
+## How to verify without touching live data
+
+Review finding m6 is correct: v1's "save a filtered pick and read the row back" would have
+written to a production table mid-entry. It cannot be done that way.
+
+- **Stub `api()`** and assert on the payload it was handed. That is the only way to test the
+  save path, and the only way to simulate Slice 4's dropped responses and timeouts.
+- **Render with real rows read-only**, using the headless harness from the #128 walk. Two
+  traps that silently give wrong answers:
+  1. `--window-size` does **not** set the layout viewport — it stays 500px and only the
+     capture resizes, so a screenshot looks clipped when nothing is wrong. Simulate a phone
+     with a `width:390px` wrapper and measure inside it.
+  2. Keep the real viewport **under 760px**, or `@media (min-width:760px)` re-pads `.header`
+     with `calc((100% - 720px)/2 + 18px)`, which computes negative against a 390px wrapper
+     and clamps to zero, silently deleting the header padding.
+- **Assert, don't eyeball:** `scrollWidth > clientWidth` for truncation, computed `fontSize`
+  for the 16px rule, computed `borderBottomStyle` for dividers.
+
+---
+
+## Open questions — need Stephen
+
+1. **Slice 0's migration.** If there is no unique index on
+   `ingredient_costs(location, order_item_id)`, may one be added? Without it, duplicates are
+   eventually guaranteed on bad wifi.
+2. **Which of the 5 existing rows are real?** Affects whether the ledger starts clean.
+3. **Invoice header scope.** Is one invoice per entry session the right unit, or do you work
+   several invoices in one sitting? Changes whether the header is set once or per item.
+4. **Off-guide items.** Saffron is off-guide today. Deliberate, or the old Custom-default
+   trap? Determines how prominent Custom should be in the new picker.
+
+---
+
+## Risks
+
+Rewritten. v1's risk 1 is dropped — 254 short strings is not a performance problem, and
+listing it crowded out the real ones.
+
+| risk | why it matters | mitigation |
+|---|---|---|
+| A new picker component is new surface | It replaces a native control that worked on phones for free | Tap targets ≥44px, real scrolling inside the modal, tested at 390px before the PR. The bug class it removes is worse than the surface it adds |
+| Seven slices is a long runway before any speed | Motivation dies; entry stays stalled | Slices 1–4 each ship something that makes today's entry safer. Speed is 5 and 6 and should not be reordered forward |
+| Slice 3 changes what `effective_date` means | Existing rows already carry backfilled dates (M7) | Settle Slice 0's question first; don't mix real and test rows under a new rule |
+| Modal grows: picker list + invoice header + 3 buttons | An 88vh modal on a phone with the keyboard up is small | Measure with the keyboard simulated; the picker list scrolls internally rather than growing the modal |
+| Slice 5's 16px input diverges from `.search` | Two search-ish inputs that look slightly different | Accept it. Changing `.search` globally touches six pages and is #135's job, not this build's |
+| Custom entry is de-emphasised | Legitimate off-guide items get harder to add | Question 4 settles it. Custom stays in the list, last, always reachable |
 
 ---
 
 ## Minors list
 
-Findings logged during the build that aren't worth stopping for. Append, don't clear —
-something minor in this slice is often a blocker in the next one.
+Carried from the v1 review; append as building proceeds. Do not clear it — something minor
+in one slice is often a blocker in the next.
 
-_(empty — nothing built yet)_
+- m1. Focusing the filter from inside an XHR callback won't open the iOS keyboard (not a
+  direct tap). When it does open it covers most of an 88vh modal. *(Slice 6)*
+- m2. Three buttons in `.modal-btns` at 390px — check wrapping and thumb separation. *(Slice 6)*
+- m3. The "(optional …)" span sets its colour inline (`:89`). Move it to a class if that area
+  is touched, so `check_styling.py` can see it.
+- m4. Confirm every new modal element is hidden under `@media print`.
+- m5. `curV` in `openAdd()` (`:238`) is dead code — remove it while rewriting that function so
+  nobody reads it as grouping that doesn't exist.
+- m6. Verification must use a stubbed `api()`, never a live write. *(folded into the
+  verification section above)*
 
 ---
+---
+
+# Appendix — adversarial review of v1
+
+Preserved verbatim. This is the review that rejected the v1 plan; the document above is the
+response to it. Section numbers referenced above (B1–B4, M1–M7, m1–m6, S1–S2) are its.
 
 ## Adversarial review
 
