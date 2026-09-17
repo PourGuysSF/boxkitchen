@@ -120,6 +120,21 @@ Nothing can be reasoned about until these are known. **Blocks everything.**
 **Done when:** both answers are written into this doc, and the constraint exists or has been
 consciously declined.
 
+> **CLOSED 2026-09-17.** Stephen confirmed the five rows were test numbers and cleared them.
+> He ran the cleanup and the index together in the SQL editor; the confirming select returned
+> `items_left 0, history_left 0, guard_installed 1`. Verified independently read-only:
+> `ingredient_costs` and `ingredient_price_history` both report `content-range: */0`. The
+> index result came from `pg_indexes` and is the authoritative check — DDL is not visible
+> through PostgREST.
+>
+> A restore script for the deleted rows is at
+> `~/Downloads/boxkitchen_costing_backup_2026-09-17.sql` (dollar-quoted, explicit ids,
+> restores into an empty table).
+>
+> **The ledger is now genuinely empty, and that is the correct starting state.** Slice 1's
+> builder should expect `listBody` to render the "No costed items yet" empty state; the
+> picker is driven by `order_items` (254 rows) and is unaffected.
+
 ### Slice 1 — You save what you meant
 
 No speed. Correctness of a single entry.
