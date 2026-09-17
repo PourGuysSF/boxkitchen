@@ -104,8 +104,18 @@ Nothing can be reasoned about until these are known. **Blocks everything.**
   apart, one with `source:'invoice'` — the UI cannot produce that, so it was hand-backfilled.
 - Confirm whether `ingredient_costs` has a unique constraint on `(location, order_item_id)`.
   Not in the repo (`supabase/` holds only the two Edge Functions) and not exposed to the anon
-  role via the REST spec. **Needs a SQL check.** If absent, adding one is a **migration —
-  ask before running it.**
+  role via the REST spec. **Approved by Stephen 2026-09-17; SQL written, pending his run.**
+
+  **It must be a _partial_ index, scoped to `active = true`.** A plain unique index would
+  make Slice 2 impossible: retiring a mis-linked row would permanently block that guide item
+  at the database level, which is the exact bug Slice 2 exists to remove. Verified read-only
+  that no duplicates exist today, so it can be created cleanly.
+
+  ```sql
+  create unique index if not exists ingredient_costs_one_active_per_order_item
+    on ingredient_costs (location, order_item_id)
+    where active = true and order_item_id is not null;
+  ```
 
 **Done when:** both answers are written into this doc, and the constraint exists or has been
 consciously declined.
@@ -151,16 +161,29 @@ The review's S1 is correct: this feature *is* invoice entry in all but name, and
 wrong to push provenance to B4.2. Typing several hundred prices off paper with no record of
 which paper is not auditable.
 
-- A **sticky invoice header** for the entry session: invoice number and invoice date, set
-  once, applied to every row saved in that session.
-- `effective_date` comes from the **invoice date**, not today. A stack of last month's
-  invoices currently all record as the day they were typed.
+**Two modes, because the first 250 items are not invoice entry.** Stephen is bootstrapping
+the ledger from the order guide — establishing pack sizes and current prices — not filing a
+delivery. Forcing an invoice number on that work would make him invent one, which is worse
+than recording nothing. Invoice-driven updates come afterwards, forever.
+
+| mode | `source` | `invoice_ref` | `effective_date` |
+|---|---|---|---|
+| **Setting up** (default) | `manual` | none | today |
+| **Working an invoice** | `invoice` | the number you set | the invoice's date |
+
+- The mode and the current invoice live in a **sticky header, always visible** at the top of
+  the modal — not set once per session. Set once and it holds; change it when you pick up the
+  next invoice. One invoice means typing it once; three means changing it twice; and you can
+  always see which one you are filing against.
+- `effective_date` comes from the **invoice date** in invoice mode, not today. A stack of
+  last month's invoices currently all record as the day they were typed.
 - `logPrice` passes the real `invoice_ref` and `source` instead of `null`/`'manual'`.
 - **Display `invoice_ref` in the price-history modal** — closes #140. The data is already
   there (`SR-88214`) and invisible.
 
-**Done when:** a price saved in a session carries its invoice number and date; history shows
-the reference; #140 closes.
+**Done when:** setting-up mode records no invented invoice; invoice mode stamps every row it
+saves with the number and the invoice's own date; the mode is visible without scrolling;
+history shows the reference; #140 closes.
 
 ### Slice 4 — The write path cannot double-fire
 
@@ -261,16 +284,24 @@ written to a production table mid-entry. It cannot be done that way.
 
 ---
 
-## Open questions — need Stephen
+## Questions — answered 2026-09-17
 
-1. **Slice 0's migration.** If there is no unique index on
-   `ingredient_costs(location, order_item_id)`, may one be added? Without it, duplicates are
-   eventually guaranteed on bad wifi.
-2. **Which of the 5 existing rows are real?** Affects whether the ledger starts clean.
-3. **Invoice header scope.** Is one invoice per entry session the right unit, or do you work
-   several invoices in one sitting? Changes whether the header is set once or per item.
-4. **Off-guide items.** Saffron is off-guide today. Deliberate, or the old Custom-default
-   trap? Determines how prominent Custom should be in the new picker.
+1. **Slice 0's migration — YES**, approved. See the partial-index SQL in Slice 0. Pending his
+   run; it is DDL, so it cannot be done with the anon key from a session.
+2. **Which of the 5 rows are real — open, but narrowed.** All five were created in one sitting
+   on 2026-09-02, the day the page was first tried. Row 5 is confirmed not real (below). Row
+   1's three history entries were all *written* on 2026-09-02 while carrying `effective_date`
+   of 2026-06-15 and 2026-07-20, one with `source:'invoice'` and `invoice_ref:'SR-88214'` —
+   the UI cannot produce any of that, so that trail is invented. **Recommendation: clear the
+   table and start clean**, rather than build a costing engine on four unverified prices and
+   one fabricated price history. Awaiting his call; deleting is a live write.
+3. **Invoice header scope — answered by redesign.** Neither "once per session" nor "per item".
+   A sticky, always-visible *current invoice* with a **setting-up mode** for the bootstrap.
+   See Slice 3.
+4. **Off-guide items — "we don't have saffron."** Row 5 is test data and goes. It was created
+   off-guide not by intent but because `✎ Custom` is the picker's default, which is the trap
+   Slice 1 removes. It is evidence the trap fires in practice, on the very first sitting.
+   Custom therefore stays in the list but last, and never preselected.
 
 ---
 
