@@ -804,6 +804,46 @@ body.manager-mode .card-mgr-actions{display:flex}
 /* restoring is a return to normal, not a success signal */
 .link-btn.retire.restore{color:var(--ink);border-color:var(--ink)}
 
+/* ── ITEM PICKER (Add) ────────────────────────────────────── */
+/* used by: costing */
+/* A <select> holds a selection as state, and state drifts — the filter
+   rebuilds, a thumb brushes it, someone hands the phone over — while the
+   qty and price fields keep the numbers you typed for a different item.
+   So the pick is a tap on a row instead: an event, not a state. Nothing
+   is ever selected on your behalf.
+
+   16px on the filter, deliberately, and NOT by touching .search: .search
+   is 0.95rem and shared by six other pages, and anything below 16px makes
+   iOS zoom the page on focus (issue #135). This input is new, so it can
+   simply be right. */
+/* qualified to out-specify .modal input[type="text"] above, which is 0.95rem;
+   an unqualified .pick-filter loses and silently renders at 15.2px */
+.modal input[type="text"].pick-filter,.pick-filter{width:100%;min-height:44px;padding:10px 14px;background:var(--paper);border:1px solid var(--edge);border-radius:6px;color:var(--ink);font-family:var(--font);font-size:16px;outline:none;-webkit-appearance:none;appearance:none}
+.pick-filter::placeholder{color:var(--grey)}
+.pick-filter:focus{border-color:var(--tomato);box-shadow:0 0 0 2px rgba(232,93,58,.2)}
+/* the list scrolls inside the modal; the modal itself must not grow */
+.pick-list{margin-top:8px;max-height:210px;overflow-y:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--edge);border-radius:6px}
+.pick-row{display:flex;align-items:center;gap:10px;padding:10px 12px;min-height:44px;border-bottom:1px solid var(--hair);cursor:pointer}
+.pick-row:last-child{border-bottom:none}
+.pick-row:active{background:var(--press)}
+.pick-row-main{flex:1;min-width:0}
+/* vendor above the name, so Slab bacon is two different rows at the moment
+   of choosing — the only moment the difference matters */
+.pick-v{font-family:var(--font-cond);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--grey)}
+.pick-n{font-size:0.9rem;font-weight:600;color:var(--ink);overflow-wrap:anywhere}
+/* same to-do highlighter the list uses for a row with no price yet */
+.pick-badge{flex:0 0 auto;background:var(--yellow);color:var(--ink);padding:1px 5px;font-family:var(--font-cond);font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+.pick-custom .pick-n{font-weight:500;color:var(--grey)}
+/* nothing matching is a statement, not an error — no red, no fill */
+.pick-empty{padding:18px 12px;text-align:center;color:var(--grey);font-size:0.85rem;font-style:italic}
+/* what you picked, held on screen with its vendor until you change it */
+.pick-chosen{display:flex;align-items:center;gap:10px;padding:11px 13px;border:1px solid var(--ink);border-radius:6px}
+.pick-chosen-main{flex:1;min-width:0}
+.pick-chosen-v{font-family:var(--font-cond);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--grey)}
+.pick-chosen-n{font-size:0.95rem;font-weight:700;color:var(--ink);overflow-wrap:anywhere}
+.pick-change{flex:0 0 auto;min-height:40px;padding:8px 12px;background:transparent;border:1px solid var(--edge);border-radius:6px;color:var(--ink);font-family:var(--font-cond);font-size:0.85rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;cursor:pointer}
+.pick-change:active{background:var(--press)}
+
 /* ── PRICE HISTORY ────────────────────────────────────────── */
 /* used by: costing */
 .hist-row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--hair);font-size:0.85rem}
