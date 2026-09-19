@@ -841,7 +841,7 @@ body.manager-mode .card-mgr-actions{display:flex}
 .pick-chosen-main{flex:1;min-width:0}
 .pick-chosen-v{font-family:var(--font-cond);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--grey)}
 .pick-chosen-n{font-size:0.95rem;font-weight:700;color:var(--ink);overflow-wrap:anywhere}
-.pick-change{flex:0 0 auto;min-height:40px;padding:8px 12px;background:transparent;border:1px solid var(--edge);border-radius:6px;color:var(--ink);font-family:var(--font-cond);font-size:0.85rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;cursor:pointer}
+.pick-change{flex:0 0 auto;min-height:44px;padding:8px 12px;background:transparent;border:1px solid var(--edge);border-radius:6px;color:var(--ink);font-family:var(--font-cond);font-size:0.85rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;cursor:pointer}
 .pick-change:active{background:var(--press)}
 
 /* ── PRICE HISTORY ────────────────────────────────────────── */

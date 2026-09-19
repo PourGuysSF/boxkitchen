@@ -1,7 +1,8 @@
 # Costing — make the ledger fillable
 
-Status: **PLANNED, not built.** v2, rewritten 2026-09-16 after the v1 plan was
-reviewed and rejected. The review that rejected it is preserved verbatim in the
+Status: **Slice 1 built** (branch `costing-slice1-pick`, PR #143), reviewed, and the
+review's findings fixed — see "Slice 1 as built" below. Slices 2–6 are still planned.
+v2, rewritten 2026-09-16 after the v1 plan was reviewed and rejected. The review that rejected it is preserved verbatim in the
 appendix; read it before this, because this document is the answer to it.
 
 Target file: `tempest_costing.html`, plus additions to `assets/kitchen.css`.
@@ -336,6 +337,31 @@ listing it crowded out the real ones.
 
 ---
 
+## Slice 1 as built
+
+The picker shipped, was reviewed, and the review's blockers were fixed on the same
+branch. What the fixes were, and what guards them:
+
+| finding | fix | guarded by |
+|---|---|---|
+| **B2** a price logged against the wrong item | `saveItem()`'s EDIT branch captures `editId` into a local `savingId` at call time and the callback uses only that — for the `items[]` update and for `logPrice`. The ADD branch already used the POST's own returned row id. | `inflight` scenario: save-then-Cancel, save-then-open-another, and the ADD path |
+| **B1** you can't tell which Slab bacon you picked | `pickExisting()` passes the tapped order-guide row through to `openEdit()`, which keeps `pickWrap` visible showing vendor and name. `Change` is hidden there — re-linking is slice 2. | `ok` scenario, `B1:` assertions |
+| **M1** the picker usable before the ledger loaded | `ledgerLoaded` / `ledgerError` alongside the guide's. "Loaded" means **both** requests returned; a ledger failure gets the same error-with-Retry. | `ledgerslow`, `ledgerfail` scenarios |
+| **M3** unit not required | `saveItem()` blocks on an empty unit the way it blocks on a missing pick. | `ok` scenario, `M3:` assertions |
+| **M4** the suite didn't guard the core promise | Filtering/re-filtering/clearing picks nothing; Change clears qty, unit, price and alias; the three above. Chrome path is `$CHROME`-overridable; CI runs it (`.github/workflows/costing-guard.yml`). | itself |
+
+Every one of those assertions was proved to bite by reintroducing the exact fault and
+watching it fail — including auto-picking the sole filter match, and a `Change` that
+leaves the numbers behind.
+
+**Test labels follow this document**, not the v1 review's numbering: `slice1:` for a
+slice-1 promise, `B1`/`B2`/`M1`/`M3` for the findings above. The suite's old `M1:`/`M2:`
+labels (which meant something else entirely) were renamed to `slice1:` for that reason.
+
+Also fixed, small: `.pick-change` was 40px against the plan's own 44px minimum; the
+auto-focus to Pack qty after a pick is gone (speed is not in this slice); a dead
+expression in `check_costing.py` removed.
+
 ## Minors list
 
 Carried from the v1 review; append as building proceeds. Do not clear it — something minor
@@ -363,6 +389,17 @@ in one slice is often a blocker in the next.
   retired row.
 - m11. `pickExisting` → `openEdit` is not specified by slice 1 and partly pre-empts slice 2;
   `pickItem`'s auto-focus to `fQty` is a speed affordance, which slice 1 said it would not add.
+  *(the auto-focus is now removed; `pickExisting` stays, and now keeps the chosen line — B1)*
+- m12. A retired unpriced row shows `needs price` in the picker and taps through into a
+  retired item. Same shape as m10. Recorded, not fixed — excluding retired rows is Slice 2's
+  `costedOrderIds()` change and belongs with it.
+- m13. If the guide GET fails but the ledger loads, every linked item lists under
+  "Off-guide items", because `vendorOf()` resolves through `orderById`. The picker says so
+  loudly; the list behind it does not. Recorded, not fixed.
+- m14. The list redraws when the ledger arrives, and a tap at that instant can land on a
+  neighbouring row. The M1 fix shrinks the window — the picker is not tappable at all until
+  both requests return — but the main list behind the modal still repaints. Recorded, not
+  fixed.
 
 ---
 ---

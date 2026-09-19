@@ -29,13 +29,38 @@ layout assertion, wrap it in a width:390px element and measure inside it.
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
 import time
 
-CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+# Overridable so this runs somewhere other than one particular Mac - CI has
+# Chrome on PATH under a different name entirely.
+CHROME_CANDIDATES = [
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "/Applications/Chromium.app/Contents/MacOS/Chromium",
+    "/usr/bin/google-chrome",
+    "/usr/bin/google-chrome-stable",
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
+]
 PAGE = "tempest_costing.html"
+
+
+def find_chrome():
+    env = os.environ.get("CHROME")
+    if env:
+        return env if os.path.exists(env) else shutil.which(env)
+    for p in CHROME_CANDIDATES:
+        if os.path.exists(p):
+            return p
+    for n in ("google-chrome", "google-chrome-stable", "chromium",
+              "chromium-browser", "chrome"):
+        found = shutil.which(n)
+        if found:
+            return found
+    return None
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -79,20 +104,33 @@ HARNESS = r"""
     if(m==='GET'&&u.indexOf('/order_items')>-1){
       if(SCEN==='fail')return {err:true};
       if(SCEN==='empty')return {status:200,text:'[]'};
-      if(SCEN==='slow')return 'defer';
-      return {status:200,text:JSON.stringify(ORDER_ITEMS)};
+      var guide={status:200,text:JSON.stringify(ORDER_ITEMS)};
+      if(SCEN==='slow')return {defer:true,res:guide};
+      return guide;
     }
-    if(m==='GET'&&u.indexOf('/ingredient_costs')>-1)
-      return {status:200,text:JSON.stringify(COSTS)};
+    if(m==='GET'&&u.indexOf('/ingredient_costs')>-1){
+      /* M1: the ledger arrives in the SECOND request. A picker that calls
+         itself loaded on the first one offers priced items as new. */
+      if(SCEN==='ledgerfail')return {err:true};
+      var ledger={status:200,text:JSON.stringify(COSTS)};
+      if(SCEN==='ledgerslow')return {defer:true,res:ledger};
+      return ledger;
+    }
     if(m==='GET'&&u.indexOf('/ingredient_price_history')>-1)
       return {status:200,text:'[]'};
     if(m==='POST'&&u.indexOf('/ingredient_costs')>-1){
       var row=JSON.parse(JSON.stringify(body));row.id=nextId++;
-      return {status:201,text:JSON.stringify([row])};
+      var added={status:201,text:JSON.stringify([row])};
+      /* B2: hold the write open so the harness can cancel, or open another
+         item, before the callback runs. */
+      if(SCEN==='inflight')return {defer:true,res:added};
+      return added;
     }
     if(m==='PATCH'&&u.indexOf('/ingredient_costs')>-1){
       var p=JSON.parse(JSON.stringify(body));p.id=Number((u.match(/id=eq\.(\d+)/)||[])[1]);
-      return {status:200,text:JSON.stringify([p])};
+      var patched={status:200,text:JSON.stringify([p])};
+      if(SCEN==='inflight')return {defer:true,res:patched};
+      return patched;
     }
     if(m==='POST')return {status:201,text:'[]'};
     return {status:200,text:'[]'};
@@ -111,7 +149,7 @@ HARNESS = r"""
       self.status=res.status;self.responseText=res.text;
       if(self.onload)self.onload();
     };
-    if(r==='defer'){deferred.push(function(){deliver({status:200,text:JSON.stringify(ORDER_ITEMS)});});return;}
+    if(r&&r.defer){deferred.push(function(){deliver(r.res);});return;}
     setTimeout(function(){deliver(r);},0);
   };
   window.XMLHttpRequest=Fake;
@@ -140,6 +178,7 @@ RUNNER = r"""
     return null;
   }
   function posts(){return H.reqs.filter(function(r){return r.m==='POST'&&r.u.indexOf('/ingredient_costs')>-1;});}
+  function hist(){return H.reqs.filter(function(r){return r.m==='POST'&&r.u.indexOf('/ingredient_price_history')>-1;});}
   function set(id,v){var e=$(id);e.value=v;e.dispatchEvent(new Event('input',{bubbles:true}));}
 
   var steps=[];
@@ -161,8 +200,8 @@ RUNNER = r"""
       .dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true})); });
 
   if(H.scen==='slow'){
-    /* B2: the picker is opened while the order-guide GET is still in flight. */
-    step(function(){ $('openAddProxy')||$('search'); openAdd(); });
+    /* slice 1: the picker is opened while the order-guide GET is still in flight. */
+    step(function(){ openAdd(); });
     step(function(){
       var t=$('pickList').textContent;
       ok('slow: says loading', /Loading/i.test(t), t);
@@ -202,6 +241,107 @@ RUNNER = r"""
     });
   }
 
+  if(H.scen==='ledgerslow'){
+    /* M1: the guide lands in the first request, the ledger in the second.
+       In the gap costRowFor() finds nothing, so a priced item is offered as
+       new - and saving it POSTs a duplicate the unique index rejects, which
+       reads to the user as "Add failed - try again", forever. */
+    step(function(){ openAdd(); });
+    step(function(){
+      var t=$('pickList').textContent;
+      ok('M1: says loading until the ledger lands', /Loading/i.test(t), t);
+      ok('M1: nothing tappable before the ledger lands', pickRows().length===0);
+      ok('M1: no Custom row before the ledger lands', !$('pickList').querySelector('.pick-custom'));
+      ok('M1: does not claim an empty guide', t.indexOf('No order-guide items match')<0, t);
+    });
+    step(function(){ H.releaseDeferred(); });
+    step(function(){
+      ok('M1: the picker fills in when the ledger lands', !!rowFor('Asia Intl','Slab bacon'));
+      ok('M1: the ledger is applied, not ignored',
+         !!rowFor('Birite','Distilled white vinegar').querySelector('.pick-badge'));
+      ok('M1: Custom appears once both have landed', !!$('pickList').querySelector('.pick-custom'));
+    });
+  }
+
+  if(H.scen==='ledgerfail'){
+    /* M1: a ledger failure gets the same error-with-Retry the guide failure
+       already has - never a picker that looks usable. */
+    step(function(){ openAdd(); });
+    step(function(){
+      var t=$('pickList').textContent;
+      ok('M1: a failed ledger shows an error', !!$('pickList').querySelector('.pick-error'), t);
+      ok('M1: a failed ledger offers Retry', !!$('pickList').querySelector('.pick-retry'));
+      ok('M1: a failed ledger is not tappable', pickRows().length===0);
+      ok('M1: a failed ledger does not say "no match"',
+         t.indexOf('No order-guide items match')<0, t);
+    });
+    step(function(){ H.reqs.length=0; $('pickList').querySelector('.pick-retry').click(); });
+    step(function(){
+      ok('M1: Retry re-runs init()', H.reqs.some(function(r){return r.u.indexOf('/order_items')>-1;}));
+    });
+  }
+
+  if(H.scen==='inflight'){
+    /* B2: every write here is held open until releaseDeferred(). The callback
+       must use the id captured when the request was sent, never the shared
+       editId, which by then belongs to whatever the user did next. */
+
+    /* both fixture GETs have to have landed before an id means anything -
+       each takes a tick, and so does each step. */
+    step(function(){});
+    step(function(){ ok('inflight: fixtures loaded', items.length===2, 'items='+items.length); });
+
+    /* (a) save, then Cancel before the response */
+    step(function(){ H.reqs.length=0; openEdit(502); });
+    step(function(){ set('fPrice','999'); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){ closeEdit(); });
+    step(function(){ H.releaseDeferred(); });
+    step(function(){
+      var hp=hist();
+      ok('B2: cancel-before-response still logs a price', hp.length===1, 'saw '+hp.length);
+      ok('B2: cancelled save logs against 502, not null',
+         hp[0]&&hp[0].body.ingredient_cost_id===502,
+         hp[0]&&JSON.stringify(hp[0].body.ingredient_cost_id));
+      var it=findItem(502);
+      ok('B2: the cancelled save still updates its own row', it&&Number(it.pack_price)===999,
+         it&&String(it.pack_price));
+    });
+
+    /* (b) save, then open ANOTHER item before the response */
+    step(function(){ H.reqs.length=0; openEdit(502); });
+    step(function(){ set('fPrice','777'); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){ openEdit(501); });
+    step(function(){ H.releaseDeferred(); });
+    step(function(){
+      var hp=hist();
+      ok('B2: item A price does not land on item B',
+         hp[0]&&hp[0].body.ingredient_cost_id===502,
+         hp[0]&&JSON.stringify(hp[0].body.ingredient_cost_id));
+      ok('B2: item A row is the one updated', findItem(502)&&Number(findItem(502).pack_price)===777,
+         String(findItem(502)&&findItem(502).pack_price));
+      ok('B2: item B row is untouched', findItem(501)&&findItem(501).pack_price==null,
+         JSON.stringify(findItem(501)&&findItem(501).pack_price));
+    });
+
+    /* (c) the ADD branch, same sequence */
+    step(function(){ H.reqs.length=0; closeEdit(); openAdd(); });
+    step(function(){ rowFor('Asia Intl','Slab bacon').click(); });
+    step(function(){ set('fQty','40'); set('fUnit','lb'); set('fPrice','120'); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){ closeEdit(); });
+    step(function(){ H.releaseDeferred(); });
+    step(function(){
+      var p=posts(), hp=hist();
+      ok('B2: the add wrote once', p.length===1, 'saw '+p.length);
+      ok('B2: the add logs a price', hp.length===1, 'saw '+hp.length);
+      ok('B2: the add logs against the new row, not null',
+         hp[0]&&typeof hp[0].body.ingredient_cost_id==='number',
+         hp[0]&&JSON.stringify(hp[0].body.ingredient_cost_id));
+    });
+  }
+
   if(H.scen==='ok'){
     /* nothing is ever selected on your behalf */
     step(function(){ openAdd(); });
@@ -220,13 +360,82 @@ RUNNER = r"""
       ok('ok: still no pick after a blocked save', pickId===null);
     });
 
+    /* slice 1, rule 1: the app never chooses an item on your behalf - not on
+       open, and not on any keystroke in the filter. Typing narrows the list;
+       it never picks the survivor, even when only one survives. */
+    step(function(){ set('pickFilter','asia'); });
+    step(function(){
+      ok('slice1: filtering to one row picks nothing', pickId===null);
+      ok('slice1: filtering leaves the chooser up', $('pickChosen').style.display==='none');
+      ok('slice1: the filter really did narrow', pickRows().length<4, 'rows='+pickRows().length);
+      ok('slice1: filtering fills no field', $('fName').value===''&&$('fQty').value==='');
+    });
+    step(function(){ set('pickFilter','vinegar'); });
+    step(function(){
+      ok('slice1: re-filtering picks nothing', pickId===null);
+      ok('slice1: re-filtering leaves the chooser up', $('pickChosen').style.display==='none');
+    });
+    step(function(){ set('pickFilter',''); });
+    step(function(){
+      ok('slice1: clearing the filter picks nothing', pickId===null);
+      ok('slice1: clearing the filter leaves the chooser up', $('pickChosen').style.display==='none');
+      ok('slice1: all rows back after clearing', !!rowFor('Asia Intl','Slab bacon'));
+    });
+
+    /* B1: an unpriced linked row opens its edit - and must still say WHICH
+       item that is. Both Slab bacons unpriced would otherwise open the same
+       modal reading only "Slab bacon". */
+    step(function(){ rowFor('Birite','Distilled white vinegar').click(); });
+    step(function(){
+      ok('B1: needs-price tap keeps the chosen line', $('pickWrap').style.display!=='none',
+         'pickWrap display='+$('pickWrap').style.display);
+      ok('B1: needs-price tap shows the chosen row', $('pickChosen').style.display!=='none');
+      ok('B1: needs-price tap keeps the vendor', $('pickChosenV').textContent==='Birite',
+         $('pickChosenV').textContent);
+      ok('B1: needs-price tap keeps the name',
+         $('pickChosenN').textContent==='Distilled white vinegar', $('pickChosenN').textContent);
+      ok('B1: needs-price tap opens that ledger row', editId===501, String(editId));
+    });
+    step(function(){ closeEdit(); });
+
+    /* slice 1: Change clears the numbers with the pick, so one item's pack
+       price can never be carried onto another. */
+    step(function(){ openAdd(); });
+    step(function(){
+      rowFor('Asia Intl','Slab bacon').click();
+    });
+    step(function(){
+      set('fQty','40'); set('fUnit','lb'); set('fPrice','120'); set('fAlias','SLAB BCN 40#');
+    });
+    step(function(){ $('pickChosen').querySelector('.pick-change').click(); });
+    step(function(){
+      ok('slice1: Change clears the pick', pickId===null);
+      ok('slice1: Change clears qty', $('fQty').value==='', $('fQty').value);
+      ok('slice1: Change clears unit', $('fUnit').value==='', $('fUnit').value);
+      ok('slice1: Change clears price', $('fPrice').value==='', $('fPrice').value);
+      ok('slice1: Change clears alias', $('fAlias').value==='', $('fAlias').value);
+      ok('slice1: Change returns to the chooser', $('pickChosen').style.display==='none');
+    });
+
     /* the id we POST is the id of the row that was tapped - Asia Intl 169 */
-    step(function(){ rowFor('Asia Intl','Slab bacon').click(); });
+    step(function(){ H.reqs.length=0; rowFor('Asia Intl','Slab bacon').click(); });
     step(function(){
       ok('ok: tapping picks that row', pickId===169);
       ok('ok: unit is never auto-filled', $('fUnit').value==='');
+      ok('ok: the order unit CS is never borrowed', $('fUnit').value!=='CS');
       ok('ok: name is filled from the tapped row', $('fName').value==='Slab bacon');
       set('fQty','40'); set('fPrice','120');
+    });
+    /* M3: slice 1 says unit is a required field. "40 . $120" with no unit
+       previews "$3.00 / unit" and costs every recipe below it wrongly. */
+    step(function(){ $('saveBtn').click(); });
+    step(function(){
+      ok('M3: a unit-less save writes nothing', posts().length===0, 'saw '+posts().length);
+      ok('M3: a unit-less save keeps the modal open', $('editModal').className.indexOf('show')>-1);
+      ok('M3: a unit-less save keeps the pick', pickId===169);
+      ok('M3: a unit-less save keeps the numbers', $('fQty').value==='40'&&$('fPrice').value==='120');
+      ok('M3: the save button is usable again', $('saveBtn').disabled===false);
+      set('fUnit','lb');
     });
     step(function(){ $('saveBtn').click(); });
     step(function(){
@@ -234,15 +443,15 @@ RUNNER = r"""
       ok('ok: one write for one save', p.length===1, 'saw '+p.length);
       ok('ok: Asia Intl row saves order_item_id 169', p[0]&&p[0].body.order_item_id===169,
          p[0]&&String(p[0].body.order_item_id));
-      ok('ok: unit saves as null, never CS', p[0]&&p[0].body.pack_unit===null,
+      ok('M3: the typed unit is what saves', p[0]&&p[0].body.pack_unit==='lb',
          p[0]&&JSON.stringify(p[0].body.pack_unit));
       ok('ok: modal closed after save', $('editModal').className.indexOf('show')<0);
-      /* M2: closeEdit resets */
-      ok('M2: pickId cleared on close', pickId===null);
-      ok('M2: fields cleared on close', $('fName').value===''&&$('fQty').value===''&&$('fPrice').value==='');
-      ok('M2: fName re-enabled on close', $('fName').disabled===false);
-      ok('M2: filter cleared on close', $('pickFilter').value==='');
-      ok('M2: chosen display reset on close', $('pickChosen').style.display==='none');
+      /* slice 1: closeEdit leaves nothing behind */
+      ok('slice1: pickId cleared on close', pickId===null);
+      ok('slice1: fields cleared on close', $('fName').value===''&&$('fQty').value===''&&$('fPrice').value==='');
+      ok('slice1: fName re-enabled on close', $('fName').disabled===false);
+      ok('slice1: filter cleared on close', $('pickFilter').value==='');
+      ok('slice1: chosen display reset on close', $('pickChosen').style.display==='none');
     });
 
     /* and the other Slab bacon - Birite 88 */
@@ -253,35 +462,35 @@ RUNNER = r"""
     });
     step(function(){
       ok('ok: tapping the second row picks 88', pickId===88);
-      set('fQty','12'); set('fPrice','88.50');
+      set('fQty','12'); set('fUnit','lb'); set('fPrice','88.50');
     });
     step(function(){ $('saveBtn').click(); });
     step(function(){
       var p=posts();
       ok('ok: Birite row saves order_item_id 88', p[0]&&p[0].body.order_item_id===88,
          p[0]&&String(p[0].body.order_item_id));
-      ok('ok: second save unit also null', p[0]&&p[0].body.pack_unit===null);
+      ok('ok: the second save carries its own unit', p[0]&&p[0].body.pack_unit==='lb');
     });
 
-    /* M1: opening an existing item and tapping the backdrop must not prompt */
+    /* slice 1: tapping the backdrop no longer discards typed values */
     step(function(){ H.confirms=0; openEdit(502); });
     step(function(){
-      ok('M1: edit populates the name', $('fName').value==='Sea salt');
+      ok('slice1: edit populates the name', $('fName').value==='Sea salt');
       $('editModal').click();
     });
     step(function(){
-      ok('M1: untouched edit does not prompt', H.confirms===0, 'confirms='+H.confirms);
-      ok('M1: untouched edit closes', $('editModal').className.indexOf('show')<0);
+      ok('slice1: untouched edit does not prompt', H.confirms===0, 'confirms='+H.confirms);
+      ok('slice1: untouched edit closes', $('editModal').className.indexOf('show')<0);
     });
     step(function(){ H.confirms=0; openEdit(502); });
     step(function(){ set('fPrice','999'); $('editModal').click(); });
     step(function(){
-      ok('M1: a changed field does prompt', H.confirms===1, 'confirms='+H.confirms);
+      ok('slice1: a changed field does prompt', H.confirms===1, 'confirms='+H.confirms);
     });
-    /* M1: a fresh Add with nothing typed must not prompt either */
+    /* slice 1: a fresh Add with nothing typed must not prompt either */
     step(function(){ H.confirms=0; openAdd(); });
     step(function(){ $('editModal').click(); });
-    step(function(){ ok('M1: empty Add does not prompt', H.confirms===0, 'confirms='+H.confirms); });
+    step(function(){ ok('slice1: empty Add does not prompt', H.confirms===0, 'confirms='+H.confirms); });
   }
 
   if(document.readyState==='complete')setTimeout(run,0);
@@ -322,7 +531,7 @@ def build_page():
 RESULT_RE = re.compile(r'<div id="harnessResults">(.*?)</div>', re.S)
 
 
-def run_scenario(path, scen):
+def run_scenario(chrome, path, scen):
     """One Chrome per scenario, harvested rather than waited on.
 
     --dump-dom writes the finished DOM to stdout and then, on this machine,
@@ -335,7 +544,7 @@ def run_scenario(path, scen):
     err = os.path.join(os.path.dirname(path), "err-" + scen + ".txt")
     with open(dom, "w") as fo, open(err, "w") as fe:
         proc = subprocess.Popen(
-            [CHROME, "--headless=new", "--disable-gpu", "--no-sandbox",
+            [chrome, "--headless=new", "--disable-gpu", "--no-sandbox",
              "--no-first-run", "--disable-extensions",
              "--disable-background-networking", "--disable-component-update",
              "--disable-default-apps", "--disable-sync",
@@ -365,16 +574,18 @@ def run_scenario(path, scen):
 
 
 def main():
-    if not os.path.exists(CHROME):
-        sys.exit("check_costing: Chrome not found at " + CHROME)
+    chrome = find_chrome()
+    if not chrome:
+        sys.exit("check_costing: no Chrome found. Set CHROME=/path/to/chrome.")
     page = build_page()
     fails, total = [], 0
     with tempfile.TemporaryDirectory() as td:
         path = os.path.join(td, "costing_under_test.html")
         with open(path, "w", encoding="utf-8") as f:
             f.write(page)
-        for scen in ("ok", "slow", "fail", "empty"):
-            res, err = run_scenario(path, scen)
+        for scen in ("ok", "slow", "fail", "empty", "ledgerslow",
+                     "ledgerfail", "inflight"):
+            res, err = run_scenario(chrome, path, scen)
             if res is None:
                 fails.append("%s: harness never reported\n%s" % (scen, err))
                 continue
@@ -387,7 +598,7 @@ def main():
             print("  " + x)
         print("\nsee docs/costing-bulk-entry.md, slice 1")
         return 1
-    print("costing guard: clean (%d assertions, 4 scenarios, %s)" % (total, PAGE))
+    print("costing guard: clean (%d assertions, 7 scenarios, %s)" % (total, PAGE))
     return 0
 
 
