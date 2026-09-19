@@ -351,6 +351,18 @@ in one slice is often a blocker in the next.
   nobody reads it as grouping that doesn't exist.
 - m6. Verification must use a stubbed `api()`, never a live write. *(folded into the
   verification section above)*
+- m7. The "(optional — how it reads on the invoice)" span still sets its colour inline
+  (`tempest_costing.html:101`), so `check_styling.py` cannot see it. *(same span as m3)*
+- m8. `.pick-filter:focus` in `kitchen.css` is dead — `.modal input:focus` out-specifies it
+  with identical declarations. Deleting it changes nothing visually; leave it or remove it
+  deliberately, but do not assume it is doing the work.
+- m9. `costRowFor()` returns the first match. The partial unique index still allows one
+  active plus one retired row on the same `order_item_id`, so which of the two the picker
+  routes a tap to is list-order luck.
+- m10. A retired unpriced row shows `needs price` in the picker and taps through into a
+  retired row.
+- m11. `pickExisting` → `openEdit` is not specified by slice 1 and partly pre-empts slice 2;
+  `pickItem`'s auto-focus to `fQty` is a speed affordance, which slice 1 said it would not add.
 
 ---
 ---

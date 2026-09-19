@@ -155,6 +155,9 @@ var orderById={};             // id -> order_items row
 var showRetired=false;
 var editId=null;              // ingredient_costs id being edited, or null for add
 var pickId=null;              // Add: the order_item id tapped, 'custom', or null for nothing picked
+var guideLoaded=false;        // the order-guide GET has come back with rows
+var guideError=false;         // the order-guide GET failed — the picker must say so
+var editSnap=null;            // field values as the modal opened, for editDirty()
 var st=null;
 
 function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
@@ -185,11 +188,19 @@ function boot(){
 
 /* ---- Load ---- */
 function init(){
+  guideLoaded=false;guideError=false;
+  if(document.getElementById('editModal').classList.contains('show')&&document.getElementById('pickChoose').style.display!=='none')renderPick();
   api('GET','order_items','location=eq.'+encodeURIComponent(LOCATION)+'&active=eq.true&order=vendor.asc,sort_order.asc',null,function(r){
+    // A null response is api()'s onerror — the guide did not load, and the
+    // picker has to say that rather than look like an empty order guide.
+    guideError=!Array.isArray(r);guideLoaded=!guideError;
     orderItems=Array.isArray(r)?r:[];orderById={};
     for(var i=0;i<orderItems.length;i++)orderById[orderItems[i].id]=orderItems[i];
+    // an already-open picker fills in when the data lands
+    if(document.getElementById('editModal').classList.contains('show')&&document.getElementById('pickChoose').style.display!=='none')renderPick();
     api('GET','ingredient_costs','location=eq.'+encodeURIComponent(LOCATION)+'&order=name.asc',null,function(r2){
       items=Array.isArray(r2)?r2:[];render();
+      if(document.getElementById('editModal').classList.contains('show')&&document.getElementById('pickChoose').style.display!=='none')renderPick();
     });
   });
 }
@@ -253,6 +264,7 @@ function openAdd(){
   clearFields();
   document.getElementById('editActions').style.display='none';
   showChooser();
+  snapFields();
   document.getElementById('editModal').classList.add('show');
   setTimeout(function(){document.getElementById('pickFilter').focus();},120);
 }
@@ -288,7 +300,20 @@ function renderPick(){
          (row?'<div class="pick-badge">needs price</div>':'')+
        '</div>';
   }
-  if(!shown)h='<div class="pick-empty">No order-guide items match “'+esc(q)+'”.</div>';
+  // Four states, not one. Until the guide has loaded there is nothing to tap —
+  // not even Custom, which would otherwise be the only row on a screen that
+  // reads as "the order guide is empty".
+  if(!guideLoaded&&!guideError){
+    document.getElementById('pickList').innerHTML='<div class="pick-empty pick-loading">Loading the order guide…</div>';
+    return;
+  }
+  if(guideError){
+    document.getElementById('pickList').innerHTML='<div class="pick-empty pick-error">The order guide didn’t load. <button class="link-btn pick-retry" onclick="init()">Retry</button></div>';
+    return;
+  }
+  if(!orderItems.length)h='<div class="pick-empty">The order guide is empty — use <b>Custom</b> below.</div>';
+  else if(!shown)h=q?('<div class="pick-empty">No order-guide items match “'+esc(q)+'”.</div>')
+                    :'<div class="pick-empty">Every order-guide item is already priced — use <b>Custom</b> below.</div>';
   h+='<div class="pick-row pick-custom" onclick="pickCustom()"><div class="pick-row-main"><div class="pick-n">✎ Custom (not on order guide)</div></div></div>';
   document.getElementById('pickList').innerHTML=h;
 }
@@ -332,9 +357,24 @@ function openEdit(id){
   var rb=document.getElementById('retireBtn');
   rb.textContent=it.active?'Retire':'Restore';rb.className='link-btn retire'+(it.active?'':' restore');
   ucPreview();
+  snapFields();
   document.getElementById('editModal').classList.add('show');
 }
-function closeEdit(){document.getElementById('editModal').classList.remove('show');}
+var EDIT_FIELDS=['fName','fAlias','fQty','fUnit','fPrice'];
+/* The values the modal opened with. editDirty() compares against these, so
+   merely showing an existing item's name is not an edit to discard. */
+function snapFields(){
+  editSnap=EDIT_FIELDS.map(function(id){return document.getElementById(id).value;});
+}
+/* Closing must leave nothing behind: slice 6 keeps this modal open after a
+   save, and a stale pickId there would price the wrong item. */
+function closeEdit(){
+  document.getElementById('editModal').classList.remove('show');
+  pickId=null;editId=null;editSnap=null;
+  document.getElementById('pickFilter').value='';
+  clearFields();
+  showChooser();
+}
 function ucPreview(){
   var q=num(document.getElementById('fQty').value),p=num(document.getElementById('fPrice').value),u=document.getElementById('fUnit').value.trim()||'unit';
   var el=document.getElementById('ucPreview');
@@ -416,8 +456,9 @@ function showToast(msg,isErr){var t=document.getElementById('toast');t.textConte
 /* A stray tap outside the modal used to throw away everything typed. */
 function editDirty(){
   if(pickId!=null&&editId==null)return true;
-  var ids=['fName','fAlias','fQty','fUnit','fPrice'];
-  for(var i=0;i<ids.length;i++)if(document.getElementById(ids[i]).value.trim()!=='')return true;
+  if(!editSnap)return false;
+  for(var i=0;i<EDIT_FIELDS.length;i++)
+    if(document.getElementById(EDIT_FIELDS[i]).value!==editSnap[i])return true;
   return false;
 }
 document.getElementById('editModal').addEventListener('click',function(e){
