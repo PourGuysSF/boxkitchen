@@ -21,7 +21,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=Playfair+Display:wght@700;900&display=swap">
-<link rel="stylesheet" href="assets/kitchen.css?v=2026-09-16">
+<link rel="stylesheet" href="assets/kitchen.css?v=2026-09-19">
 <style>
   /* Recipe Costing — page-level overrides only. Every component
      lives in assets/kitchen.css. */
@@ -79,8 +79,20 @@
 
     <div id="pickWrap">
       <div class="nb-label">Order-guide item</div>
-      <select id="orderPick" onchange="onPick()"></select>
-      <div class="hint">Pick an item from your order guide, or choose “Custom” for something you don’t order-guide.</div>
+      <!-- Choosing: a filter + a list you tap. Nothing is ever selected for you. -->
+      <div id="pickChoose">
+        <input class="pick-filter" id="pickFilter" type="text" placeholder="Filter items…" autocomplete="off" oninput="renderPick()">
+        <div class="pick-list" id="pickList"></div>
+      </div>
+      <!-- Chosen: the pick, with its vendor, and a deliberate way out. -->
+      <div class="pick-chosen" id="pickChosen" style="display:none">
+        <div class="pick-chosen-main">
+          <div class="pick-chosen-v" id="pickChosenV"></div>
+          <div class="pick-chosen-n" id="pickChosenN"></div>
+        </div>
+        <button class="pick-change" id="pickChange" onclick="clearPick()">Change</button>
+      </div>
+      <div class="hint" id="pickHint">Tap the item you are pricing, or “Custom” for something not on the order guide.</div>
     </div>
 
     <div class="nb-label">Item name</div>
@@ -142,6 +154,15 @@ var orderItems=[];            // active order_items (for the Add picker)
 var orderById={};             // id -> order_items row
 var showRetired=false;
 var editId=null;              // ingredient_costs id being edited, or null for add
+var pickId=null;              // Add: the order_item id tapped, 'custom', or null for nothing picked
+var guideLoaded=false;        // the order-guide GET has come back with rows
+var guideError=false;         // the order-guide GET failed — the picker must say so
+// The ledger arrives in a SECOND request. Until it does, costRowFor() finds
+// nothing, so an already-priced item would be offered as new and saving it
+// POSTs a duplicate the unique index rejects — "Add failed" with no way out.
+var ledgerLoaded=false;       // the ingredient_costs GET has come back
+var ledgerError=false;        // the ingredient_costs GET failed
+var editSnap=null;            // field values as the modal opened, for editDirty()
 var st=null;
 
 function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
@@ -172,11 +193,20 @@ function boot(){
 
 /* ---- Load ---- */
 function init(){
+  guideLoaded=false;guideError=false;ledgerLoaded=false;ledgerError=false;
+  if(document.getElementById('editModal').classList.contains('show')&&document.getElementById('pickChoose').style.display!=='none')renderPick();
   api('GET','order_items','location=eq.'+encodeURIComponent(LOCATION)+'&active=eq.true&order=vendor.asc,sort_order.asc',null,function(r){
+    // A null response is api()'s onerror — the guide did not load, and the
+    // picker has to say that rather than look like an empty order guide.
+    guideError=!Array.isArray(r);guideLoaded=!guideError;
     orderItems=Array.isArray(r)?r:[];orderById={};
     for(var i=0;i<orderItems.length;i++)orderById[orderItems[i].id]=orderItems[i];
+    // an already-open picker fills in when the data lands
+    if(document.getElementById('editModal').classList.contains('show')&&document.getElementById('pickChoose').style.display!=='none')renderPick();
     api('GET','ingredient_costs','location=eq.'+encodeURIComponent(LOCATION)+'&order=name.asc',null,function(r2){
+      ledgerError=!Array.isArray(r2);ledgerLoaded=!ledgerError;
       items=Array.isArray(r2)?r2:[];render();
+      if(document.getElementById('editModal').classList.contains('show')&&document.getElementById('pickChoose').style.display!=='none')renderPick();
     });
   });
 }
@@ -228,38 +258,121 @@ function render(){
 function findItem(id){for(var i=0;i<items.length;i++)if(items[i].id===id)return items[i];return null;}
 function costedOrderIds(){var s={};for(var i=0;i<items.length;i++)if(items[i].order_item_id!=null)s[items[i].order_item_id]=true;return s;}
 
+/* ingredient_costs row for an order-guide item, or null. */
+function costRowFor(orderItemId){for(var i=0;i<items.length;i++)if(items[i].order_item_id===orderItemId)return items[i];return null;}
+
 function openAdd(){
-  editId=null;
+  editId=null;pickId=null;
   document.getElementById('editTitle').textContent='Add costed item';
   document.getElementById('editSub').textContent='Price what you buy.';
   document.getElementById('pickWrap').style.display='';
-  // build picker: unpriced order-guide items + custom
-  var used=costedOrderIds(),opts='<option value="custom">✎ Custom (not on order guide)</option>';
-  var curV='';
-  for(var i=0;i<orderItems.length;i++){var o=orderItems[i];if(used[o.id])continue;if(o.vendor!==curV){curV=o.vendor;}opts+='<option value="'+o.id+'">'+esc(o.vendor)+' » '+esc(o.name)+'</option>';}
-  document.getElementById('orderPick').innerHTML=opts;
-  document.getElementById('orderPick').value='custom';
+  document.getElementById('pickFilter').value='';
+  clearFields();
+  document.getElementById('editActions').style.display='none';
+  showChooser();
+  snapFields();
+  document.getElementById('editModal').classList.add('show');
+  setTimeout(function(){document.getElementById('pickFilter').focus();},120);
+}
+function clearFields(){
   document.getElementById('fName').value='';document.getElementById('fName').disabled=false;
   document.getElementById('fAlias').value='';
   document.getElementById('fQty').value='';document.getElementById('fUnit').value='';document.getElementById('fPrice').value='';
-  document.getElementById('editActions').style.display='none';
   ucPreview();
-  document.getElementById('editModal').classList.add('show');
-  setTimeout(function(){document.getElementById('fName').focus();},120);
 }
-function onPick(){
-  var v=document.getElementById('orderPick').value;
-  if(v==='custom'){document.getElementById('fName').value='';document.getElementById('fName').disabled=false;document.getElementById('fName').focus();return;}
-  var o=orderById[parseInt(v,10)];
-  if(o){document.getElementById('fName').value=o.name;document.getElementById('fName').disabled=true;
-    if(!document.getElementById('fUnit').value&&o.unit)document.getElementById('fUnit').value=o.unit;}
+/* Back to choosing. Changing the item clears the numbers with it — one item's
+   pack price can never be carried onto another. */
+function clearPick(){pickId=null;clearFields();showChooser();setTimeout(function(){document.getElementById('pickFilter').focus();},60);}
+function showChooser(){
+  document.getElementById('pickChange').style.display='';
+  document.getElementById('pickChoose').style.display='';
+  document.getElementById('pickChosen').style.display='none';
+  document.getElementById('pickHint').textContent='Tap the item you are pricing, or “Custom” for something not on the order guide.';
+  renderPick();
 }
-function openEdit(id){
+/* The list you tap. A row that already has a fully-priced ledger entry drops
+   out; one that exists but has no price stays, marked, and taps through to
+   that row rather than making a second one. */
+function renderPick(){
+  var q=(document.getElementById('pickFilter').value||'').trim().toLowerCase();
+  var h='',shown=0;
+  for(var i=0;i<orderItems.length;i++){
+    var o=orderItems[i],row=costRowFor(o.id);
+    if(row&&unitCost(row)!=null)continue;
+    if(q&&(o.vendor+' '+o.name).toLowerCase().indexOf(q)<0)continue;
+    shown++;
+    h+='<div class="pick-row" onclick="'+(row?('pickExisting('+row.id+','+o.id+')'):('pickItem('+o.id+')'))+'">'+
+         '<div class="pick-row-main"><div class="pick-v">'+esc(o.vendor)+'</div>'+
+         '<div class="pick-n">'+esc(o.name)+'</div></div>'+
+         (row?'<div class="pick-badge">needs price</div>':'')+
+       '</div>';
+  }
+  // Four states, not one. Until the guide has loaded there is nothing to tap —
+  // not even Custom, which would otherwise be the only row on a screen that
+  // reads as "the order guide is empty".
+  if(guideError||ledgerError){
+    document.getElementById('pickList').innerHTML='<div class="pick-empty pick-error">'+
+      (guideError?'The order guide didn’t load.':'The costed-item list didn’t load.')+
+      ' <button class="link-btn pick-retry" onclick="init()">Retry</button></div>';
+    return;
+  }
+  // Loaded means BOTH: the guide says what exists, the ledger says what is
+  // already priced. Either one missing makes the list a lie.
+  if(!guideLoaded||!ledgerLoaded){
+    document.getElementById('pickList').innerHTML='<div class="pick-empty pick-loading">Loading the order guide…</div>';
+    return;
+  }
+  if(!orderItems.length)h='<div class="pick-empty">The order guide is empty — use <b>Custom</b> below.</div>';
+  else if(!shown)h=q?('<div class="pick-empty">No order-guide items match “'+esc(q)+'”.</div>')
+                    :'<div class="pick-empty">Every order-guide item is already priced — use <b>Custom</b> below.</div>';
+  h+='<div class="pick-row pick-custom" onclick="pickCustom()"><div class="pick-row-main"><div class="pick-n">✎ Custom (not on order guide)</div></div></div>';
+  document.getElementById('pickList').innerHTML=h;
+}
+/* A tap is the pick. There is no widget holding a selection that can drift. */
+function pickItem(id){
+  var o=orderById[id];if(!o)return;
+  pickId=id;
+  document.getElementById('fName').value=o.name;document.getElementById('fName').disabled=true;
+  /* Unit is NOT filled from order_items.unit — that is the order unit (CS/EA),
+     not the pack unit, and "40 CS" costs every recipe below it wrongly. */
+  /* No auto-focus to Pack qty: that is a speed affordance, and slice 1 adds
+     none. */
+  showChosen(o.vendor,o.name);
+}
+function pickCustom(){
+  pickId='custom';
+  document.getElementById('fName').value='';document.getElementById('fName').disabled=false;
+  showChosen('Off-guide','✎ Custom item');
+  setTimeout(function(){document.getElementById('fName').focus();},60);
+}
+/* An order-guide item that already has a row with no price: edit that row —
+   but carrying which row you tapped. Both Slab bacons unpriced would otherwise
+   open an identical modal reading only "Slab bacon". */
+function pickExisting(icId,orderItemId){openEdit(icId,orderById[orderItemId]||null);}
+function showChosen(vendor,name){
+  document.getElementById('pickChosenV').textContent=vendor;
+  document.getElementById('pickChosenN').textContent=name;
+  document.getElementById('pickChoose').style.display='none';
+  document.getElementById('pickChosen').style.display='';
+  document.getElementById('pickHint').textContent='This is the item the price will be saved against.';
+}
+/* `chosen` is the order-guide row that was tapped to get here, when the
+   picker is what opened this modal. */
+function openEdit(id,chosen){
   var it=findItem(id);if(!it)return;
   editId=id;
   document.getElementById('editTitle').textContent='Edit item';
   document.getElementById('editSub').textContent=it.active?'Update pack size or price.':'This item is retired.';
-  document.getElementById('pickWrap').style.display='none';
+  if(chosen){
+    // Keep the chosen line on screen: which item you tapped is the one thing
+    // this modal cannot afford to drop. Change is hidden — re-linking an
+    // existing row is slice 2, not this one.
+    document.getElementById('pickWrap').style.display='';
+    showChosen(chosen.vendor,chosen.name);
+    document.getElementById('pickChange').style.display='none';
+  }else{
+    document.getElementById('pickWrap').style.display='none';
+  }
   document.getElementById('fName').value=nameOf(it);document.getElementById('fName').disabled=(it.order_item_id!=null);
   document.getElementById('fAlias').value=it.invoice_alias||'';
   document.getElementById('fQty').value=(it.pack_qty==null?'':it.pack_qty);
@@ -269,9 +382,24 @@ function openEdit(id){
   var rb=document.getElementById('retireBtn');
   rb.textContent=it.active?'Retire':'Restore';rb.className='link-btn retire'+(it.active?'':' restore');
   ucPreview();
+  snapFields();
   document.getElementById('editModal').classList.add('show');
 }
-function closeEdit(){document.getElementById('editModal').classList.remove('show');}
+var EDIT_FIELDS=['fName','fAlias','fQty','fUnit','fPrice'];
+/* The values the modal opened with. editDirty() compares against these, so
+   merely showing an existing item's name is not an edit to discard. */
+function snapFields(){
+  editSnap=EDIT_FIELDS.map(function(id){return document.getElementById(id).value;});
+}
+/* Closing must leave nothing behind: slice 6 keeps this modal open after a
+   save, and a stale pickId there would price the wrong item. */
+function closeEdit(){
+  document.getElementById('editModal').classList.remove('show');
+  pickId=null;editId=null;editSnap=null;
+  document.getElementById('pickFilter').value='';
+  clearFields();
+  showChooser();
+}
 function ucPreview(){
   var q=num(document.getElementById('fQty').value),p=num(document.getElementById('fPrice').value),u=document.getElementById('fUnit').value.trim()||'unit';
   var el=document.getElementById('ucPreview');
@@ -280,19 +408,23 @@ function ucPreview(){
 }
 
 function saveItem(){
+  // Nothing is ever picked for you, so nothing can be saved without a pick.
+  if(editId==null&&pickId==null){showToast('Tap the item you are pricing',true);showChooser();return;}
   var name=document.getElementById('fName').value.trim();
   if(!name){showToast('Name is required',true);document.getElementById('fName').focus();return;}
   var qtyRaw=document.getElementById('fQty').value.trim(),priceRaw=document.getElementById('fPrice').value.trim();
   var alias=document.getElementById('fAlias').value.trim()||null;
-  var unit=document.getElementById('fUnit').value.trim()||null;
+  var unit=document.getElementById('fUnit').value.trim();
+  // Required, per slice 1. Without it "40 · $120" previews "$3.00 / unit" and
+  // every recipe costed off it inherits a unit nobody chose.
+  if(!unit){showToast('Unit is required',true);document.getElementById('fUnit').focus();return;}
   var packQty=qtyRaw!==''?num(qtyRaw):null,packPrice=priceRaw!==''?num(priceRaw):null;
   var btn=document.getElementById('saveBtn');btn.disabled=true;
   var nowIso=new Date().toISOString();
 
   if(editId==null){
     // ADD
-    var pick=document.getElementById('orderPick').value;
-    var orderItemId=(pick!=='custom')?parseInt(pick,10):null;
+    var orderItemId=(pickId!=='custom')?pickId:null;
     // guard against a duplicate on the same order-guide item
     if(orderItemId!=null){var used=costedOrderIds();if(used[orderItemId]){btn.disabled=false;showToast('That order-guide item is already costed',true);return;}}
     var payload={location:LOCATION,order_item_id:orderItemId,name:name,invoice_alias:alias,pack_qty:packQty,pack_unit:unit,pack_price:packPrice,active:true,updated_at:nowIso};
@@ -306,10 +438,15 @@ function saveItem(){
     var it=findItem(editId);if(!it){btn.disabled=false;return;}
     var priceChanged=(num(it.pack_price)!==num(packPrice))||(num(it.pack_qty)!==num(packQty));
     var patch={name:(it.order_item_id!=null?it.name:name),invoice_alias:alias,pack_qty:packQty,pack_unit:unit,pack_price:packPrice,updated_at:nowIso};
-    api('PATCH','ingredient_costs','id=eq.'+editId,patch,function(r){
+    // The id this save belongs to, captured NOW. closeEdit() sets editId=null
+    // and opening another item overwrites it, so a callback that re-read the
+    // shared editId would update the wrong row and log the price against the
+    // wrong item — or against null.
+    var savingId=editId;
+    api('PATCH','ingredient_costs','id=eq.'+savingId,patch,function(r){
       btn.disabled=false;
-      if(r&&r.length){var row=r[0];for(var i=0;i<items.length;i++)if(items[i].id===editId)items[i]=row;
-        if(priceChanged&&packPrice!=null)logPrice(editId,packPrice,packQty,unit,null);
+      if(r&&r.length){var row=r[0];for(var i=0;i<items.length;i++)if(items[i].id===savingId)items[i]=row;
+        if(priceChanged&&packPrice!=null)logPrice(savingId,packPrice,packQty,unit,null);
         closeEdit();render();showToast('Saved',false);}
       else{showToast('Save failed — try again',true);}
     });
@@ -349,7 +486,19 @@ function openHist(){
 function closeHist(){document.getElementById('histModal').classList.remove('show');}
 
 function showToast(msg,isErr){var t=document.getElementById('toast');t.textContent=(isErr?'⚠ ':'✓ ')+msg;t.classList.toggle('err',!!isErr);t.classList.add('show');clearTimeout(st);st=setTimeout(function(){t.classList.remove('show');},1600);}
-document.getElementById('editModal').addEventListener('click',function(e){if(e.target===this)closeEdit();});
+/* A stray tap outside the modal used to throw away everything typed. */
+function editDirty(){
+  if(pickId!=null&&editId==null)return true;
+  if(!editSnap)return false;
+  for(var i=0;i<EDIT_FIELDS.length;i++)
+    if(document.getElementById(EDIT_FIELDS[i]).value!==editSnap[i])return true;
+  return false;
+}
+document.getElementById('editModal').addEventListener('click',function(e){
+  if(e.target!==this)return;
+  if(editDirty()&&!confirm('Discard this entry?'))return;
+  closeEdit();
+});
 document.getElementById('histModal').addEventListener('click',function(e){if(e.target===this)closeHist();});
 
 boot();
