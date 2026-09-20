@@ -21,10 +21,20 @@ hash, runs its assertions, and parks the results in #harnessResults, which
 --dump-dom hands back. --virtual-time-budget fast-forwards the setTimeout()s
 the page uses for focus, so the suite finishes without wall-clock sleeps.
 
-Trap worth remembering (see docs/costing-bulk-entry.md, "How to verify
-without touching live data"): --window-size does not set the layout viewport.
-Nothing here measures layout, which is why that does not bite - if you add a
-layout assertion, wrap it in a width:390px element and measure inside it.
+The page runs STYLED. assets/ is copied into the temp directory beside it,
+so its relative assets/kitchen.css link resolves; the first check in the "ok"
+scenario fails if it ever stops resolving. Before that fix every run was
+unstyled, and a CSS rule that hid the picker or the chosen line - the two
+things slice 1 exists to show - would have passed. Assertions on inline
+style.display and field values never needed CSS; the "css:" ones do.
+
+Layout traps (see docs/costing-bulk-entry.md, "How to verify without
+touching live data"): --window-size does not set the layout viewport, so
+measure widths inside a width:390px wrapper; a position:fixed modal escapes
+that wrapper and vh follows the real window, so modal HEIGHT cannot be
+measured here at all - judge it from a screenshot in a tall window. The
+"css:" checks here are visibility and tap-target height, which neither trap
+touches.
 """
 import json
 import os
@@ -98,7 +108,28 @@ HARNESS = r"""
   var SCEN=(location.hash||'#ok').slice(1);
   var ORDER_ITEMS=__ORDER_ITEMS__, COSTS=__COSTS__;
   var reqs=[], deferred=[], nextId=900;
-  window.__h={scen:SCEN,reqs:reqs,fails:[],log:[],confirms:0,confirmReturn:true};
+  /* The ledger is stateful, like the real table: a GET answers with what
+     existed when it was SENT, so a slow GET is genuinely stale by the time it
+     lands. A static fixture would hide the M-a bug (a superseded load wiping
+     a row saved after it was sent). */
+  var server=JSON.parse(JSON.stringify(COSTS));
+  function snap(){return JSON.stringify(server);}
+  window.__h={scen:SCEN,reqs:reqs,fails:[],log:[],confirms:0,confirmReturn:true,
+    /* per-request overrides, consumed in order: 'err' fails now, 'defer'
+       holds the response, 'defer-err' holds a failure, 'defer-empty' holds
+       an empty-but-successful guide */
+    nextGuide:[],nextLedger:[],
+    /* every ingredient_costs write fails (after being held, in inflight) */
+    failWrites:false};
+  if(SCEN==='retry'){window.__h.nextGuide.push('err');window.__h.nextLedger.push('defer');}
+  function planned(q,ok,empty){
+    var p=q.shift();
+    if(p==='err')return {err:true};
+    if(p==='defer')return {defer:true,res:ok};
+    if(p==='defer-err')return {defer:true,res:{err:true}};
+    if(p==='defer-empty')return {defer:true,res:empty};
+    return ok;
+  }
 
   function route(m,u,body){
     if(m==='GET'&&u.indexOf('/order_items')>-1){
@@ -106,21 +137,22 @@ HARNESS = r"""
       if(SCEN==='empty')return {status:200,text:'[]'};
       var guide={status:200,text:JSON.stringify(ORDER_ITEMS)};
       if(SCEN==='slow')return {defer:true,res:guide};
-      return guide;
+      return planned(window.__h.nextGuide,guide,{status:200,text:'[]'});
     }
     if(m==='GET'&&u.indexOf('/ingredient_costs')>-1){
       /* M1: the ledger arrives in the SECOND request. A picker that calls
          itself loaded on the first one offers priced items as new. */
       if(SCEN==='ledgerfail')return {err:true};
-      var ledger={status:200,text:JSON.stringify(COSTS)};
+      var ledger={status:200,text:snap()};
       if(SCEN==='ledgerslow')return {defer:true,res:ledger};
-      return ledger;
+      return planned(window.__h.nextLedger,ledger,ledger);
     }
     if(m==='GET'&&u.indexOf('/ingredient_price_history')>-1)
       return {status:200,text:'[]'};
     if(m==='POST'&&u.indexOf('/ingredient_costs')>-1){
       var row=JSON.parse(JSON.stringify(body));row.id=nextId++;
-      var added={status:201,text:JSON.stringify([row])};
+      var added=window.__h.failWrites?{err:true}:{status:201,text:JSON.stringify([row])};
+      if(!window.__h.failWrites)server.push(row);
       /* B2: hold the write open so the harness can cancel, or open another
          item, before the callback runs. */
       if(SCEN==='inflight')return {defer:true,res:added};
@@ -128,7 +160,9 @@ HARNESS = r"""
     }
     if(m==='PATCH'&&u.indexOf('/ingredient_costs')>-1){
       var p=JSON.parse(JSON.stringify(body));p.id=Number((u.match(/id=eq\.(\d+)/)||[])[1]);
-      var patched={status:200,text:JSON.stringify([p])};
+      var patched=window.__h.failWrites?{err:true}:{status:200,text:JSON.stringify([p])};
+      if(!window.__h.failWrites)for(var k=0;k<server.length;k++)
+        if(server[k].id===p.id)for(var f in p)server[k][f]=p[f];
       if(SCEN==='inflight')return {defer:true,res:patched};
       return patched;
     }
@@ -155,6 +189,8 @@ HARNESS = r"""
   window.XMLHttpRequest=Fake;
   window.__h.releaseDeferred=function(){var d=deferred.slice();deferred.length=0;
     for(var i=0;i<d.length;i++)d[i]();};
+  /* release only the oldest held response - the first save, not the second */
+  window.__h.releaseOne=function(){var f=deferred.shift();if(f)f();};
 
   var realConfirm=window.confirm;
   window.confirm=function(){window.__h.confirms++;return window.__h.confirmReturn;};
@@ -180,6 +216,16 @@ RUNNER = r"""
   function posts(){return H.reqs.filter(function(r){return r.m==='POST'&&r.u.indexOf('/ingredient_costs')>-1;});}
   function hist(){return H.reqs.filter(function(r){return r.m==='POST'&&r.u.indexOf('/ingredient_price_history')>-1;});}
   function set(id,v){var e=$(id);e.value=v;e.dispatchEvent(new Event('input',{bubbles:true}));}
+  function shown(){return $('editModal').className.indexOf('show')>-1;}
+  function toast(){return $('toast').textContent;}
+  function count(){return $('countTag').textContent;}
+  /* really on screen: laid out, not display:none / visibility:hidden, and a
+     real tap target. Only true when kitchen.css has loaded AND not hidden it. */
+  function visible(el){
+    if(!el)return false;
+    var r=el.getBoundingClientRect(),cs=getComputedStyle(el);
+    return r.height>0&&r.width>0&&cs.visibility!=='hidden'&&cs.display!=='none'&&Number(cs.opacity)>0;
+  }
 
   var steps=[];
   function step(fn){steps.push(fn);}
@@ -323,6 +369,10 @@ RUNNER = r"""
          String(findItem(502)&&findItem(502).pack_price));
       ok('B2: item B row is untouched', findItem(501)&&findItem(501).pack_price==null,
          JSON.stringify(findItem(501)&&findItem(501).pack_price));
+      /* B-new: A's response must not close B, which is what is on screen */
+      ok('B-new: A\'s response leaves B open', shown()&&editId===501, 'shown='+shown()+' editId='+editId);
+      ok('B-new: B\'s name is still in the field', $('fName').value==='Distilled white vinegar', $('fName').value);
+      ok('B-new: the toast names A, not "Saved"', toast()==='✓ Sea salt saved', toast());
     });
 
     /* (c) the ADD branch, same sequence */
@@ -339,12 +389,157 @@ RUNNER = r"""
       ok('B2: the add logs against the new row, not null',
          hp[0]&&typeof hp[0].body.ingredient_cost_id==='number',
          hp[0]&&JSON.stringify(hp[0].body.ingredient_cost_id));
+      ok('B-new: a cancelled add\'s toast names it', toast()==='✓ Slab bacon (Asia Intl) added', toast());
+    });
+
+    /* B-new (d): the mispick corrected mid-save. Save Asia Intl, Change, pick
+       Birite, type its numbers. The Asia Intl response must not close Birite,
+       clear what was typed, or claim success for what is on screen. */
+    step(function(){ H.reqs.length=0; closeEdit(); openAdd(); });
+    step(function(){ rowFor('Birite','Slab bacon').click(); });
+    step(function(){ set('fQty','12'); set('fUnit','lb'); set('fPrice','88.50'); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){
+      ok('B-new: Save says it is saving', $('saveBtn').textContent==='Saving…'&&$('saveBtn').disabled,
+         $('saveBtn').textContent+' disabled='+$('saveBtn').disabled);
+    });
+    step(function(){ $('pickChosen').querySelector('.pick-change').click(); });
+    step(function(){
+      ok('B-new: after Change, Save is live again', $('saveBtn').disabled===false&&$('saveBtn').textContent==='Save',
+         $('saveBtn').textContent+' disabled='+$('saveBtn').disabled);
+    });
+    step(function(){ rowFor('Birite','Distilled white vinegar').click(); });
+    step(function(){
+      ok('B-new: picked the second item', editId===501, String(editId));
+      set('fQty','4'); set('fUnit','gal'); set('fPrice','19.96');
+    });
+    step(function(){ H.releaseOne(); });
+    step(function(){
+      ok('B-new: the first response does not close the second item', shown(), 'modal closed');
+      ok('B-new: still showing the second item', editId===501&&$('pickChosenN').textContent==='Distilled white vinegar',
+         'editId='+editId+' chosen='+$('pickChosenN').textContent);
+      ok('B-new: the second item\'s qty survives', $('fQty').value==='4', $('fQty').value);
+      ok('B-new: the second item\'s unit survives', $('fUnit').value==='gal', $('fUnit').value);
+      ok('B-new: the second item\'s price survives', $('fPrice').value==='19.96', $('fPrice').value);
+      ok('B-new: the toast names the first item', toast()==='✓ Slab bacon (Birite) added', toast());
+      ok('B-new: the first item is in the ledger', !!costRowFor(88));
+      ok('B-new: Save is live for the second item', $('saveBtn').disabled===false);
+    });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){ H.releaseDeferred(); });
+    step(function(){
+      var p=H.reqs.filter(function(r){return r.m==='PATCH';});
+      ok('B-new: the second save wrote the second item', p.length===1&&/id=eq\.501/.test(p[0].u),
+         p.map(function(x){return x.u;}).join(','));
+      ok('B-new: the second item\'s own response closes it', !shown());
+      ok('B-new: and names it', toast()==='✓ Distilled white vinegar (Birite) saved', toast());
+    });
+
+    /* B-new (e): a FAILED save, then Cancel, and a different item on screen
+       when the failure lands. The toast names the item that failed; the item
+       on screen is untouched. Between them: reopening the failing item and
+       saving again must not send a second write while the first is out. */
+    function patches(){return H.reqs.filter(function(r){return r.m==='PATCH';});}
+    step(function(){ H.reqs.length=0; H.failWrites=true; openEdit(502); });
+    step(function(){ set('fPrice','555'); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){ closeEdit(); openEdit(502); });
+    step(function(){ set('fPrice','556'); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){
+      ok('B-new: no second write for an item still saving', patches().length===1, 'saw '+patches().length);
+      ok('B-new: and it says why', toast()==='⚠ Sea salt is still saving', toast());
+      ok('B-new: the typed value stays', $('fPrice').value==='556', $('fPrice').value);
+    });
+    step(function(){ closeEdit(); openEdit(costRowFor(169).id); });
+    step(function(){ set('fPrice','130'); });
+    step(function(){ H.releaseDeferred(); H.failWrites=false; });
+    step(function(){
+      ok('B-new: the failure names the item that failed', toast()==='⚠ Sea salt failed — try again', toast());
+      ok('B-new: the failure does not close the other item', shown()&&editId===costRowFor(169).id,
+         'shown='+shown()+' editId='+editId);
+      ok('B-new: the other item\'s typed value survives', $('fPrice').value==='130', $('fPrice').value);
+      ok('B-new: the failed row is not changed locally', Number(findItem(502).pack_price)===777,
+         String(findItem(502).pack_price));
+    });
+    step(function(){ closeEdit(); openEdit(502); });
+    step(function(){ set('fPrice','556'); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){ H.releaseDeferred(); });
+    step(function(){
+      ok('B-new: the retry goes through', !shown()&&Number(findItem(502).pack_price)===556,
+         String(findItem(502).pack_price));
+    });
+  }
+
+  if(H.scen==='retry'){
+    /* M-a. The first load's guide fails and its ledger is held. Retry starts
+       a second load, which succeeds; an item is saved; THEN the first load's
+       ledger lands. It predates the save. If it is applied, the saved row
+       vanishes, the count reads zero, and re-adding hits the unique index. */
+    step(function(){ openAdd(); });
+    step(function(){ ok('M-a: first load shows Retry', !!$('pickList').querySelector('.pick-retry')); });
+    step(function(){ $('pickList').querySelector('.pick-retry').click(); });
+    step(function(){});
+    step(function(){ ok('M-a: Retry loads the picker', !!rowFor('Asia Intl','Slab bacon')); });
+    step(function(){ rowFor('Asia Intl','Slab bacon').click(); });
+    step(function(){ set('fQty','40'); set('fUnit','lb'); set('fPrice','120'); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){ ok('M-a: the save landed', !!costRowFor(169)&&/^3 items/.test(count()), count()); });
+    step(function(){ H.releaseDeferred(); });
+    step(function(){
+      ok('M-a: a superseded ledger does not wipe the saved row', !!costRowFor(169), 'items='+items.length);
+      ok('M-a: the count is not reset', count()==='3 items · 2 priced', count());
+      ok('M-a: the stale ledger raised no error', ledgerLoaded&&!ledgerError);
+    });
+    step(function(){ openAdd(); });
+    step(function(){ ok('M-a: the saved item stays out of the picker', !rowFor('Asia Intl','Slab bacon')); closeEdit(); });
+
+    /* the guide's error path: a superseded guide failure lands late */
+    step(function(){ H.nextGuide.push('defer-err'); init(); init(); });
+    step(function(){});
+    step(function(){ H.releaseDeferred(); });
+    step(function(){ openAdd(); });
+    step(function(){
+      ok('M-a: a superseded guide failure is ignored', !guideError&&!$('pickList').querySelector('.pick-error'));
+      ok('M-a: the picker still works after it', !!rowFor('Birite','Slab bacon'));
+      closeEdit();
+    });
+
+    /* the guide's success path: a superseded EMPTY guide lands late */
+    step(function(){ H.nextGuide.push('defer-empty'); init(); init(); });
+    step(function(){});
+    step(function(){ H.releaseDeferred(); });
+    step(function(){
+      ok('M-a: a superseded guide does not replace the guide', orderItems.length===3, 'orderItems='+orderItems.length);
+    });
+
+    /* the ledger's error path */
+    step(function(){ H.nextLedger.push('defer-err'); init(); });
+    step(function(){ init(); });
+    step(function(){});
+    step(function(){ H.releaseDeferred(); });
+    step(function(){
+      ok('M-a: a superseded ledger failure is ignored', ledgerLoaded&&!ledgerError);
+      ok('M-a: the ledger survives it', !!costRowFor(169)&&count()==='3 items · 2 priced', count());
     });
   }
 
   if(H.scen==='ok'){
     /* nothing is ever selected on your behalf */
     step(function(){ openAdd(); });
+    step(function(){
+      /* M-c: the suite once ran with no stylesheet at all. .pick-list's
+         overflow-y:auto exists only in kitchen.css. */
+      ok('css: kitchen.css is loaded', getComputedStyle($('pickList')).overflowY==='auto',
+         'overflowY='+getComputedStyle($('pickList')).overflowY);
+      var r=rowFor('Asia Intl','Slab bacon');
+      ok('css: a pick row is really on screen', visible(r));
+      ok('css: a pick row is a 44px tap target', r&&r.getBoundingClientRect().height>=44,
+         r&&String(r.getBoundingClientRect().height));
+      ok('css: the filter computes to 16px', getComputedStyle($('pickFilter')).fontSize==='16px',
+         getComputedStyle($('pickFilter')).fontSize);
+    });
     step(function(){
       ok('ok: nothing picked on open', pickId===null);
       ok('ok: chooser shown, no chosen row', $('pickChosen').style.display==='none');
@@ -395,6 +590,8 @@ RUNNER = r"""
       ok('B1: needs-price tap keeps the name',
          $('pickChosenN').textContent==='Distilled white vinegar', $('pickChosenN').textContent);
       ok('B1: needs-price tap opens that ledger row', editId===501, String(editId));
+      ok('css: the chosen line is really on screen', visible($('pickChosen')));
+      ok('css: the chosen vendor is really on screen', visible($('pickChosenV')));
     });
     step(function(){ closeEdit(); });
 
@@ -420,6 +617,7 @@ RUNNER = r"""
     /* the id we POST is the id of the row that was tapped - Asia Intl 169 */
     step(function(){ H.reqs.length=0; rowFor('Asia Intl','Slab bacon').click(); });
     step(function(){
+      ok('css: the chosen line after a new pick is on screen', visible($('pickChosen')));
       ok('ok: tapping picks that row', pickId===169);
       ok('ok: unit is never auto-filled', $('fUnit').value==='');
       ok('ok: the order unit CS is never borrowed', $('fUnit').value!=='CS');
@@ -446,6 +644,7 @@ RUNNER = r"""
       ok('M3: the typed unit is what saves', p[0]&&p[0].body.pack_unit==='lb',
          p[0]&&JSON.stringify(p[0].body.pack_unit));
       ok('ok: modal closed after save', $('editModal').className.indexOf('show')<0);
+      ok('B-new: the toast names the item', toast()==='✓ Slab bacon (Asia Intl) added', toast());
       /* slice 1: closeEdit leaves nothing behind */
       ok('slice1: pickId cleared on close', pickId===null);
       ok('slice1: fields cleared on close', $('fName').value===''&&$('fQty').value===''&&$('fPrice').value==='');
@@ -583,8 +782,11 @@ def main():
         path = os.path.join(td, "costing_under_test.html")
         with open(path, "w", encoding="utf-8") as f:
             f.write(page)
+        # the page links assets/kitchen.css relatively; without this copy
+        # every scenario runs unstyled and no CSS fault can be caught
+        shutil.copytree(os.path.join(ROOT, "assets"), os.path.join(td, "assets"))
         for scen in ("ok", "slow", "fail", "empty", "ledgerslow",
-                     "ledgerfail", "inflight"):
+                     "ledgerfail", "inflight", "retry"):
             res, err = run_scenario(chrome, path, scen)
             if res is None:
                 fails.append("%s: harness never reported\n%s" % (scen, err))
@@ -598,7 +800,7 @@ def main():
             print("  " + x)
         print("\nsee docs/costing-bulk-entry.md, slice 1")
         return 1
-    print("costing guard: clean (%d assertions, 7 scenarios, %s)" % (total, PAGE))
+    print("costing guard: clean (%d assertions, %d scenarios, %s)" % (total, 8, PAGE))
     return 0
 
 

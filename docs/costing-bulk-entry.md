@@ -295,6 +295,11 @@ written to a production table mid-entry. It cannot be done that way.
   2. Keep the real viewport **under 760px**, or `@media (min-width:760px)` re-pads `.header`
      with `calc((100% - 720px)/2 + 18px)`, which computes negative against a 390px wrapper
      and clamps to zero, silently deleting the header padding.
+  3. A plain 390px wrapper does **not** hold a `position:fixed` modal — the modal positions
+     against the real window, and `vh` still follows the real window too. So the modal's
+     *height* (`max-height:88vh`, the picker list inside it) cannot be measured inside the
+     wrapper. Measure **widths** in the wrapper; judge **height** from a screenshot taken in
+     a tall window.
 - **Assert, don't eyeball:** `scrollWidth > clientWidth` for truncation, computed `fontSize`
   for the 16px rule, computed `borderBottomStyle` for dividers.
 
@@ -345,7 +350,7 @@ branch. What the fixes were, and what guards them:
 | finding | fix | guarded by |
 |---|---|---|
 | **B2** a price logged against the wrong item | `saveItem()`'s EDIT branch captures `editId` into a local `savingId` at call time and the callback uses only that — for the `items[]` update and for `logPrice`. The ADD branch already used the POST's own returned row id. | `inflight` scenario: save-then-Cancel, save-then-open-another, and the ADD path |
-| **B1** you can't tell which Slab bacon you picked | `pickExisting()` passes the tapped order-guide row through to `openEdit()`, which keeps `pickWrap` visible showing vendor and name. `Change` is hidden there — re-linking is slice 2. | `ok` scenario, `B1:` assertions |
+| **B1** you can't tell which Slab bacon you picked | **Solved inside ＋ Add only.** `pickExisting()` passes the tapped order-guide row through to `openEdit()`, which keeps `pickWrap` visible showing vendor and name. `Change` is hidden there — re-linking is slice 2. **Unsolved from the main list:** tapping either Slab bacon row there still hides the picker area and opens "Edit item / Slab bacon" with no vendor. The fix is slice 2's "show the picker on edit"; it is deliberately not done here. | `ok` scenario, `B1:` assertions (＋ Add path only) |
 | **M1** the picker usable before the ledger loaded | `ledgerLoaded` / `ledgerError` alongside the guide's. "Loaded" means **both** requests returned; a ledger failure gets the same error-with-Retry. | `ledgerslow`, `ledgerfail` scenarios |
 | **M3** unit not required | `saveItem()` blocks on an empty unit the way it blocks on a missing pick. | `ok` scenario, `M3:` assertions |
 | **M4** the suite didn't guard the core promise | Filtering/re-filtering/clearing picks nothing; Change clears qty, unit, price and alias; the three above. Chrome path is `$CHROME`-overridable; CI runs it (`.github/workflows/costing-guard.yml`). | itself |
@@ -353,6 +358,44 @@ branch. What the fixes were, and what guards them:
 Every one of those assertions was proved to bite by reintroducing the exact fault and
 watching it fail — including auto-picking the sole filter match, and a `Change` that
 leaves the numbers behind.
+
+### Round 3 — one bug, found three times
+
+The third sign-off found three more blockers, and together with round 2's B2 they are
+**one bug**: an async callback touching shared state without asking whether its response is
+still the current one. B2's callback re-read the shared `editId`. B-new's callback closed
+whatever modal was open *now* and toasted over it. M-a's superseded load overwrote `items[]`.
+
+So the fix is the pattern, not the instances. **Every async callback captures what it needs
+at call time and checks it is still the current operation before touching shared state or
+the screen.** One counter per kind of operation names "current": `loadGen` (bumped by every
+`init()`), `modalGen` (bumped by `modalMoved()` whenever the edit modal stops showing what
+it showed — open, close, pick, Change), `histGen` (price-history open/close). All six
+callbacks on the page were audited, not only the three reported: both `init()` requests,
+both save branches, Retire/Restore, and Price history. `logPrice` has no callback.
+
+| finding | fix | guarded by |
+|---|---|---|
+| **B-new** a slow save closes the wrong modal and says it worked | `saveItem()` captures `modalGen`, the item's label and a key (`oi:<id>` / `ic:<id>`) at call time. On return it `closeEdit()`s **only if `modalGen` is unchanged**; otherwise it updates `items[]`, the list and an open picker silently. Toasts name the item — "✓ Slab bacon (Asia Intl) added", "⚠ Sea salt failed — try again" — so they are true whatever is on screen. Save reads **Saving…** while *this* modal's save is in flight and is live again the moment the modal moves on. A second write for an item whose first is still out is refused with "… is still saving", not sent. `toggleActive()` got the same capture-and-check. | `inflight` (b)–(e): modal state, toast text, and the second item's typed values, not just the ids written |
+| **M-a** Retry races the old load and can delete a saved row | `init()` takes `gen=++loadGen`; both callbacks return early if `gen!==loadGen`, on the success and the null/error paths alike. | `retry` scenario: a stale ledger landing after a save, a stale guide failure, a stale empty guide, a stale ledger failure |
+| **M-c** the suite ran with no stylesheet | `check_costing.py` copies `assets/` beside the page, so `assets/kitchen.css` resolves. The header comment now says what was wrong. | `css:` assertions — the sheet is loaded, a `.pick-row` and the chosen line are really on screen, a pick row is a 44px target, the filter computes to 16px |
+
+The suite's fake ledger is now **stateful**: a GET answers with what existed when it was
+sent, so a slow GET is genuinely stale by the time it lands. A static fixture could not have
+shown M-a.
+
+Each guard was proved to bite by reintroducing the exact fault: closing whatever modal is
+open (9 failures), un-named toasts (6), a Save that is disabled with no label and stays dead
+across Change (3), no load generation (8; ledger check alone removed: 5), no assets copy (3),
+a CSS rule hiding `.pick-row` (2) and hiding the chosen line (3), and no in-flight guard (2).
+
+**Landed early, for slice 5's review:** the picker filter is already its own 16px class
+(`.pick-filter`, not `.search`), and the "No order-guide items match “…”" and "Every
+order-guide item is already priced" messages already exist. Slice 5 owes word-by-word and
+alias matching and the `N of 250 match` count; it should review these, not rebuild them.
+
+**Not done here, on purpose:** full control locking during a save (slice 4). Save is
+honest about being busy; the picker, Cancel and Change stay live.
 
 **Test labels follow this document**, not the v1 review's numbering: `slice1:` for a
 slice-1 promise, `B1`/`B2`/`M1`/`M3` for the findings above. The suite's old `M1:`/`M2:`
@@ -386,13 +429,16 @@ in one slice is often a blocker in the next.
   active plus one retired row on the same `order_item_id`, so which of the two the picker
   routes a tap to is list-order luck.
 - m10. A retired unpriced row shows `needs price` in the picker and taps through into a
-  retired row.
+  retired item. Recorded, not fixed — excluding retired rows is Slice 2's
+  `costedOrderIds()` change and belongs with it. *(m12 was the same finding written twice;
+  merged here.)*
 - m11. `pickExisting` → `openEdit` is not specified by slice 1 and partly pre-empts slice 2;
   `pickItem`'s auto-focus to `fQty` is a speed affordance, which slice 1 said it would not add.
   *(the auto-focus is now removed; `pickExisting` stays, and now keeps the chosen line — B1)*
-- m12. A retired unpriced row shows `needs price` in the picker and taps through into a
-  retired item. Same shape as m10. Recorded, not fixed — excluding retired rows is Slice 2's
-  `costedOrderIds()` change and belongs with it.
+  **Accepted deviation, and wider than it looks:** because it goes through `openEdit()`, the
+  ＋ Add flow also exposes **Retire** and **Price history** for a needs-price row. Both are
+  slice 2 territory. Slice 2's review should treat them as already shipped, not new.
+- m12. *(merged into m10)*
 - m13. If the guide GET fails but the ledger loads, every linked item lists under
   "Off-guide items", because `vendorOf()` resolves through `orderById`. The picker says so
   loudly; the list behind it does not. Recorded, not fixed.
@@ -400,6 +446,17 @@ in one slice is often a blocker in the next.
   neighbouring row. The M1 fix shrinks the window — the picker is not tappable at all until
   both requests return — but the main list behind the modal still repaints. Recorded, not
   fixed.
+- m15. `loadGen` ignores a *superseded* load, not a *current* one that is merely old. If the
+  current load's ledger GET was sent before a save and lands after it, it still replaces
+  `items[]` without that row. Reaching this needs a save in flight while the ledger is still
+  loading, which the picker already blocks for ＋ Add (it is untappable until both requests
+  land); it is reachable only through an edit from the main list. Recorded, not fixed —
+  reconciling a reload with in-flight writes is slice 4's job.
+- m16. Named toasts are longer. `.toast` has no max-width and sits at `left:50%`, so at
+  390px a long name wraps to two or three lines. Readable, not measured on a phone.
+- m17. The in-flight guard keys on `order_item_id` or ledger id. A Custom add has neither,
+  so Cancel-and-re-add of the same Custom name mid-save can still send two POSTs.
+  Slice 4's reconciliation covers it.
 
 ---
 ---

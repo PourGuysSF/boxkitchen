@@ -164,6 +164,17 @@ var ledgerLoaded=false;       // the ingredient_costs GET has come back
 var ledgerError=false;        // the ingredient_costs GET failed
 var editSnap=null;            // field values as the modal opened, for editDirty()
 var st=null;
+/* Every async callback on this page asks one question before it touches shared
+   state or the screen: is the thing I was started for still the current one?
+   Each of these counters names "the current one" for one kind of operation;
+   a callback captures the value when its request is SENT and compares on
+   return. Re-reading a shared variable (editId) in the callback instead is
+   the bug this page has shipped three times. */
+var loadGen=0;                // bumped by every init(); a load whose gen is stale is ignored
+var modalGen=0;               // bumped whenever the edit modal stops showing what it showed
+var histGen=0;                // bumped whenever the price-history modal opens or closes
+var savingGen={};             // modalGen -> true while THAT modal state's save is in flight
+var savingKey={};             // 'oi:<order_item id>' / 'ic:<ledger id>' -> true while in flight
 
 function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
 function api(m,t,q,d,cb){var x=new XMLHttpRequest();x.open(m,SB+'/rest/v1/'+t+(q?'?'+q:''));x.setRequestHeader('apikey',SK);x.setRequestHeader('Authorization','Bearer '+SK);if(d){x.setRequestHeader('Content-Type','application/json');x.setRequestHeader('Prefer','return=representation');}x.onload=function(){var r=null;try{r=JSON.parse(x.responseText);}catch(e){}if(cb)cb(r,x.status);};x.onerror=function(){if(cb)cb(null);};x.send(d?JSON.stringify(d):null);}
@@ -192,21 +203,30 @@ function boot(){
 }
 
 /* ---- Load ---- */
+/* The picker redraws only while it is the thing on screen. */
+function refreshPicker(){if(document.getElementById('editModal').classList.contains('show')&&document.getElementById('pickChoose').style.display!=='none')renderPick();}
 function init(){
+  // Retry calls this while an earlier load may still be outstanding. Only the
+  // newest load may write: a superseded ledger landing after a save would
+  // replace items[] with a list that predates it — the saved row vanishes,
+  // and re-adding it hits the unique index forever.
+  var gen=++loadGen;
   guideLoaded=false;guideError=false;ledgerLoaded=false;ledgerError=false;
-  if(document.getElementById('editModal').classList.contains('show')&&document.getElementById('pickChoose').style.display!=='none')renderPick();
+  refreshPicker();
   api('GET','order_items','location=eq.'+encodeURIComponent(LOCATION)+'&active=eq.true&order=vendor.asc,sort_order.asc',null,function(r){
+    if(gen!==loadGen)return;
     // A null response is api()'s onerror — the guide did not load, and the
     // picker has to say that rather than look like an empty order guide.
     guideError=!Array.isArray(r);guideLoaded=!guideError;
     orderItems=Array.isArray(r)?r:[];orderById={};
     for(var i=0;i<orderItems.length;i++)orderById[orderItems[i].id]=orderItems[i];
     // an already-open picker fills in when the data lands
-    if(document.getElementById('editModal').classList.contains('show')&&document.getElementById('pickChoose').style.display!=='none')renderPick();
+    refreshPicker();
     api('GET','ingredient_costs','location=eq.'+encodeURIComponent(LOCATION)+'&order=name.asc',null,function(r2){
+      if(gen!==loadGen)return;
       ledgerError=!Array.isArray(r2);ledgerLoaded=!ledgerError;
       items=Array.isArray(r2)?r2:[];render();
-      if(document.getElementById('editModal').classList.contains('show')&&document.getElementById('pickChoose').style.display!=='none')renderPick();
+      refreshPicker();
     });
   });
 }
@@ -258,10 +278,21 @@ function render(){
 function findItem(id){for(var i=0;i<items.length;i++)if(items[i].id===id)return items[i];return null;}
 function costedOrderIds(){var s={};for(var i=0;i<items.length;i++)if(items[i].order_item_id!=null)s[items[i].order_item_id]=true;return s;}
 
+/* "Slab bacon (Asia Intl)" — how a toast names an item, so the message is
+   true whatever the modal is showing by the time it appears. */
+function labelOf(name,vendor){return vendor?name+' ('+vendor+')':name;}
+function itemLabel(it){var o=it.order_item_id!=null?orderById[it.order_item_id]:null;return labelOf(nameOf(it),o&&o.vendor);}
+/* The modal now shows something else: any save still in flight belongs to
+   what it showed before, and must not close or clear this. */
+function modalMoved(){modalGen++;syncSaveBtn();}
+/* Save is never silently dead: busy means busy for what is on screen now. */
+function syncSaveBtn(){var b=document.getElementById('saveBtn'),busy=!!savingGen[modalGen];b.disabled=busy;b.textContent=busy?'Saving…':'Save';}
+
 /* ingredient_costs row for an order-guide item, or null. */
 function costRowFor(orderItemId){for(var i=0;i<items.length;i++)if(items[i].order_item_id===orderItemId)return items[i];return null;}
 
 function openAdd(){
+  modalMoved();
   editId=null;pickId=null;
   document.getElementById('editTitle').textContent='Add costed item';
   document.getElementById('editSub').textContent='Price what you buy.';
@@ -282,7 +313,7 @@ function clearFields(){
 }
 /* Back to choosing. Changing the item clears the numbers with it — one item's
    pack price can never be carried onto another. */
-function clearPick(){pickId=null;clearFields();showChooser();setTimeout(function(){document.getElementById('pickFilter').focus();},60);}
+function clearPick(){modalMoved();pickId=null;clearFields();showChooser();setTimeout(function(){document.getElementById('pickFilter').focus();},60);}
 function showChooser(){
   document.getElementById('pickChange').style.display='';
   document.getElementById('pickChoose').style.display='';
@@ -331,6 +362,7 @@ function renderPick(){
 /* A tap is the pick. There is no widget holding a selection that can drift. */
 function pickItem(id){
   var o=orderById[id];if(!o)return;
+  modalMoved();
   pickId=id;
   document.getElementById('fName').value=o.name;document.getElementById('fName').disabled=true;
   /* Unit is NOT filled from order_items.unit — that is the order unit (CS/EA),
@@ -340,6 +372,7 @@ function pickItem(id){
   showChosen(o.vendor,o.name);
 }
 function pickCustom(){
+  modalMoved();
   pickId='custom';
   document.getElementById('fName').value='';document.getElementById('fName').disabled=false;
   showChosen('Off-guide','✎ Custom item');
@@ -360,6 +393,7 @@ function showChosen(vendor,name){
    picker is what opened this modal. */
 function openEdit(id,chosen){
   var it=findItem(id);if(!it)return;
+  modalMoved();
   editId=id;
   document.getElementById('editTitle').textContent='Edit item';
   document.getElementById('editSub').textContent=it.active?'Update pack size or price.':'This item is retired.';
@@ -394,6 +428,7 @@ function snapFields(){
 /* Closing must leave nothing behind: slice 6 keeps this modal open after a
    save, and a stale pickId there would price the wrong item. */
 function closeEdit(){
+  modalMoved();
   document.getElementById('editModal').classList.remove('show');
   pickId=null;editId=null;editSnap=null;
   document.getElementById('pickFilter').value='';
@@ -419,38 +454,50 @@ function saveItem(){
   // every recipe costed off it inherits a unit nobody chose.
   if(!unit){showToast('Unit is required',true);document.getElementById('fUnit').focus();return;}
   var packQty=qtyRaw!==''?num(qtyRaw):null,packPrice=priceRaw!==''?num(priceRaw):null;
-  var btn=document.getElementById('saveBtn');btn.disabled=true;
   var nowIso=new Date().toISOString();
+  // What this save belongs to, captured NOW — never re-read in the callback.
+  // gen says whether the modal is still showing this save when it returns;
+  // label names the item so the toast is true even if it is not.
+  var gen=modalGen,label,key,payload,orderItemId,savingId,priceChanged;
 
   if(editId==null){
-    // ADD
-    var orderItemId=(pickId!=='custom')?pickId:null;
+    orderItemId=(pickId!=='custom')?pickId:null;
+    var o=orderItemId!=null?orderById[orderItemId]:null;
+    label=o?labelOf(o.name,o.vendor):name;
+    key=orderItemId!=null?'oi:'+orderItemId:null;
     // guard against a duplicate on the same order-guide item
-    if(orderItemId!=null){var used=costedOrderIds();if(used[orderItemId]){btn.disabled=false;showToast('That order-guide item is already costed',true);return;}}
-    var payload={location:LOCATION,order_item_id:orderItemId,name:name,invoice_alias:alias,pack_qty:packQty,pack_unit:unit,pack_price:packPrice,active:true,updated_at:nowIso};
-    api('POST','ingredient_costs',null,payload,function(r,status){
-      btn.disabled=false;
-      if(r&&r.length){var row=r[0];items.push(row);if(packPrice!=null)logPrice(row.id,packPrice,packQty,unit,null);closeEdit();render();showToast('Item added',false);}
-      else{showToast('Add failed — try again',true);}
-    });
+    if(orderItemId!=null&&costedOrderIds()[orderItemId]){showToast('That order-guide item is already costed',true);return;}
+    payload={location:LOCATION,order_item_id:orderItemId,name:name,invoice_alias:alias,pack_qty:packQty,pack_unit:unit,pack_price:packPrice,active:true,updated_at:nowIso};
   }else{
-    // EDIT
-    var it=findItem(editId);if(!it){btn.disabled=false;return;}
-    var priceChanged=(num(it.pack_price)!==num(packPrice))||(num(it.pack_qty)!==num(packQty));
-    var patch={name:(it.order_item_id!=null?it.name:name),invoice_alias:alias,pack_qty:packQty,pack_unit:unit,pack_price:packPrice,updated_at:nowIso};
-    // The id this save belongs to, captured NOW. closeEdit() sets editId=null
-    // and opening another item overwrites it, so a callback that re-read the
-    // shared editId would update the wrong row and log the price against the
-    // wrong item — or against null.
-    var savingId=editId;
-    api('PATCH','ingredient_costs','id=eq.'+savingId,patch,function(r){
-      btn.disabled=false;
-      if(r&&r.length){var row=r[0];for(var i=0;i<items.length;i++)if(items[i].id===savingId)items[i]=row;
-        if(priceChanged&&packPrice!=null)logPrice(savingId,packPrice,packQty,unit,null);
-        closeEdit();render();showToast('Saved',false);}
-      else{showToast('Save failed — try again',true);}
-    });
+    var it=findItem(editId);if(!it)return;
+    // closeEdit() sets editId=null and opening another item overwrites it,
+    // so a callback that re-read the shared editId would update the wrong
+    // row and log the price against the wrong item — or against null.
+    savingId=editId;label=itemLabel(it);key='ic:'+savingId;
+    priceChanged=(num(it.pack_price)!==num(packPrice))||(num(it.pack_qty)!==num(packQty));
+    payload={name:(it.order_item_id!=null?it.name:name),invoice_alias:alias,pack_qty:packQty,pack_unit:unit,pack_price:packPrice,updated_at:nowIso};
   }
+  // Cancel and reopen the same item mid-save and it is still offered; a
+  // second write for it would race the first. Say so rather than send it.
+  if(key&&savingKey[key]){showToast(label+' is still saving',true);return;}
+  savingGen[gen]=true;if(key)savingKey[key]=true;syncSaveBtn();
+
+  function done(r,verb){
+    delete savingGen[gen];if(key)delete savingKey[key];
+    var ok=!!(r&&r.length);
+    if(ok){
+      if(savingId==null){items.push(r[0]);if(packPrice!=null)logPrice(r[0].id,packPrice,packQty,unit,null);}
+      else{for(var i=0;i<items.length;i++)if(items[i].id===savingId)items[i]=r[0];
+        if(priceChanged&&packPrice!=null)logPrice(savingId,packPrice,packQty,unit,null);}
+      // Only close what is still this save. If the user has moved on, the
+      // data and the list update silently and what they are typing stays.
+      if(gen===modalGen)closeEdit();else refreshPicker();
+      render();showToast(label+' '+verb,false);
+    }else showToast(label+' failed — try again',true);
+    syncSaveBtn();
+  }
+  if(savingId==null)api('POST','ingredient_costs',null,payload,function(r){done(r,'added');});
+  else api('PATCH','ingredient_costs','id=eq.'+savingId,payload,function(r){done(r,'saved');});
 }
 /* Append a price-history row (fire-and-forget; the master already holds current price). */
 function logPrice(icId,price,qty,unit,invoiceRef){
@@ -458,11 +505,14 @@ function logPrice(icId,price,qty,unit,invoiceRef){
 }
 function toggleActive(){
   var it=findItem(editId);if(!it)return;
-  var toActive=!it.active;
+  var toActive=!it.active,id=it.id,label=itemLabel(it);
   if(!toActive&&!confirm('Retire this item? It keeps its price history but drops off the active list.'))return;
-  api('PATCH','ingredient_costs','id=eq.'+editId,{active:toActive,updated_at:new Date().toISOString()},function(r){
-    if(r&&r.length){it.active=toActive;closeEdit();render();showToast(toActive?'Restored':'Retired',false);}
-    else showToast('Update failed — try again',true);
+  var gen=modalGen;
+  api('PATCH','ingredient_costs','id=eq.'+id,{active:toActive,updated_at:new Date().toISOString()},function(r){
+    if(r&&r.length){var cur=findItem(id);if(cur)cur.active=toActive;
+      if(gen===modalGen)closeEdit();else refreshPicker();
+      render();showToast(label+(toActive?' restored':' retired'),false);}
+    else showToast(label+' — update failed, try again',true);
   });
 }
 
@@ -472,7 +522,10 @@ function openHist(){
   document.getElementById('histName').textContent=nameOf(it);
   document.getElementById('histBody').innerHTML='<div class="hist-empty">Loading…</div>';
   document.getElementById('histModal').classList.add('show');
+  var gen=++histGen;
   api('GET','ingredient_price_history','ingredient_cost_id=eq.'+it.id+'&order=effective_date.desc,id.desc',null,function(r){
+    // closed, or reopened on another item: this history is not the one on screen
+    if(gen!==histGen)return;
     var rows=Array.isArray(r)?r:[];
     if(!rows.length){document.getElementById('histBody').innerHTML='<div class="hist-empty">No price changes logged yet.</div>';return;}
     var h='';
@@ -483,7 +536,7 @@ function openHist(){
     document.getElementById('histBody').innerHTML=h;
   });
 }
-function closeHist(){document.getElementById('histModal').classList.remove('show');}
+function closeHist(){histGen++;document.getElementById('histModal').classList.remove('show');}
 
 function showToast(msg,isErr){var t=document.getElementById('toast');t.textContent=(isErr?'⚠ ':'✓ ')+msg;t.classList.toggle('err',!!isErr);t.classList.add('show');clearTimeout(st);st=setTimeout(function(){t.classList.remove('show');},1600);}
 /* A stray tap outside the modal used to throw away everything typed. */
