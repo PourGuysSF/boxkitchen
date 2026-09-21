@@ -1,6 +1,7 @@
 # Costing — make the ledger fillable
 
-Status: **Slice 1 shipped** — merged to `main` as `7d79bd6` (PR #143, squashed; branch
+Status: **Slice 2 built** on `costing-slice2-undo`, awaiting review — see "Slice 2 as
+built" below, and m21–m25 for what it left open. **Slice 1 shipped** — merged to `main` as `7d79bd6` (PR #143, squashed; branch
 deleted). Four rounds of review; round 4 found no fourth async-staleness bug and passed it.
 See "Slice 1 as built" below, and m18–m20 for the three majors round 4 left open. Slices 2–6
 are still planned.
@@ -407,6 +408,42 @@ Also fixed, small: `.pick-change` was 40px against the plan's own 44px minimum; 
 auto-focus to Pack qty after a pick is gone (speed is not in this slice); a dead
 expression in `check_costing.py` removed.
 
+## Slice 2 as built
+
+"Mistakes can be undone." Four fixes, one per promise, plus m20 because the magnitude
+check could not be built honestly without it.
+
+| promise | as built | guarded by |
+|---|---|---|
+| **Re-link on edit** | `openEdit()` no longer hides `pickWrap` on any path — the chosen line with its vendor is always on screen, and **Change** is live. `renderPick()` gains a relink mode: it lists only legal targets (a guide item held by another *active* row is excluded, because the partial unique index would reject it) and a tap re-points *this* row instead of navigating to another. `saveItem()`'s EDIT branch writes the new `order_item_id` and name. | `relink` scenario |
+| **Retired rows stop blocking** | `costedOrderIds()` and `costRowFor()` both count **active rows only**, which is exactly what `ingredient_costs_one_active_per_order_item` enforces — the UI now agrees with the constraint instead of being stricter than it. Fixes m10 (a retired unpriced row showed "needs price" and tapped through into a retired item) and settles m9 (active-only makes the first match the only match). | `retired` scenario |
+| **`logPrice` gets a callback** | A failed history write is surfaced as a warning toast naming the item. The ledger write is **never rolled back** — see the decision below. | `histfail` scenario |
+| **Magnitude check on edit** | `magnitudeWarning()` asks before saving when the new unit cost is ≥10× or ≤1/10th the old one, **or** when the unit itself changed under an existing price. Adds never ask: there is no previous cost to compare. | `magnitude` scenario |
+| **m20** | `priceChanged` now includes `pack_unit`, so a unit-only edit writes a history row — and the magnitude check can see the edit that most reliably swings unit cost 16×. | `magnitude` scenario, `m20:` assertions |
+
+**Two decisions this slice had to make, recorded because they are judgement, not fact:**
+
+1. **Re-linking on an edit keeps qty, unit, price and alias; it replaces only the
+   name/vendor binding.** Slice 1's rule — Change clears the numbers — is right for ＋ Add,
+   where the numbers were typed *for* the item being abandoned. It is wrong for the repair
+   this slice exists to enable: there the price is correct and the *link* is what is broken,
+   so clearing the numbers would destroy the data being rescued. `Change` therefore does two
+   different things, and `changePick()` branches on `editId` to say which. The hint text on
+   an edit says so out loud: "The pack size and price you see stay as they are."
+2. **A failed price-history write never rolls back the ledger write.** The ledger is what
+   the kitchen prices from; unwinding a correct price because its audit row failed would
+   turn a bookkeeping failure into a costing failure. So the price stands, and the failure is
+   said out loud — "⚠ Sea salt saved, but its price history didn't record" — rather than
+   swallowed. Re-saving the same price writes the missing row (m24).
+
+**Also closed, as a side effect:** the "unsolved from the main list" half of B1. Tapping
+either Slab bacon in the main list now opens an edit whose chosen line names its vendor,
+because the picker is no longer hidden there.
+
+**Not in this slice, on purpose:** speed of any kind (slices 5 and 6), invoice provenance
+(slice 3), and control locking during a save — including Retire as a second write path,
+m19 — which is slice 4.
+
 ## Minors list
 
 Carried from the v1 review; append as building proceeds. Do not clear it — something minor
@@ -528,6 +565,33 @@ zero-match line; m13's "the picker says so loudly" is not true as built. The Ret
 names no item. `openHist()` sets `histName` from `nameOf(it)`, so the price-history modal for
 either Slab bacon reads just "Slab bacon" — `itemLabel()` already exists and is what the toasts
 use. B1 is solved on every surface that **writes**, and unsolved on these two that **read**.
+
+### Added by slice 2 (branch `costing-slice2-undo`)
+
+- m21. **Re-linking a row does not move its price history.** History rows hang off the
+  ledger row id, not off `order_item_id`, so after a re-link the existing trail describes
+  a different guide item than the row now points at. For the mis-link repair this is
+  arguably right — it is the same physical purchase, recorded before the link was
+  corrected — but nothing says so, and the price-history modal gives no hint that the
+  earlier rows predate the re-link. Recorded, not fixed; slice 3 is where provenance
+  gets its own thinking.
+- m22. **Swapping two rows' links needs a detour through Custom.** The re-link chooser
+  hides any guide item already held by another *active* row, which is what the partial
+  unique index requires. So correcting a straight transposition — row A on item B, row B
+  on item A — means unlinking one row to Custom, re-linking the other, then coming back.
+  Correct, and unexplained by the UI.
+- m23. **The relink chooser's zero-state wording is written for ＋ Add.** With every other
+  guide item spoken for it still reads "Every order-guide item is already priced — use
+  **Custom** below". In relink mode "already priced" should be "already costed", and
+  Custom means *unlink*, not *add off-guide*. Cosmetic, recorded.
+- m24. **A failed price-history write has no retry affordance.** It is surfaced as a
+  warning toast naming the item (slice 2's fix), and the recovery is to save the same
+  price again, which writes the history row. Nothing in the message says that. A real
+  retry belongs with slice 4's reconciliation.
+- m25. **The magnitude check compares against the row's own previous cost, including
+  across a re-link.** Re-link and re-price in one save and the question contrasts the new
+  unit cost with the *old item's* — the same ledger row, but arguably not a comparable
+  number. Left as is: the alternative is not asking at all on the save that changes most.
 
 ### A correction to "How to verify without touching live data"
 
