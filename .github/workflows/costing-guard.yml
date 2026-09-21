@@ -1,0 +1,25 @@
+# The costing picker's promise — nothing is ever picked for you, and the price
+# lands on the row you tapped — is invisible to the styling guard and cannot be
+# tested against the live database. check_costing.py drives the real page in
+# headless Chrome against a stubbed api(), so it can run here too.
+name: costing guard
+
+on:
+  pull_request:
+    paths: ['tempest_costing.html', 'assets/**', 'scripts/check_costing.py']
+  push:
+    branches: [main]
+    paths: ['tempest_costing.html', 'assets/**', 'scripts/check_costing.py']
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: browser-actions/setup-chrome@v1
+        id: chrome
+        with:
+          chrome-version: stable
+      - run: python3 scripts/check_costing.py
+        env:
+          CHROME: ${{ steps.chrome.outputs.chrome-path }}
