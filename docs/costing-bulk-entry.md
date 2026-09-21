@@ -1,7 +1,9 @@
 # Costing — make the ledger fillable
 
-Status: **Slice 1 built** (branch `costing-slice1-pick`, PR #143), reviewed, and the
-review's findings fixed — see "Slice 1 as built" below. Slices 2–6 are still planned.
+Status: **Slice 1 shipped** — merged to `main` as `7d79bd6` (PR #143, squashed; branch
+deleted). Four rounds of review; round 4 found no fourth async-staleness bug and passed it.
+See "Slice 1 as built" below, and m18–m20 for the three majors round 4 left open. Slices 2–6
+are still planned.
 v2, rewritten 2026-09-16 after the v1 plan was reviewed and rejected. The review that rejected it is preserved verbatim in the
 appendix; read it before this, because this document is the answer to it.
 
@@ -445,7 +447,8 @@ in one slice is often a blocker in the next.
 - m14. The list redraws when the ledger arrives, and a tap at that instant can land on a
   neighbouring row. The M1 fix shrinks the window — the picker is not tappable at all until
   both requests return — but the main list behind the modal still repaints. Recorded, not
-  fixed.
+  fixed. *That shrunk window is the **load** path only; m18 is the same failure shape on the
+  **save** path, where the picker is fully tappable.*
 - m15. `loadGen` ignores a *superseded* load, not a *current* one that is merely old. If the
   current load's ledger GET was sent before a save and lands after it, it still replaces
   `items[]` without that row. Reaching this needs a save in flight while the ledger is still
@@ -453,10 +456,106 @@ in one slice is often a blocker in the next.
   land); it is reachable only through an edit from the main list. Recorded, not fixed —
   reconciling a reload with in-flight writes is slice 4's job.
 - m16. Named toasts are longer. `.toast` has no max-width and sits at `left:50%`, so at
-  390px a long name wraps to two or three lines. Readable, not measured on a phone.
+  390px a long name wraps to two or three lines. ~~Readable, not measured on a phone.~~
+  **Measured (round 4), and the guess was exact.** `.toast` is `position:fixed; left:50%`
+  with no `right` and no `width`, so its available width is viewport − 50% = **195px** at
+  390. "Slab bacon (Asia Intl) added" → 195×66, 2 lines; "Distilled white vinegar (Birite)
+  failed — try again" → 195×88, 3 lines. At `bottom:30px` an 88px toast reaches y≈118 and
+  overlaps the modal's button row, but `.toast` is `pointer-events:none`, so it never blocks
+  a tap. Acceptable as shipped; a `max-width` would be the fix if slice 6's longer run makes
+  it grating.
 - m17. The in-flight guard keys on `order_item_id` or ledger id. A Custom add has neither,
   so Cancel-and-re-add of the same Custom name mid-save can still send two POSTs.
   Slice 4's reconciliation covers it.
+
+### Added by round 4's review (post-merge, #143)
+
+Round 4 found **no fourth instance of the async-staleness bug** — all six callbacks capture
+at call time and check they are still current, and a held save across a Change was driven end
+to end with both Slab bacons kept apart (`POST oi88 15lb $90`, `POST oi169 20lb $150`, the
+second item's typed values untouched by the first item's response). These three are majors
+that do not break a slice-1 promise, recorded here so slices 2 and 4 inherit them.
+
+- m18. **The picker repaints under your thumb when a superseded save lands.** Round 3
+  replaced the unconditional `closeEdit()` in `saveItem()`'s `done()` with
+  `if(gen===modalGen)closeEdit();else refreshPicker()`. The `else` branch redraws a picker
+  the user is looking at, with no action from them. Measured in `#inflight` — save Birite
+  Slab bacon, hit **Change**, sit on the chooser, release the held POST:
+
+  ```
+  BEFORE  Asia Intl Slab bacon @y189 | Birite Slab bacon @y241
+          Birite vinegar (needs price) @y293 | Custom @y345      listH=200
+  AFTER   Asia Intl Slab bacon @y189 | Birite vinegar (needs price) @y241
+          Custom @y293                                           listH=148
+  ```
+
+  A different item now occupies y241 and a thumb already descending lands on it. Recoverable,
+  because the chosen line then shows the wrong vendor before you save — which is why it is not
+  a blocker. **Slice 6 must fix it before Save & next ships**, because Save & next makes this
+  repaint happen on every item of a run. Same failure shape as m14, opposite path.
+
+- m19. **Retire is a live second write path during a save, and it is not covered by
+  `savingKey`.** The "Slice 1 as built" note says only *"the picker, Cancel and Change stay
+  live"* — that list is navigation and reads. Measured with a save held on row 502:
+  `save="Saving…" disabled=true`, but `retireDisabled=false cancelDisabled=false
+  histDisabled=false`, and two PATCHes go out on the same row —
+  `{pack_price:42,…}` and `{active:false,…}`. `toggleActive()` neither reads nor sets
+  `savingKey`, so the guard that refuses a double *Save* does not refuse Save-then-Retire.
+  Three of the four orderings converge; in the fourth (server applies the save first, its
+  response lands last) `items[i]=r[0]` overwrites the retire with `active:true` and the row
+  shows active in a list whose database row is retired, until a reload. Self-healing and
+  cosmetic. **Slice 4's "disable every control in flight" must include Retire and Price
+  history, not just the two save buttons and the picker.**
+
+- m20. **Editing only the Unit writes no price-history row.** `priceChanged`
+  (`tempest_costing.html`, `saveItem()`'s EDIT branch) tests `pack_price` and `pack_qty` and
+  not `pack_unit`. Measured: `Sea salt 2 lb @ $10` → change unit to `oz` only → Save sends
+  `["PATCH ingredient_costs"]` and **0** history rows; the price-change control sends
+  `["PATCH","POST ingredient_price_history"]`, 1 row; the qty-change control, 1 row. The real
+  unit cost went $5.00/lb → $5.00/oz — 16× — and the trail says nothing happened.
+
+  Pre-existing (identical on `main` before #143), so not a regression. It matters **now** for
+  two reasons slice 1 created: Unit is no longer auto-filled and is required, so it is typed
+  for all 250 items and corrected routinely; and **slice 2 specifies its magnitude check as
+  "if a new unit cost is ≥10× or ≤1/10th the previous one" — built on `priceChanged` it would
+  be blind to the single edit that most reliably produces a 16× unit-cost swing.** Fix
+  `priceChanged` as part of slice 2, not after it.
+
+Smaller, from the same review: `.pick-error` / `.pick-loading` / `.pick-retry` are emitted in
+`renderPick()` but have no rule in `kitchen.css`, so a failed load computes to
+`rgb(106,106,106) italic 400 13.6px` — identical to "Loading the order guide…" and to the
+zero-match line; m13's "the picker says so loudly" is not true as built. The Retire `confirm()`
+names no item. `openHist()` sets `histName` from `nameOf(it)`, so the price-history modal for
+either Slab bacon reads just "Slab bacon" — `itemLabel()` already exists and is what the toasts
+use. B1 is solved on every surface that **writes**, and unsolved on these two that **read**.
+
+### A correction to "How to verify without touching live data"
+
+Trap 3 says a `width:390px` wrapper cannot hold a `position:fixed` modal *for height*. **It
+cannot hold it for width either** — inside the wrapper the modal still sizes against the real
+window (measured: modal 440px, picker inner 392px), so every width measured "at 390px" that
+way is really measured at 440. Trap 1 confirmed independently: `--window-size=390,844` left
+`innerWidth` at 500.
+
+The working route is arithmetic. At a 390px viewport `.modal-bg`'s `padding:16px` caps
+`.modal` at **358px**, so pin `max-width:358px` and measure there. Done that way the picker is
+clean at 390: modal 358, picker inner 310, `scrollWidth === clientWidth` on every row, on the
+chosen line and on `.field-row` (no horizontal overflow anywhere), rows 52px/44px,
+`.pick-change` 74×44 and still 74 against a 48-character name, filter computed 16px,
+Cancel/Save 151×48.
+
+Two more things the next reviewer should know:
+
+- **`check_costing.build_page()` already appends the suite's own RUNNER at `</body>`.** A
+  probe appended after it runs *alongside* the suite, which unlocks the PIN gate, opens modals
+  and consumes deferred responses. Round 4's first four probe runs were contaminated this way
+  and produced a convincing "the modal closes on you mid-save" result that was entirely the
+  suite's own `closeEdit()`. To probe by hand, rebuild the page with the gate neutralisation
+  and the XHR stub but **without** the RUNNER, and unlock the manager gate yourself.
+- **The stub's PATCH response echoes the request body as the row**, so `items[i]=r[0]` loses
+  every field the payload omits (`active`, `location`, `order_item_id`). Real PostgREST with
+  `return=representation` returns the whole row, so the page is fine — but the suite cannot
+  catch a page bug of that shape, because its own fixture has it.
 
 ---
 ---
