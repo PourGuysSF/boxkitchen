@@ -568,8 +568,12 @@ function saveItem(){
     // m31: the screen says "Tap the item this row should be linked to" and
     // Save would quietly keep the old link. Keeping it is right; doing it
     // without saying so, while asking for a pick, is not. Never guess a link.
+    // An off-guide row is linked to nothing, and saying it "stays linked to
+    // Sea salt" would describe a link that does not exist.
     if(relinking&&pickId==null&&
-       !confirm('You have not tapped an item, so this row stays linked to '+label+'.\n\nSave with the link unchanged?'))return;
+       !confirm('You have not tapped an item, so this row '+
+                (newOiId!=null?('stays linked to '+label):'stays off the order guide')+
+                '.\n\nSave with the link unchanged?'))return;
     var warn=magnitudeWarning(it,packQty,packPrice,unit,label);
     if(warn&&!confirm(warn))return;
     payload={order_item_id:newOiId,name:(newO?newO.name:name),invoice_alias:alias,pack_qty:packQty,pack_unit:unit,pack_price:packPrice,updated_at:nowIso};

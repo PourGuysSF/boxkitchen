@@ -680,6 +680,23 @@ RUNNER = r"""
       ok('m31: and the link really is the original one',
          pt[0]&&pt[0].body.order_item_id===88, pt[0]&&JSON.stringify(pt[0].body.order_item_id));
     });
+    /* an off-guide row is linked to nothing, so the question must not name a
+       link that does not exist */
+    step(function(){ H.reqs.length=0; H.confirms=0; H.confirmMsgs=[]; H.confirmReturn=false;
+                     openEdit(501); });
+    step(function(){
+      ok('m31: the off-guide row really is off-guide', findItem(501).order_item_id==null,
+         String(findItem(501).order_item_id));
+      $('pickChange').click();
+    });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){
+      ok('m31: an off-guide row is asked about too', H.confirms===1, 'confirms='+H.confirms);
+      ok('m31: and it is not described as linked to anything',
+         /off the order guide/.test(H.confirmMsgs[0]||'')&&
+         !/stays linked to/.test(H.confirmMsgs[0]||''), H.confirmMsgs[0]);
+    });
+
     /* and a resolved chooser saves without asking anything */
     step(function(){ H.reqs.length=0; H.confirms=0; openEdit(502); });
     step(function(){ $('pickChange').click(); });

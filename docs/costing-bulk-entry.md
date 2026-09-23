@@ -812,6 +812,19 @@ own pass. Slices 3–6 were not started.
   question. Each is correct and each is about a different thing, but two modal dialogs back
   to back is the shape people dismiss without reading. Recorded, not fixed; slice 4 owns the
   save path and is where combining them belongs.
+- m37. **A pack edit on a never-priced row now writes a null-price history row.** Dropping
+  the `packPrice != null` guard for m26 was scoped to removals in intent but not in code:
+  any edit where `priceChanged` is true and the price is absent writes a row, so typing a
+  unit onto a `needs price` row records `no price (4 gal)` in the trail. Considered
+  tightening it to "a price on one side or the other", and **declined** — a removal leaves
+  the stored price null, so that condition would make the m24 debt on a removal row
+  unpayable forever, trading a documented recovery for a cosmetic one. The rows are honest
+  (a pack size did change) and now read as `no price` rather than `$0.00` (m34). Revisit
+  with slice 3, where the trail gets a reader.
+- m38. **The m31 question must not name a link that does not exist.** Caught in self-review
+  before the PR: on an off-guide row `label` falls back to the typed name, so the first
+  draft read *"this row stays linked to Sea salt"* about a row linked to nothing. It now
+  reads *"stays off the order guide"*. Guarded, and proved to bite.
 - m36. **The recovery is silent when it works.** Paying a debt writes the owed row and says
   only "saved" — the same as any other save. Someone who saw the failure toast has no
   confirmation that the trail was repaired, and someone who did not see it never learns a
