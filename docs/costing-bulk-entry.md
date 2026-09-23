@@ -1,11 +1,16 @@
 # Costing — make the ledger fillable
 
-Status: **Slice 2 built** on `costing-slice2-undo` (PR #145), reviewed five times, and
-**round 5's blocker is fixed**: the price-history recovery this document used to claim twice
-now exists — a failed history write records a debt and the next save pays it (m24). Round 6
-also gated and recorded a wiped price (m26) and stopped a save on the relink chooser from
-silently keeping the old link (m31). See "Slice 2 as built" below, m21–m25 for what the
-slice left open, and m26–m33 for what rounds 5 and 6 found. **Slice 1 shipped** — merged to `main` as `7d79bd6` (PR #143, squashed; branch
+Status: **Slice 2 built** on `costing-slice2-undo` (PR #145), reviewed seven times.
+**Round 5's blocker is fixed** — the price-history recovery this document used to claim twice
+now exists (m24) — and round 6 also gated a wiped price (m26) and stopped a save on the
+relink chooser from silently keeping the old link (m31). **Round 7 found no blocker and no
+async bug**; it failed the round on the documentation claiming more than the code delivered,
+for the third time on this feature. **Round 8 fixed the five majors it raised** — the debt
+now holds the values it owes (m40), a payment in flight is not paid twice (m39), Restore
+checks legality (m41), the m31 question cannot name a link it cannot resolve (m42), and m37's
+declined tightening was done and its recorded reasoning corrected (m43). See "Slice 2 as
+built" below, m21–m25 for what the slice left open, m26–m33 for rounds 5 and 6, m39–m46 for
+round 7, and m47–m51 for what round 8 left recorded. **Slice 1 shipped** — merged to `main` as `7d79bd6` (PR #143, squashed; branch
 deleted). Four rounds of review; round 4 found no fourth async-staleness bug and passed it.
 See "Slice 1 as built" below, and m18–m20 for the three majors round 4 left open. Slices 2–6
 are still planned.
@@ -440,9 +445,16 @@ check could not be built honestly without it.
    said out loud — "⚠ Sea salt saved, but its price history didn't record" — rather than
    swallowed. ~~Re-saving the same price writes the missing row (m24).~~
    **That sentence was false when written, and round 6 made it true rather than striking
-   it.** What the code now does: a failed history POST records the ledger row's id in
-   `historyOwed`, and the *next* save of that row writes the missing history row whether or
-   not the price changed, clearing the debt only when the write really succeeds. So the
+   it. Round 7 then found the round-6 wording still wider than the code, and round 8
+   narrowed it to this:** a failed history POST records, against the ledger row's id, the
+   **values** it owes — `{price, qty, unit}` — and the next save of that row writes a row
+   for each debt it owes, with the values *that debt* holds, clearing each entry only when a
+   write of its own values really succeeds. So the missing row is written whether or not the
+   price changed, **and it records the price that failed rather than the price in the form.**
+   When the owed values and the current values differ, **both rows are written** — the owed
+   price and the current one were each really PATCHed into the ledger and each was really in
+   effect, so each is a state the item was in. When they are the same, one row is written,
+   not two (m40). So the
    recovery is "save the row again" — no price needs to be altered to trigger it, and the
    $11→$12→$11 detour that used to be the only working route (and that wrote a fabricated
    $12) is gone. **The debt is held in memory only.** Close the tab or reload with one
@@ -516,6 +528,12 @@ in one slice is often a blocker in the next.
   loading, which the picker already blocks for ＋ Add (it is untappable until both requests
   land); it is reachable only through an edit from the main list. Recorded, not fixed —
   reconciling a reload with in-flight writes is slice 4's job.
+  **Cost widened by slice 2 — see m44, found in round 7.** Slice 2 put `order_item_id` into
+  every edit payload, so this stale `items[]` no longer merely *loses* a row until a reload:
+  a later ordinary edit now writes the stale link back to the database and undoes a re-link.
+  Round 8 deliberately did **not** fix it — it is this race, not a new one, and the
+  reconcile-before-write that fixes it is slice 4's. **Slice 4 must treat m15 as carrying
+  that cost**, not the narrower one recorded above.
 - m16. Named toasts are longer. `.toast` has no max-width and sits at `left:50%`, so at
   390px a long name wraps to two or three lines. ~~Readable, not measured on a phone.~~
   **Measured (round 4), and the guess was exact.** `.toast` is `position:fixed; left:50%`
@@ -821,6 +839,15 @@ own pass. Slices 3–6 were not started.
   unpayable forever, trading a documented recovery for a cosmetic one. The rows are honest
   (a pack size did change) and now read as `no price` rather than `$0.00` (m34). Revisit
   with slice 3, where the trail gets a reader.
+
+  > **That reason was unsound, and round 8 did the tightening — see m43.** The claim was
+  > that tightening "would make the m24 debt on a removal row unpayable forever". It would
+  > not. The call site is `if(priceChanged||historyOwed[savingId])`: two independent
+  > disjuncts, so narrowing the first leaves the debt entirely payable through the second.
+  > A removal also still records, because `it.pack_price` is non-null on the save that
+  > removes it. The trade-off described above is real for a guard on *both* halves and never
+  > applied to this one. **The paragraph is left standing rather than rewritten**, because an
+  > unsound argument that was believed for two rounds is worth being able to find again.
 - m38. **The m31 question must not name a link that does not exist.** Caught in self-review
   before the PR: on an off-guide row `label` falls back to the typed name, so the first
   draft read *"this row stays linked to Sea salt"* about a row linked to nothing. It now
@@ -831,6 +858,282 @@ own pass. Slices 3–6 were not started.
   repair happened. Saying so would mean a toast about bookkeeping on an ordinary save;
   judged not worth it at this size, and it belongs with slice 3's provenance view, which is
   where the trail becomes visible at all.
+
+### Added by round 7's review (PR #145, slice 2, pre-merge)
+
+Slice 2's four promises were re-driven and all four still hold after round 6: re-link
+preserves qty/unit/price/alias and writes the new `order_item_id`; a guide item held only by
+a retired row returns to ＋ Add unbadged; a failed history write is surfaced as a named
+warning; the magnitude gate fires on 10×, on 1/10th and on a unit swap, and an add never
+asks. **No fourth instance of the async-staleness pattern.** `historyOwed` is the first state
+on this page that outlives a save, and every read of it is either captured at call time
+(`icId` in `logPrice`'s callback, `savingId` in `done()`) or is one that *must* be live —
+`historyOwed[savingId]` is read in the callback on purpose, so a debt recorded while this
+save was in flight is paid by it, and a debt cleared while it was in flight is not paid
+twice. Both orderings were walked. The defects below are semantic, not stale reads: the debt
+records *that* a row is owed and never *which*, and nothing marks a payment as in flight.
+
+Measured with a probe page built the way "A correction to …" prescribes — the page's own
+XHR stub, the gate neutralised, and **without** the suite's RUNNER appended.
+
+- m39. **Two saves inside the debt-payment window write two identical history rows.**
+  `done()` deletes `savingKey[key]` before it calls `logPrice`, and `historyOwed` is cleared
+  only by the payment's *response*, so every save issued while a payment is in flight fires
+  another payment. Measured, history POSTs held open:
+
+  ```
+  save $21, history fails      -> debt owed
+  re-save (unchanged), held    -> 1 history POST out, historyOwed[502] STILL true,
+                                  savingKey free, Save enabled
+  re-save again (unchanged)    -> 2 history POSTs out
+  release both                 -> 2 history rows written, both $21
+  ```
+
+  Neither price is fabricated, so this is not m24's artifact class — but it puts two rows
+  in `ingredient_price_history` for one price change, on the same `effective_date`, and
+  slice 3 reads that trail as a sequence of states. It is reached by the one action this
+  fix tells the user to take ("save the row again"), on the slow network that caused the
+  failure, and nothing says "once". `savingKey` exists for exactly this on the ledger write;
+  the payment has no equivalent. Same family as m17 and m19 — a second write path with no
+  in-flight guard — so slice 4 could own it, but this one was *created* by round 6.
+
+- m40. **The debt is cleared by any successful history write, not by the owed one, so
+  decision 2's claim is again wider than the code.** The doc says the next save "writes the
+  missing history row **whether or not the price changed**". It writes a row for whatever the
+  price is at that save. If the price has moved, the missing row is never written and the debt
+  is silently dropped:
+
+  ```
+  save $21, history fails   -> 0 rows, debt owed        [$21 is live in the ledger]
+  correct it to $30, saves  -> 1 row @ $30, debt CLEARED
+  later unchanged save      -> 0 rows
+  ```
+
+  $21 was really in effect and really PATCHed, and its row is gone for good with no notice.
+  The clause that makes the claim broad is the clause that is false, and correcting a price
+  you were just told didn't record is the obvious next action. `historyOwed[id]` holds `true`;
+  holding `{price,qty,unit}` and paying *that* would make the sentence true, at the cost of
+  the debt describing a row rather than a row-shaped hole. **This is the third time this
+  mechanism has been documented as doing more than it does** (the claimed harness, round 5's
+  recovery, now this) — which is the reason round 7 fails rather than records.
+
+- m41. **Restore is now an unguarded route to two active rows on one guide item.** Slice 2's
+  promise 2 lets a guide item held only by a retired row be re-costed. Nothing then stops
+  Restore on the retired row. Measured: add Birite Butter (guide 77, held only by retired
+  503), then Restore 503 → `PATCH {active:true}`, **no confirm, no legality check, zero
+  guard requests**, and the page holds two active rows on `order_item_id` 77 — the state
+  `ingredient_costs_one_active_per_order_item` exists to forbid and that m9 assumes is
+  impossible. Against the live table the index rejects it and `toggleActive()` says
+  *"Butter (Birite) — update failed, try again"*, which will never succeed. Before slice 2
+  this was unreachable, because retiring blocked the guide item from ＋ Add. The check it
+  needs is `costRowFor(it.order_item_id)` on the restore branch, saying which active row
+  holds it. Distinct from m19, which is about locking Retire during a save, not legality.
+
+- m42. **m31's question can still be confidently wrong about what it is keeping.** m38 fixed
+  the `order_item_id == null` half. The other half is a row linked to a guide item that
+  `orderById` cannot resolve — an order-guide item deactivated while a ledger row still
+  points at it, which `init()`'s `active=eq.true` guarantees, or any time `guideError` is
+  set, when it applies to every linked row at once. Measured on a row linked to a guide id
+  absent from the guide:
+
+  ```
+  chosen line   : "Off-guide items"  /  "Old ketchup"
+  m31 question  : "…so this row stays linked to Old ketchup."
+  ```
+
+  The two contradict each other on the same screen, and the question names a link with no
+  vendor — the m38 shape from a different cause. The relink chooser cannot list the row's own
+  current item either, so the code comment "the row's own current item stays listed, so you
+  can change your mind back" is false here; with `fName` disabled the only exits are
+  re-linking elsewhere or Custom. Guarding on `newO` (the resolved guide row) rather than on
+  `newOiId != null` is the same one-line shape m38 used.
+
+- m43. **m37's recorded reason for declining the tightening is unsound, and a correct
+  tightening exists.** m37 says tightening the history guard to "a price on one side or the
+  other" was declined because it "would make the m24 debt on a removal row unpayable
+  forever". It would not: the call site is `if(priceChanged||historyOwed[savingId])`, two
+  independent disjuncts, and tightening only the first —
+  `(priceChanged&&(it.pack_price!=null||packPrice!=null))||historyOwed[savingId]` — leaves
+  the debt fully payable while dropping the spurious rows. A removal still records, because
+  `it.pack_price` is non-null on the save that removes it. Measured cost of not doing it: a
+  pack edit on `needs price` row 501 writes
+  `{pack_price:null,pack_qty:4,pack_unit:"gal"}` with no gate, while **the identical shape
+  through ＋ Add writes nothing** (`done()`'s add branch still guards on `packPrice!=null`),
+  so the same user action records or doesn't depending on which door it came through. The
+  trade-off m37 describes is real for a guard on *both* halves and does not apply to this
+  one.
+
+- m44. **Slice 2 put `order_item_id` into every edit payload, so m15's stale `items[]` can
+  now write a link back to the database.** Pre-slice-2 the EDIT payload carried no
+  `order_item_id`, so an edit could not touch the link. Measured, driving m15 exactly (a
+  ledger GET sent before a re-link, landing after it, `loadGen` current so it is allowed
+  to write):
+
+  ```
+  re-link 502 -> guide 88, saved        items[502].order_item_id = 88
+  the older ledger GET lands            items[502].order_item_id = null   (m15)
+  ordinary edit, price only, Save       PATCH order_item_id: null   <- the re-link is undone
+  ```
+
+  Not a fourth staleness bug — it is m15's logged race with a wider consequence, and it is
+  visible before you commit it (the chosen line reads "Off-guide items / Sea salt", m18's
+  kind of recoverable). But m15's recorded cost was "the saved row vanishes from `items[]`
+  until a reload"; it is now "a later ordinary edit writes a stale link". Slice 4 owns the
+  reconcile; m15 should carry the new cost.
+
+- m45. **A null-price history row reads `no price (2 lb → )`.** m34 says such a row "now
+  reads `no price`" — the price does, but `openHist()` still emits the pack parenthetical
+  whenever `pack_qty` is truthy, and `uc` is `''` when the price is null, so the row ends in
+  an arrow pointing at nothing. Measured at the real 358px a 390px viewport gives `.modal`:
+  `no price (2 lb → )manual2026-09-23`, 35px tall, `scrollWidth === clientWidth` — no
+  overflow, purely a reading defect, and it is m26's own primary row (a removal keeps its
+  qty). Suppressing the `→ uc` half when `uc` is empty is the fix.
+
+- m46. **`m24: no fabricated price was needed to get there` cannot fail when nothing is
+  written.** It is `hist().every(…)`, and `[].every()` is `true`, so under the pre-fix guard
+  — the exact fault it sits next to — it passes vacuously. Confirmed: that injection
+  produces 4 failures and this is not one of them. Joins m32's three weak assertions; a
+  length check alongside it would fix it.
+
+**On the test claims.** The split is honest where it can be checked. The headline injection
+was re-run: restoring the pre-fix `priceChanged && packPrice != null` guard gives **exactly
+4 failures of 231** — `m24: re-saving an unchanged price writes the OWED history row`,
+`m24: the owed row carries the price actually in effect`, `m26: removing a price is recorded
+in the history`, `m26: the history row records it as no price` — matching the commit's
+"the pre-fix priceChanged guard (4 fail)". The +29 / +3 assertion counts in the two round-6
+commits are exact. Two bookkeeping slips, neither an overstatement: the commit names groups
+covering 9 of the 11 assertions it calls unproven (the two unnamed are in the m24 block), and
+`4d736ba` says it added "two m31: assertions" where the diff adds three (the third is the
+`the off-guide row really is off-guide` precondition).
+
+### Added by round 8 (the fixes for m39–m43, m45 and m46)
+
+Round 8 fixed the five majors round 7 raised and rode along with its two smaller items.
+Round 7 found **no blocker and no fourth async bug**, and `historyOwed` was examined
+specifically and cleared — the architecture was never the problem. What failed three times
+running was that this document claimed more than the code delivered (a harness that did not
+exist, m24's recovery that did not work, m40's "whether or not the price changed" that was
+true only narrowly). So the entries below say what the code does and stop there.
+
+**Scope:** `tempest_costing.html` and `scripts/check_costing.py` only. `assets/kitchen.css`
+is untouched, so no `?v=` bump. m44, m29 and control locking (m19) were deliberately not
+touched; m15 now carries m44's widened cost.
+
+| finding | as built | guarded by |
+|---|---|---|
+| **m40** | `historyOwed[id]` holds a **list of `{price,qty,unit}`**, not `true`. Each debt is paid with its own values and cleared only by a write of those values. Owed ≠ current → **both rows written**; owed = current → one row. | eight `m40:` assertions in `histfail` |
+| **m39** | `historyPaying[id]` counts payment POSTs in flight. While one is out, the debt is not paid again; a genuine `priceChanged` still writes, because that is a new row, not a copy. | six `m39:` assertions in `histfail` |
+| **m41** | `toggleActive()`'s **restore** branch checks `costRowFor(it.order_item_id)` before sending. An illegal restore sends nothing and names the row in the way. | nine `m41:` assertions in `retired` |
+| **m42** | The m31 question guards on **`newO`**, the resolved guide row, not on `newOiId != null`. An unresolvable link is described as one, not named. | seven `m42:` assertions in `relink` |
+| **m43** | `priceChanged` is `&&(it.pack_price!=null||packPrice!=null)`. The debt disjunct is untouched, so the m24 recovery is unaffected. Both doors now agree: a pack edit on a never-priced row writes no history row through **either** ＋ Add or edit. | three `m43:` assertions in `histfail` |
+| **m45** | `openHist()` emits `→ uc` only when `uc` is non-empty. A null-price row reads `no price (2 lb)`. | four `m45:` assertions in `histfail` |
+| **m46** | Given something to assert: `hist().length>0 &&` alongside the `every()`. | itself |
+
+**What m40 decides, exactly.** When the owed values and the current values differ, **both
+rows are written** — the owed one first, then the save's own. Not "only the owed one",
+because the current price is in the ledger now and a trail that omits it is a trail that
+disagrees with the ledger. Not "only the current one", because that is the bug. Both prices
+really were PATCHed and really were in effect, so neither row is fabricated. Measured:
+`$21.50` fails → correct to `$30` → **two rows, `21.5` and `30`**, and a later unchanged save
+writes none.
+
+**One pre-existing assertion changed meaning**, which is worth naming rather than burying:
+`S2-3: a successful history write actually happens` asserted `hist().length===1`. In that
+scenario a `$14` save had already failed its history write, so the following `$15` save now
+pays the `$14` debt as well — two rows, not one. The assertion was corrected to `===2` and
+an `m40:` assertion added next to it checking the pair is `14,15`. This is the fix becoming
+visible in an older test, not a regression.
+
+#### What was proved, and what was not
+
+**268 assertions, 12 scenarios, clean.** Up from 231, so **+37**. Each of the five majors and
+both ride-alongs was proved to bite by reintroducing the exact fault:
+
+| fault reintroduced | failures |
+|---|---|
+| m40 — debt holds `true` again, any write clears it | **6** |
+| m39 — the payment-in-flight gate removed | **2** |
+| m41 — the restore legality check removed | **5** |
+| m42 — the question guards on `newOiId != null` again | **3** |
+| m43 — the untightened m26 guard restored | **1** |
+| m45 — the unconditional arrow restored | **1** |
+| m46 — see below | **0 alone** |
+
+**m46 could not be proved by its own fault, and needed a second one.** Its defect is
+*vacuity*, which only shows when nothing is written at all — so restoring the bare
+`every()` on the fixed page changes nothing (0 failures). Proved by pairing it with the
+pre-fix m24 gate (`priceChanged && packPrice != null`, the fault it sits beside): **14
+failures with the length check, 13 without**, and the named assertion flips from failing to
+passing. That is the proof, and it is a two-fault proof, not a one-fault one.
+
+**The honest split: of the 37 new assertions, 15 are proved to bite and 22 are not proved
+either way.** Two *pre-existing* assertions were also strengthened and both were proved:
+`S2-3: a successful history write actually happens` (by the m40 fault) and `m24: no
+fabricated price was needed to get there` (by the paired fault above).
+
+The 15 proved are the four failure lists in the table, minus the pre-existing assertion they
+include: `m40: and it pays the owed row as well as its own`, `m40: correcting a price does
+not discard the failed one`, `m40: exactly two rows, one per price that was in effect`,
+`m39: a save inside the payment window does not pay the debt twice`, `m39: one owed row, not
+two identical ones`, `m41: an illegal restore sends nothing`, `m41: the row stays retired`,
+`m41: it says why rather than "try again"`, `m41: and it names the row in the way`,
+`m41: it reads as a refusal, not a success`,
+`m42: it does not claim a link to the typed name`, `m42: it says the link cannot be shown`,
+`m42: it does not contradict the chosen line`, `m43: and writes NO null-price history row`,
+and `m45: and no arrow pointing at nothing`.
+
+**The 22 not proved either way**, named rather than counted: `m42: the injected row really is
+linked but unresolvable`, `m42: it still asks before keeping an unresolved link`, `m42: nor
+does it claim the row is off the order guide`, `m42: answering No writes nothing`, `m41: the
+retired row still points at the taken guide item`, `m41: and that guide item is held by an
+ACTIVE row now`, `m41: a legal restore still goes through`, `m41: and confirms itself`, `m40: the failing save left a debt owed`, `m40: and the
+failed price is live in the ledger`, `m40: and the corrected price is recorded too`, `m40: no
+price that was never in effect`, `m40: both debts are paid, so an unchanged save writes
+nothing`, `m39: the debt is owed before the window opens`, `m39: the payment is in flight`,
+`m39: and Save is live again, so a second save is reachable`, `m39: and it records the price
+that was owed`, `m43: a pack edit on a never-priced row writes the ledger row`, `m43:
+removing a real price still records a null-price row`, `m45: the null-price row still reads
+"no price"`, `m45: but it keeps its pack size`, and `m45: a priced row still shows its unit
+cost`.
+
+Most are preconditions or control cases — `m41: a legal restore still goes through` exists to
+show the new guard does not refuse a legal one, and the m43 and m45 pairs exist to show the
+tightening did not swing too far. They are legitimate regression guards, and they are not proved. Not "every".
+
+One weak assertion was found while doing this and **fixed rather than logged**: `m41: and it
+names the row in the way` first read `toast().indexOf('Butter')>-1`, which a success toast
+("Butter restored") satisfies too — m32's `:717` defect exactly. It now matches
+`“Butter” already costs`, and that is what took the m41 injection from 4 failures to 5.
+
+#### Recorded, not fixed
+
+- m47. **m42 fixed the question, not the chooser.** Round 7 noted two things about an
+  unresolvable link: the question named it wrongly, and the relink chooser cannot list the
+  row's own current item, so the code comment "the row's own current item stays listed, so
+  you can change your mind back" is false in that case. **Only the question was fixed.** On
+  such a row the exits are still re-linking elsewhere or Custom — there is no way back to
+  the link it has. Reachable whenever `guideError` is set, which is every linked row at
+  once. Listing an item the guide did not return means inventing a row for it, which is
+  slice 3's provenance thinking, not a one-liner.
+- m48. **Two rows from one save share an `effective_date`.** `logPrice` sends no
+  `effective_date`, so the column defaults to today. When m40 writes the owed row and the
+  current row together, both carry today's date and the trail cannot order them — the owed
+  price came first in reality and nothing in the row says so. Slice 3 both reads this trail
+  as a sequence and is where `effective_date` stops meaning "the day it was typed", so it
+  owns the fix. Same shape as m39's duplicate, without the duplication.
+- m49. **The debt is now a list, so m33 loses more.** m33 said a reload forgets the debt; it
+  now forgets a *list* of owed rows, and a row can accumulate several across a bad stretch
+  of network. Nothing shows how many are outstanding. Unchanged in kind, larger in degree;
+  slice 4's reconcile is still the durable answer.
+- m50. **A save skipped by m39's gate is not retried.** While a payment is in flight the
+  debt is left alone. If that payment then fails, the debt is re-recorded and the *next*
+  save pays it — so a user who saved twice inside the window must save a third time. Correct
+  (no duplicate row is written, and the debt is never lost) but one save longer than it
+  looks, and m36 already notes the recovery says nothing when it works.
+- m51. **m41's refusal names a row whose name is usually identical.** Two ledger rows on one
+  guide item generally carry the same `name`, so *"“Butter” already costs that order-guide
+  item"* is true but does not distinguish them. The `invoice_alias` or the id would, and
+  neither reads well in a toast. Accepted at this size.
 
 ### A correction to "How to verify without touching live data"
 

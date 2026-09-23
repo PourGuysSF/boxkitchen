@@ -181,10 +181,22 @@ var savingKey={};             // 'oi:<order_item id>' / 'ic:<ledger id>' -> true
    compares against the stored row, which the successful PATCH has already
    overwritten), and the only thing that did write a row was $11→$12→$11,
    which puts a price that was never in effect into the trail.
+   m40: the debt holds the VALUES it owes, not a bare `true`. Holding `true`
+   meant the debt said a row was owed and never which one, so correcting the
+   price you had just been told did not record paid the debt with the NEW
+   price and dropped the old row for good — while that old price really had
+   been PATCHed into the ledger and really had been in effect. A list, because
+   a row can fall into debt more than once before any of it is paid; each
+   entry is removed only by a write of its own values.
    In memory only: close the tab with a debt outstanding and it is forgotten.
    Persisting it would mean remembering, across sessions, a claim about a
    table we cannot re-read cheaply; a real retry is slice 4's reconcile. */
-var historyOwed={};           // ledger id -> true while a history row is owed
+var historyOwed={};           // ledger id -> [{price,qty,unit}] rows still owed
+/* m39: `savingKey` stops a second LEDGER write while one is in flight; the
+   debt payment had no equivalent, and the debt clears only on its response,
+   so every save issued inside the payment window fired another payment and
+   wrote another identical row. Counts payments in flight per ledger id. */
+var historyPaying={};         // ledger id -> number of payment POSTs in flight
 var relinking=false;          // the relink chooser is open on an edit with no pick yet
 
 function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
@@ -564,15 +576,35 @@ function saveItem(){
     // m20: pack_unit is part of the price. Editing only the unit moved the
     // real unit cost 16× (lb → oz) and wrote no history row at all, which
     // would also have made the magnitude check below blind to it.
-    priceChanged=(num(it.pack_price)!==num(packPrice))||(num(it.pack_qty)!==num(packQty))||((it.pack_unit||'')!==unit);
+    // m43: a price on one side or the other. Dropping m26's `packPrice != null`
+    // guard let a pack edit on a never-priced row write a null-price history
+    // row, while the identical edit through + Add wrote nothing — the same
+    // action recorded or not depending on which door it came through. m37
+    // declined this tightening because it "would make the m24 debt on a
+    // removal row unpayable forever"; that was wrong. The call site is
+    // `priceChanged || historyOwed[...]`, two independent disjuncts, so
+    // tightening this one leaves the debt fully payable. A removal still
+    // records, because it.pack_price is non-null on the save that removes it.
+    priceChanged=((num(it.pack_price)!==num(packPrice))||(num(it.pack_qty)!==num(packQty))||((it.pack_unit||'')!==unit))
+                 &&(it.pack_price!=null||packPrice!=null);
     // m31: the screen says "Tap the item this row should be linked to" and
     // Save would quietly keep the old link. Keeping it is right; doing it
     // without saying so, while asking for a pick, is not. Never guess a link.
     // An off-guide row is linked to nothing, and saying it "stays linked to
     // Sea salt" would describe a link that does not exist.
+    // m42: guard on newO, the RESOLVED guide row — not on newOiId != null.
+    // A row can be linked to a guide item this page cannot resolve (the item
+    // was deactivated while the row still points at it, which init()'s
+    // active=eq.true guarantees, or the guide GET failed, which hits every
+    // linked row at once). There `label` falls back to the typed name, and
+    // the question read "stays linked to Old ketchup" while the chosen line
+    // on the same screen read "Off-guide items" — the m38 shape from a
+    // second cause. Naming nothing is better than naming it wrongly.
     if(relinking&&pickId==null&&
        !confirm('You have not tapped an item, so this row '+
-                (newOiId!=null?('stays linked to '+label):'stays off the order guide')+
+                (newO?('stays linked to '+label)
+                     :(newOiId!=null?'keeps its current order-guide link, which this page cannot show right now'
+                                    :'stays off the order guide'))+
                 '.\n\nSave with the link unchanged?'))return;
     var warn=magnitudeWarning(it,packQty,packPrice,unit,label);
     if(warn&&!confirm(warn))return;
@@ -594,7 +626,18 @@ function saveItem(){
         // the same price can never look changed — the documented recovery
         // wrote nothing at all. m26: a removed price is a state worth
         // recording, so a null price writes a row too rather than a silent gap.
-        if(priceChanged||historyOwed[savingId])logPrice(savingId,packPrice,packQty,unit,null,label);}
+        // m39: while a payment is in flight the debt is still recorded, so
+        // treat it as already being dealt with rather than paying it twice.
+        // A genuine priceChanged still writes — that is a new row, not a
+        // second copy of an owed one.
+        var owed=historyPaying[savingId]?[]:(historyOwed[savingId]||[]).slice();
+        // m40: pay each owed row with the values IT owes. An owed row whose
+        // values match what is being saved now is left to the save's own
+        // write below, so an unchanged re-save still writes exactly one row.
+        for(var k=0;k<owed.length;k++)
+          if(!sameVals(owed[k],packPrice,packQty,unit))
+            logPrice(savingId,owed[k].price,owed[k].qty,owed[k].unit,null,label,true);
+        if(priceChanged||owed.length)logPrice(savingId,packPrice,packQty,unit,null,label,owed.length>0);}
       // Only close what is still this save. If the user has moved on, the
       // data and the list update silently and what they are typing stays.
       if(gen===modalGen)closeEdit();else refreshPicker();
@@ -613,12 +656,29 @@ function saveItem(){
    in historyOwed and the next save honours it whether or not the price
    changed. The debt lives in memory only — close the page with one
    outstanding and it is gone (a real retry is slice 4's reconciliation). */
-function logPrice(icId,price,qty,unit,invoiceRef,label){
+/* One owed row, identified by the values it records. m40: the debt is keyed
+   on the values so a write of a DIFFERENT price can never discharge it. */
+function sameVals(a,price,qty,unit){
+  return (a.price==null)===(price==null)&&num(a.price)===num(price)&&
+         num(a.qty)===num(qty)&&(a.unit||'')===(unit||'');
+}
+function owedIndex(icId,price,qty,unit){
+  var L=historyOwed[icId]||[];
+  for(var i=0;i<L.length;i++)if(sameVals(L[i],price,qty,unit))return i;
+  return -1;
+}
+function logPrice(icId,price,qty,unit,invoiceRef,label,paying){
+  if(paying)historyPaying[icId]=(historyPaying[icId]||0)+1;
   api('POST','ingredient_price_history',null,{ingredient_cost_id:icId,pack_price:(price==null?null:price),pack_qty:qty,pack_unit:unit,source:'manual',invoice_ref:invoiceRef},function(r){
-    // Cleared only when the row is really on the wire — a debt that clears on
-    // a failure is worse than no debt at all.
-    if(r&&r.length){delete historyOwed[icId];return;}
-    historyOwed[icId]=true;
+    if(paying&&!(historyPaying[icId]=(historyPaying[icId]||1)-1))delete historyPaying[icId];
+    var i=owedIndex(icId,price,qty,unit);
+    // Cleared only when THIS row is really on the wire — a debt that clears on
+    // a failure, or on somebody else's price, is worse than no debt at all.
+    if(r&&r.length){
+      if(i>-1){historyOwed[icId].splice(i,1);if(!historyOwed[icId].length)delete historyOwed[icId];}
+      return;
+    }
+    if(i<0)(historyOwed[icId]||(historyOwed[icId]=[])).push({price:price,qty:qty,unit:unit});
     showToast((label||'That item')+' saved, but its price history didn’t record',true);
   });
 }
@@ -626,6 +686,19 @@ function toggleActive(){
   var it=findItem(editId);if(!it)return;
   var toActive=!it.active,id=it.id,label=itemLabel(it);
   if(!toActive&&!confirm('Retire this item? It keeps its price history but drops off the active list.'))return;
+  /* m41: slice 2 let a guide item held only by a retired row be re-costed, and
+     nothing then stopped Restore on the retired row — two active rows on one
+     order_item_id, which the partial unique index forbids. Unguarded, the
+     PATCH went out, was rejected, and said "update failed, try again" about
+     something that can never succeed. This is LEGALITY, not locking: Retire
+     during a save is m19, slice 4. */
+  if(toActive&&it.order_item_id!=null){
+    var holder=costRowFor(it.order_item_id);
+    if(holder&&holder.id!==id){
+      showToast('Cannot restore: “'+nameOf(holder)+'” already costs that order-guide item. Retire it first.',true);
+      return;
+    }
+  }
   var gen=modalGen;
   api('PATCH','ingredient_costs','id=eq.'+id,{active:toActive,updated_at:new Date().toISOString()},function(r){
     if(r&&r.length){var cur=findItem(id);if(cur)cur.active=toActive;
@@ -650,7 +723,7 @@ function openHist(){
     var h='';
     for(var i=0;i<rows.length;i++){
       var x=rows[i],uc=(num(x.pack_qty)>0&&num(x.pack_price)>0)?ucFmt(num(x.pack_price)/num(x.pack_qty))+' / '+esc(x.pack_unit||'unit'):'';
-      h+='<div class="hist-row"><div><span class="hprice">'+(x.pack_price==null?'no price':money(x.pack_price))+'</span>'+(x.pack_qty?' <span class="hdate">('+num(x.pack_qty)+' '+esc(x.pack_unit||'')+' → '+uc+')</span>':'')+'<span class="hsrc">'+esc(x.source||'')+'</span></div><div class="hdate">'+esc(x.effective_date||'')+'</div></div>';
+      h+='<div class="hist-row"><div><span class="hprice">'+(x.pack_price==null?'no price':money(x.pack_price))+'</span>'+(x.pack_qty?' <span class="hdate">('+num(x.pack_qty)+' '+esc(x.pack_unit||'')+(uc?' → '+uc:'')+')</span>':'')+'<span class="hsrc">'+esc(x.source||'')+'</span></div><div class="hdate">'+esc(x.effective_date||'')+'</div></div>';
     }
     document.getElementById('histBody').innerHTML=h;
   });

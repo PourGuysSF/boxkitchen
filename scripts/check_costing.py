@@ -144,6 +144,12 @@ HARNESS = r"""
     failWrites:false,
     /* slice 2: the price-history POST fails while the ledger write succeeds */
     failHistory:false,
+    /* m39: hold every price-history POST open, so a second save can be made
+       INSIDE the debt-payment window. Without this the payment always
+       resolves before the next save and the duplicate can never be seen. */
+    deferHistory:false,
+    /* m45: what the price-history GET answers with */
+    histRows:[],
     /* what confirm() was actually asked - the magnitude check has to SAY
        what it is warning about, or it is just a speed bump */
     confirmMsgs:[]};
@@ -174,7 +180,7 @@ HARNESS = r"""
       return planned(window.__h.nextLedger,ledger,ledger);
     }
     if(m==='GET'&&u.indexOf('/ingredient_price_history')>-1)
-      return {status:200,text:'[]'};
+      return {status:200,text:JSON.stringify(window.__h.histRows)};
     if(m==='POST'&&u.indexOf('/ingredient_costs')>-1){
       var row=JSON.parse(JSON.stringify(body));row.id=nextId++;
       var added=window.__h.failWrites?{err:true}:{status:201,text:JSON.stringify([row])};
@@ -192,8 +198,11 @@ HARNESS = r"""
       if(SCEN==='inflight')return {defer:true,res:patched};
       return patched;
     }
-    if(m==='POST'&&u.indexOf('/ingredient_price_history')>-1)
-      return window.__h.failHistory?{err:true}:{status:201,text:'[{"id":1}]'};
+    if(m==='POST'&&u.indexOf('/ingredient_price_history')>-1){
+      var logged=window.__h.failHistory?{err:true}:{status:201,text:'[{"id":1}]'};
+      if(window.__h.deferHistory)return {defer:true,res:logged};
+      return logged;
+    }
     if(m==='POST')return {status:201,text:'[]'};
     return {status:200,text:'[]'};
   }
@@ -707,6 +716,46 @@ RUNNER = r"""
       ok('m31: a resolved chooser writes the new link',
          H.reqs.filter(function(r){return r.m==='PATCH';}).length===1);
     });
+
+    /* m42 THE QUESTION MUST NOT BE CONFIDENTLY WRONG ABOUT WHAT IT KEEPS.
+       m38 fixed the order_item_id == null half. The other half is a row
+       LINKED to a guide item orderById cannot resolve - the guide item was
+       deactivated while the ledger row still points at it, which init()'s
+       active=eq.true guarantees, or guideError is set, which hits every
+       linked row at once. There `label` falls back to the typed name and the
+       question read "stays linked to Old ketchup" while the chosen line on
+       the same screen read "Off-guide items". Injected here the way the live
+       table produces it: a ledger row whose guide id is not in the guide. */
+    step(function(){
+      items.push({id:505,location:'Tempest',order_item_id:999,name:'Old ketchup',
+                  invoice_alias:null,pack_qty:1,pack_unit:'gal',pack_price:8,active:true});
+      render();
+      ok('m42: the injected row really is linked but unresolvable',
+         findItem(505).order_item_id===999&&!orderById[999], 'orderById[999]='+orderById[999]);
+      H.reqs.length=0; H.confirms=0; H.confirmMsgs.length=0; H.confirmReturn=false;
+      openEdit(505);
+    });
+    step(function(){ $('pickChange').click(); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){
+      var msg=H.confirmMsgs.join(' | ');
+      ok('m42: it still asks before keeping an unresolved link', H.confirms===1,
+         'confirms='+H.confirms);
+      ok('m42: it does not claim a link to the typed name',
+         msg.indexOf('linked to Old ketchup')<0, msg);
+      ok('m42: nor does it claim the row is off the order guide',
+         msg.indexOf('off the order guide')<0, msg);
+      ok('m42: it says the link cannot be shown', /cannot show/i.test(msg), msg);
+      ok('m42: answering No writes nothing', H.reqs.length===0,
+         JSON.stringify(H.reqs.map(function(r){return r.m;})));
+      /* the measured contradiction: the chosen line says the row is off-guide
+         while the question said it stays linked to a named item */
+      ok('m42: it does not contradict the chosen line',
+         $('pickChosenV').textContent==='Off-guide items'&&
+         !/stays linked to/.test(msg),
+         'chosenV='+$('pickChosenV').textContent+' msg='+msg);
+      H.confirmReturn=true;
+    });
   }
 
   if(H.scen==='retired'){
@@ -754,6 +803,52 @@ RUNNER = r"""
          posts().length===1&&posts()[0].body.order_item_id===77,
          'posts='+posts().length+' toast='+toast());
     });
+
+    /* m41 RESTORE IS NOW A ROUTE TO TWO ACTIVE ROWS ON ONE GUIDE ITEM. The
+       step above left an ACTIVE row on guide item 77; retired row 503 still
+       points at 77. Restore had no confirm and no legality check, so the
+       PATCH went out, the partial unique index rejected it, and the page said
+       "update failed, try again" about a state that can never succeed. Before
+       slice 2 this was unreachable, because retiring blocked the guide item
+       from + Add at all. */
+    step(function(){ H.reqs.length=0; H.confirms=0; openEdit(503); });
+    step(function(){
+      ok('m41: the retired row still points at the taken guide item',
+         findItem(503).order_item_id===77, String(findItem(503).order_item_id));
+      ok('m41: and that guide item is held by an ACTIVE row now',
+         !!costRowFor(77)&&costRowFor(77).id!==503,
+         costRowFor(77)&&String(costRowFor(77).id));
+      $('retireBtn').click();
+    });
+    step(function(){});
+    step(function(){
+      ok('m41: an illegal restore sends nothing', H.reqs.length===0,
+         JSON.stringify(H.reqs.map(function(r){return r.m+' '+r.u;})));
+      ok('m41: the row stays retired', findItem(503).active===false,
+         String(findItem(503).active));
+      ok('m41: it says why rather than "try again"',
+         /cannot restore/i.test(toast())&&toast().indexOf('try again')<0, toast());
+      /* must name the row IN THE WAY, not merely contain its name - a success
+         toast ("Butter restored") contains it too, which is m32's :717 defect */
+      ok('m41: and it names the row in the way',
+         /\u201cButter\u201d already costs/.test(toast()), toast());
+      ok('m41: it reads as a refusal, not a success',
+         $('toast').className.indexOf('err')>-1, $('toast').className);
+    });
+    /* a LEGAL restore is untouched: retire the active row, then restore 503 */
+    step(function(){ H.confirmReturn=true; openEdit(costRowFor(77).id); });
+    step(function(){ $('retireBtn').click(); });
+    step(function(){});
+    step(function(){ H.reqs.length=0; openEdit(503); });
+    step(function(){ $('retireBtn').click(); });
+    step(function(){});
+    step(function(){
+      ok('m41: a legal restore still goes through',
+         H.reqs.filter(function(r){return r.m==='PATCH';}).length===1&&findItem(503).active===true,
+         'patches='+H.reqs.filter(function(r){return r.m==='PATCH';}).length+
+         ' active='+findItem(503).active);
+      ok('m41: and confirms itself', /restored/i.test(toast()), toast());
+    });
   }
 
   if(H.scen==='histfail'){
@@ -790,9 +885,16 @@ RUNNER = r"""
       ok('S2-3: the save still confirms itself', /saved/i.test(toast()), toast());
       /* m32: both assertions above pass if logPrice never fires at all. This
          is the one that does not - and a logPrice that never fires is
-         exactly what m24 was. */
-      ok('S2-3: a successful history write actually happens', hist().length===1,
+         exactly what m24 was.
+         TWO rows, not one: the $14 save above failed its history write, so
+         this save pays that debt at $14 as well as recording its own $15.
+         Before m40 it wrote one row, at $15, and dropped the $14 - which was
+         really PATCHed into the ledger and really was in effect. */
+      ok('S2-3: a successful history write actually happens', hist().length===2,
          'saw '+hist().length);
+      ok('m40: and it pays the owed row as well as its own',
+         hist().map(function(r){return Number(r.body.pack_price);}).sort().join(',')==='14,15',
+         JSON.stringify(hist().map(function(r){return r.body.pack_price;})));
     });
 
     /* m24 THE RECOVERY, end to end. The doc claimed re-saving the same price
@@ -824,8 +926,11 @@ RUNNER = r"""
       ok('m24: the owed row carries the price actually in effect',
          hist()[0]&&Number(hist()[0].body.pack_price)===21,
          hist()[0]&&JSON.stringify(hist()[0].body.pack_price));
+      /* m46: this was hist().every(...) alone, and [].every() is true, so it
+         passed vacuously under the very fault it sits beside — a logPrice
+         that never fires. The length check is what makes it bite. */
       ok('m24: no fabricated price was needed to get there',
-         hist().every(function(r){return Number(r.body.pack_price)===21;}),
+         hist().length>0&&hist().every(function(r){return Number(r.body.pack_price)===21;}),
          JSON.stringify(hist().map(function(r){return r.body.pack_price;})));
       ok('m24: the recovery is quiet once it works', /histor/i.test(toast())===false, toast());
     });
@@ -838,6 +943,140 @@ RUNNER = r"""
          hist().length===0, 'saw '+hist().length);
       ok('m24: but it still saves the ledger row',
          H.reqs.filter(function(r){return r.m==='PATCH';}).length===1);
+    });
+
+    /* m40 THE CORRECTION. The debt used to hold `true`, so it said a row was
+       owed and never WHICH. Correcting a price you have just been told did
+       not record - the obvious next action - wrote one row at the NEW price
+       and cleared the debt, and the old price, which really was PATCHed into
+       the ledger and really was in effect, lost its row with no notice.
+       Row 502 currently holds 21 with no debt. */
+    step(function(){ H.failHistory=true; H.reqs.length=0; openEdit(502); });
+    step(function(){ set('fPrice','21.50'); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){});
+    step(function(){
+      ok('m40: the failing save left a debt owed', hist().length===1&&/histor/i.test(toast()),
+         'hist='+hist().length+' '+toast());
+      ok('m40: and the failed price is live in the ledger',
+         Number(findItem(502).pack_price)===21.5, String(findItem(502).pack_price));
+    });
+    /* now CORRECT it to a different price, history healthy */
+    step(function(){ H.failHistory=false; H.reqs.length=0; openEdit(502); });
+    step(function(){ set('fPrice','30'); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){});
+    step(function(){});
+    step(function(){
+      var prices=hist().map(function(r){return Number(r.body.pack_price);});
+      /* BOTH rows: the price that was really in effect, and the one that is
+         now. Neither is fabricated - each was PATCHed into the ledger. */
+      ok('m40: correcting a price does not discard the failed one',
+         prices.indexOf(21.5)>-1, JSON.stringify(prices));
+      ok('m40: and the corrected price is recorded too',
+         prices.indexOf(30)>-1, JSON.stringify(prices));
+      ok('m40: exactly two rows, one per price that was in effect',
+         hist().length===2, 'saw '+hist().length+' '+JSON.stringify(prices));
+      ok('m40: no price that was never in effect', prices.every(function(v){
+         return v===21.5||v===30;}), JSON.stringify(prices));
+    });
+    /* and the debt is genuinely gone, not merely quiet */
+    step(function(){ H.reqs.length=0; openEdit(502); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){});
+    step(function(){
+      ok('m40: both debts are paid, so an unchanged save writes nothing',
+         hist().length===0, 'saw '+hist().length);
+    });
+
+    /* m39 THE PAYMENT WINDOW. done() frees savingKey before calling logPrice
+       and the debt clears only on the payment's RESPONSE, so every save made
+       while a payment was in flight fired another payment - two identical
+       rows, same price, same date, from the one action the m24 fix tells the
+       user to take, on the network that caused the failure. */
+    step(function(){ H.failHistory=true; H.reqs.length=0; openEdit(502); });
+    step(function(){ set('fPrice','40'); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){});
+    step(function(){
+      ok('m39: the debt is owed before the window opens', hist().length===1, 'saw '+hist().length);
+      /* history healthy, but now HELD: the payment stays in flight */
+      H.failHistory=false; H.deferHistory=true; H.reqs.length=0;
+      openEdit(502);
+    });
+    step(function(){ $('saveBtn').click(); });          // pays the debt, held
+    step(function(){});
+    step(function(){
+      ok('m39: the payment is in flight', hist().length===1, 'saw '+hist().length);
+      ok('m39: and Save is live again, so a second save is reachable',
+         $('saveBtn').disabled===false, 'disabled='+$('saveBtn').disabled);
+      openEdit(502);
+    });
+    step(function(){ $('saveBtn').click(); });          // the second save
+    step(function(){});
+    step(function(){
+      ok('m39: a save inside the payment window does not pay the debt twice',
+         hist().length===1, 'saw '+hist().length);
+      H.releaseDeferred();
+    });
+    step(function(){});
+    step(function(){
+      var prices=hist().map(function(r){return Number(r.body.pack_price);});
+      ok('m39: one owed row, not two identical ones', hist().length===1,
+         'saw '+hist().length+' '+JSON.stringify(prices));
+      ok('m39: and it records the price that was owed', prices[0]===40,
+         JSON.stringify(prices));
+      H.deferHistory=false;
+    });
+
+    /* m43 THE TIGHTENED GUARD. m26 dropped the `packPrice != null` guard so a
+       removal would record; that also made a pack edit on a NEVER-priced row
+       write a null-price row, while the identical edit through + Add wrote
+       nothing. Row 501 is linked and unpriced. */
+    step(function(){ H.reqs.length=0; openEdit(501); });
+    step(function(){ set('fQty','4'); set('fUnit','gal'); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){});
+    step(function(){
+      ok('m43: a pack edit on a never-priced row writes the ledger row',
+         H.reqs.filter(function(r){return r.m==='PATCH';}).length===1);
+      ok('m43: and writes NO null-price history row', hist().length===0,
+         'saw '+hist().length+' '+JSON.stringify(hist().map(function(r){return r.body;})));
+    });
+    /* m26 is untouched by the tightening: removing a REAL price still records */
+    step(function(){ H.reqs.length=0; H.confirmReturn=true; openEdit(502); });
+    step(function(){ set('fPrice',''); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){});
+    step(function(){
+      ok('m43: removing a real price still records a null-price row',
+         hist().length===1&&hist()[0].body.pack_price===null,
+         'saw '+hist().length+' '+JSON.stringify(hist().map(function(r){return r.body.pack_price;})));
+    });
+
+    /* m45 A NULL-PRICE ROW MUST NOT END IN AN ARROW POINTING AT NOTHING.
+       m34 fixed the price half ($0.00 -> "no price"); openHist() still emitted
+       the pack parenthetical whenever pack_qty was truthy, and uc is '' when
+       the price is null, so m26's own primary row read "no price (2 lb -> )". */
+    step(function(){
+      H.histRows=[{id:9,ingredient_cost_id:502,pack_price:null,pack_qty:2,
+                   pack_unit:'lb',source:'manual',effective_date:'2026-09-23'},
+                  {id:8,ingredient_cost_id:502,pack_price:10,pack_qty:2,
+                   pack_unit:'lb',source:'manual',effective_date:'2026-09-20'}];
+      openEdit(502);
+    });
+    step(function(){ openHist(); });
+    step(function(){});
+    step(function(){
+      var rows=$('histBody').querySelectorAll('.hist-row');
+      var t0=rows[0]?rows[0].textContent:'';
+      ok('m45: the null-price row still reads "no price"', /no price/.test(t0), t0);
+      ok('m45: and no arrow pointing at nothing', t0.indexOf('\u2192')<0, t0);
+      ok('m45: but it keeps its pack size', /2 lb/.test(t0), t0);
+      /* a priced row is unaffected - the arrow is still there when it means something */
+      var t1=rows[1]?rows[1].textContent:'';
+      ok('m45: a priced row still shows its unit cost', t1.indexOf('\u2192')>-1&&/\$5\.00/.test(t1), t1);
+      H.histRows=[];
     });
   }
 
