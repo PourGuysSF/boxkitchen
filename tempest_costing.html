@@ -659,8 +659,12 @@ function saveItem(){
 /* One owed row, identified by the values it records. m40: the debt is keyed
    on the values so a write of a DIFFERENT price can never discharge it. */
 function sameVals(a,price,qty,unit){
+  // null-ness is compared before num(), on BOTH price and qty: num(null) is 0,
+  // so without this a debt owed at "no qty" is discharged by a write of qty 0,
+  // which is m40's own defect in miniature - a debt paid by different values.
   return (a.price==null)===(price==null)&&num(a.price)===num(price)&&
-         num(a.qty)===num(qty)&&(a.unit||'')===(unit||'');
+         (a.qty==null)===(qty==null)&&num(a.qty)===num(qty)&&
+         (a.unit||'')===(unit||'');
 }
 function owedIndex(icId,price,qty,unit){
   var L=historyOwed[icId]||[];

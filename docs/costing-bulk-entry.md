@@ -428,7 +428,7 @@ check could not be built honestly without it.
 | **Retired rows stop blocking** | `costedOrderIds()` and `costRowFor()` both count **active rows only**, which is exactly what `ingredient_costs_one_active_per_order_item` enforces — the UI now agrees with the constraint instead of being stricter than it. Fixes m10 (a retired unpriced row showed "needs price" and tapped through into a retired item) and settles m9 (active-only makes the first match the only match). | `retired` scenario |
 | **`logPrice` gets a callback** | A failed history write is surfaced as a warning toast naming the item. The ledger write is **never rolled back** — see the decision below. | `histfail` scenario |
 | **Magnitude check on edit** | `magnitudeWarning()` asks before saving when the new unit cost is ≥10× or ≤1/10th the old one, **or** when the unit itself changed under an existing price. Adds never ask: there is no previous cost to compare. | `magnitude` scenario |
-| **m20** | `priceChanged` now includes `pack_unit`, so a unit-only edit writes a history row — and the magnitude check can see the edit that most reliably swings unit cost 16×. | `magnitude` scenario, `m20:` assertions |
+| **m20** | `priceChanged` now includes `pack_unit`, so a unit-only edit **on a row that has a price on one side or the other** writes a history row — and the magnitude check can see the edit that most reliably swings unit cost 16×. **Narrowed by m43 in round 8, and that narrowing went unrecorded until round 9:** on a row that has never had a price, a unit-only edit now writes nothing, because there is no price to record. m20's own measured case (`Sea salt 2 lb @ $10` → `oz`) is unaffected. | `magnitude` scenario, six `m20:` assertions |
 
 **Two decisions this slice had to make, recorded because they are judgement, not fact:**
 
@@ -599,6 +599,13 @@ that do not break a slice-1 promise, recorded here so slices 2 and 4 inherit the
   "if a new unit cost is ≥10× or ≤1/10th the previous one" — built on `priceChanged` it would
   be blind to the single edit that most reliably produces a 16× unit-cost swing.** Fix
   `priceChanged` as part of slice 2, not after it.
+
+  > **Narrowed by m43 (round 8), recorded in round 9.** As fixed, this applies to a row with
+  > a price on one side or the other. A unit-only edit on a row that has *never* had a price
+  > writes no history row — deliberately, because `ingredient_price_history` records prices
+  > and such a row states none, and because the ＋ Add door has always written nothing for
+  > the same shape. The case measured above still records. Round 8 made this change and did
+  > not say so here; that is the same documentation failure that failed round 7.
 
 Smaller, from the same review: `.pick-error` / `.pick-loading` / `.pick-retry` are emitted in
 `renderPick()` but have no rule in `kitchen.css`, so a failed load computes to
@@ -1021,11 +1028,11 @@ touched; m15 now carries m44's widened cost.
 
 | finding | as built | guarded by |
 |---|---|---|
-| **m40** | `historyOwed[id]` holds a **list of `{price,qty,unit}`**, not `true`. Each debt is paid with its own values and cleared only by a write of those values. Owed ≠ current → **both rows written**; owed = current → one row. | eight `m40:` assertions in `histfail` |
+| **m40** | `historyOwed[id]` holds a **list of `{price,qty,unit}`**, not `true`. Each debt is paid with its own values and cleared only by a write of those values. Owed ≠ current → **both rows written**; owed = current → one row. | ten `m40:` assertions in `histfail` (round 9 added two) |
 | **m39** | `historyPaying[id]` counts payment POSTs in flight. While one is out, the debt is not paid again; a genuine `priceChanged` still writes, because that is a new row, not a copy. | six `m39:` assertions in `histfail` |
 | **m41** | `toggleActive()`'s **restore** branch checks `costRowFor(it.order_item_id)` before sending. An illegal restore sends nothing and names the row in the way. | nine `m41:` assertions in `retired` |
 | **m42** | The m31 question guards on **`newO`**, the resolved guide row, not on `newOiId != null`. An unresolvable link is described as one, not named. | seven `m42:` assertions in `relink` |
-| **m43** | `priceChanged` is `&&(it.pack_price!=null||packPrice!=null)`. The debt disjunct is untouched, so the m24 recovery is unaffected. Both doors now agree: a pack edit on a never-priced row writes no history row through **either** ＋ Add or edit. | three `m43:` assertions in `histfail` |
+| **m43** | `priceChanged` is `&&(it.pack_price!=null||packPrice!=null)`. The debt disjunct is untouched, so the m24 recovery is unaffected. Both doors now agree: a pack edit on a never-priced row writes no history row through **either** ＋ Add or edit. | nine `m43:` assertions in `histfail` (round 9 added six) |
 | **m45** | `openHist()` emits `→ uc` only when `uc` is non-empty. A null-price row reads `no price (2 lb)`. | four `m45:` assertions in `histfail` |
 | **m46** | Given something to assert: `hist().length>0 &&` alongside the `every()`. | itself |
 
@@ -1134,6 +1141,102 @@ names the row in the way` first read `toast().indexOf('Butter')>-1`, which a suc
   guide item generally carry the same `name`, so *"“Butter” already costs that order-guide
   item"* is true but does not distinguish them. The `invoice_alias` or the id would, and
   neither reads well in a toast. Accepted at this size.
+
+### Added by round 9's review (PR #145, slice 2, pre-merge)
+
+Round 9 reviewed round 8's own five fixes. **No blocker.** The five majors hold: the debt is
+keyed on the values it owes and a write of a different price cannot discharge it; a payment in
+flight is not paid twice; Restore checks legality before sending; the m31 question no longer
+names a link it cannot resolve; the tightened guard leaves the debt payable. Two defects were
+found in round 8's work, one of them the same documentation failure that failed round 7, and
+both are fixed here. One new gap is measured and **left logged**, because fixing it is the
+control locking that slice 4 owns.
+
+- m52. **The m41 legality check does not survive a concurrent restore.** It reads `items[]`,
+  and an in-flight restore is not reflected there until its own response lands. Measured with
+  `ingredient_costs` PATCHes held open, two retired rows on guide item 77 and no active
+  holder:
+
+  ```
+  restore 503, held   -> PATCH id=eq.503 {active:true}   (guard passes: no active holder)
+  restore 506         -> PATCH id=eq.506 {active:true}   (guard passes: items[] unchanged)
+                      -> 2 PATCHes out on one order_item_id
+  ```
+
+  The partial unique index rejects the second, so this is not corruption — but the user gets
+  *"update failed, try again"*, which is the exact message m41 exists to remove. So **m41
+  removes the common path to that message and leaves a concurrent one.** Reaching it needs a
+  restore in flight while a second retired row on the same guide item is opened, which means
+  Cancel-and-reopen on a slow network. Exactly m30's shape (two concurrent re-links) and
+  m17's, and `toggleActive()` still has no `savingKey` at all, which is m19. **Not fixed
+  here: an in-flight guard on Retire/Restore is control locking, and slice 4 owns it.**
+  Slice 4 should treat m19, m30 and m52 as one piece of work.
+
+  *Reproduction, for whoever does fix it:* add a `deferWrites` flag to the suite's stub,
+  checked alongside `SCEN==='inflight'` in the PATCH route. Round 9 built it, measured with
+  it, and removed it again rather than leave an assertion that expects the bug — a green
+  suite must not imply a correctness the page does not have.
+
+- m53. **`sameVals` collided a null qty with a qty of 0, so a debt could be paid by values it
+  did not owe.** `num(null)` is `0`, and round 8 compared null-ness on `price` but not on
+  `qty`. Measured: a debt owed at *no qty* was discharged by a save of qty `0`, which wrote
+  `pack_qty: 0` and dropped the owed row. This is **m40's own defect in miniature** — the
+  whole point of keying the debt on values is that a write of different values cannot
+  discharge it — in the code that fixed m40. **Fixed:** `sameVals` now compares null-ness on
+  `qty` as well as on `price`. Guarded by two `m40:` assertions, proved to bite.
+
+- **m20's recorded promise was narrowed by m43 and round 8 did not say so.** Not a new
+  number, because it is m20. The slice-2 table said, unqualified, *"a unit-only edit writes a
+  history row"*. After m43's tightening that is true only for a row with a price on one side
+  or the other; on a never-priced row a unit-only edit now writes nothing. Measured: row 501
+  (never priced), unit `gal` → `qt`, **1 PATCH, 0 history rows**, while the same edit on a
+  priced row still writes one. **The behaviour is right** — `ingredient_price_history` records
+  prices, such a row states none, and ＋ Add has always written nothing for the same shape —
+  **so the doc is what was wrong**, corrected in both places above. Low consequence, and
+  recorded as a finding anyway because this is the **fourth** round in a row on which a claim
+  in this document turned out wider than the code. Consequence is not the reason it matters.
+
+**m37's unsound argument is now measured, not merely argued.** Round 8 asserted in prose that
+tightening `priceChanged` leaves the m24 debt on a removal row payable, and shipped no test of
+the exact scenario m37 said would break. Round 9 drove it: a removal whose history write fails
+records a debt at `{price:null, qty, unit}`, and the next unchanged save pays it — **1 history
+row, `pack_price: null`** — after which it goes quiet. Six `m43:` assertions, and they fail
+(`saw 0`) against the injection that makes m37's claim true. **This is the one place round 8
+argued where it should have measured**, and it happened to be right.
+
+#### What was proved, and what was not
+
+**280 assertions, 12 scenarios, clean.** Both earlier counts were re-verified by running the
+suite at those commits: **231** at `4d736ba` and **268** at `a49853c`. So round 9 adds
+**12**. Faults reintroduced:
+
+| fault reintroduced | failures |
+|---|---|
+| m53 — the null/0 qty collision restored | **1** |
+| m43's tightening removed | **2** |
+| the debt disjunct removed (which makes m37's claim true) | **14** |
+| `pack_unit` dropped from `priceChanged` again | **3** |
+
+**Of the 12 new assertions, 4 are proved to bite**: `m43: the debt on a removal row IS
+payable`, `m20: a unit-only edit on a NEVER-PRICED row writes NO history row`, `m20: a
+unit-only edit on a PRICED row still writes one`, and `m40: a null-qty debt is NOT discharged
+by a qty-0 write`. **The other 8 are not**: `m43: a failed removal attempted a history row`,
+`m43: and it failed, leaving a debt`, `m43: the ledger price really is gone`, `m43: and it
+pays it as a null price`, `m43: and once a removal debt is paid it goes quiet`, `m20:
+(precondition) the never-priced row is not already on qt`, `m20: (control) the ledger row
+still took the edit`, and `m40: a debt can be recorded with a null qty`. Preconditions,
+control cases and the setup steps of the two new sequences. Not "every".
+
+Two of the four injections also tripped **round 8's** assertions rather than round 9's — the
+`no-debt-disjunct` fault produced 14 failures across the `m24:`, `m39:`, `m40:` and `m43:`
+blocks. Those are round 8's guards doing their job, not round 9's, and are not counted above.
+
+**One assertion round 9 wrote was vacuous, and round 9 caught it rather than shipping it.**
+`m20: a unit-only edit on a NEVER-PRICED row writes NO history row` first set the unit to
+`gal` — which the `m43:` block above had already left it on, so nothing changed and the
+assertion could not fail under any injection. It now sets `qt` and carries a precondition
+asserting the row is not already on it. That is the m46 class, written fresh in the round that
+fixed m46; it is worth knowing the shape is easy to reproduce by accident.
 
 ### A correction to "How to verify without touching live data"
 

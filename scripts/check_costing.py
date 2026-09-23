@@ -849,6 +849,7 @@ RUNNER = r"""
          ' active='+findItem(503).active);
       ok('m41: and confirms itself', /restored/i.test(toast()), toast());
     });
+
   }
 
   if(H.scen==='histfail'){
@@ -1077,6 +1078,94 @@ RUNNER = r"""
       var t1=rows[1]?rows[1].textContent:'';
       ok('m45: a priced row still shows its unit cost', t1.indexOf('\u2192')>-1&&/\$5\.00/.test(t1), t1);
       H.histRows=[];
+    });
+
+    /* m43 / m37: the debt on a REMOVAL row. m37 declined the tightening
+       because it "would make the m24 debt on a removal row unpayable
+       forever"; round 8's doc asserts that is unsound. Assert it, do not
+       argue it. Give 502 a real price first, then fail its removal. */
+    step(function(){ H.failHistory=false; H.reqs.length=0; openEdit(502); });
+    step(function(){ set('fPrice','12'); set('fQty','2'); set('fUnit','lb'); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){});
+    step(function(){ H.failHistory=true; H.reqs.length=0; H.confirmReturn=true; openEdit(502); });
+    step(function(){ set('fPrice',''); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){});
+    step(function(){
+      ok('m43: a failed removal attempted a history row', hist().length===1, 'saw '+hist().length);
+      ok('m43: and it failed, leaving a debt', /histor/i.test(toast()), toast());
+      ok('m43: the ledger price really is gone', findItem(502).pack_price==null,
+         String(findItem(502).pack_price));
+    });
+    /* history healthy; re-save the removal UNCHANGED. Under m37's claim this
+       writes nothing forever, because priceChanged is now false on both sides. */
+    step(function(){ H.failHistory=false; H.reqs.length=0; openEdit(502); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){});
+    step(function(){
+      ok('m43: the debt on a removal row IS payable', hist().length===1, 'saw '+hist().length);
+      ok('m43: and it pays it as a null price', hist()[0]&&hist()[0].body.pack_price===null,
+         hist()[0]&&JSON.stringify(hist()[0].body));
+    });
+    step(function(){ H.reqs.length=0; openEdit(502); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){});
+    step(function(){
+      ok('m43: and once a removal debt is paid it goes quiet', hist().length===0, 'saw '+hist().length);
+    });
+
+    /* m20: the slice-2 table said "a unit-only edit writes a history
+       row". Row 501 has never had a price. Does it still? */
+    step(function(){ H.reqs.length=0; openEdit(501); });
+    step(function(){
+      /* the unit must really CHANGE, or this asserts nothing - 501 was left
+         on "gal" by the m43 block above and re-typing it is not an edit */
+      ok('m20: (precondition) the never-priced row is not already on qt',
+         $('fUnit').value!=='qt', $('fUnit').value);
+      set('fUnit','qt');
+    });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){});
+    step(function(){
+      ok('m20: a unit-only edit on a NEVER-PRICED row writes NO history row',
+         hist().length===0, 'saw '+hist().length);
+      ok('m20: (control) the ledger row still took the edit',
+         H.reqs.filter(function(r){return r.m==='PATCH';}).length===1&&
+         findItem(501).pack_unit==='qt', String(findItem(501).pack_unit));
+    });
+    /* and on a priced row, which is what m20 was actually about */
+    step(function(){ H.reqs.length=0; openEdit(502); });
+    step(function(){ set('fPrice','10'); set('fQty','2'); set('fUnit','lb'); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){});
+    step(function(){ H.reqs.length=0; H.confirmReturn=true; openEdit(502); });
+    step(function(){ set('fUnit','oz'); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){});
+    step(function(){
+      ok('m20: a unit-only edit on a PRICED row still writes one',
+         hist().length===1, 'saw '+hist().length);
+    });
+
+    /* m40 / sameVals: a debt owed with qty null, discharged by a save of qty 0 */
+    step(function(){ H.failHistory=true; H.reqs.length=0; openEdit(501); });
+    step(function(){ set('fQty',''); set('fUnit','gal'); set('fPrice','9'); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){});
+    step(function(){
+      ok('m40: a debt can be recorded with a null qty',
+         hist().length===1&&hist()[0].body.pack_qty===null,
+         hist()[0]&&JSON.stringify(hist()[0].body));
+      H.failHistory=false; H.reqs.length=0; openEdit(501);
+    });
+    step(function(){ set('fQty','0'); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){});
+    step(function(){
+      var qs=hist().map(function(r){return r.body.pack_qty;});
+      ok('m40: a null-qty debt is NOT discharged by a qty-0 write',
+         hist().length===2, 'rows='+hist().length+' qtys='+JSON.stringify(qs));
     });
   }
 
