@@ -648,6 +648,48 @@ RUNNER = r"""
     step(function(){
       ok('S2-1: discarding a pending re-link asks first', H.confirms===1, 'confirms='+H.confirms);
     });
+
+    /* m31: Save while the chooser is open. pickId==null meaning "link
+       unchanged" is right, but the screen is asking for a pick, so it must
+       not be done in silence. No link is ever guessed. */
+    step(function(){ H.reqs.length=0; H.confirms=0; H.confirmMsgs=[]; H.confirmReturn=false;
+                     openEdit(502); });
+    step(function(){ $('pickChange').click(); });
+    step(function(){
+      ok('m31: the chooser really is what is on screen', visible($('pickChoose')));
+      ok('m31: and it is asking for a pick', /Tap the item this row should be linked to/
+         .test($('pickHint').textContent), $('pickHint').textContent);
+      $('saveBtn').click();
+    });
+    step(function(){
+      ok('m31: saving on the chooser does not keep the link silently',
+         H.confirms===1, 'confirms='+H.confirms);
+      ok('m31: it says plainly that the link is unchanged',
+         /link/i.test(H.confirmMsgs[0]||'')&&/unchanged/i.test(H.confirmMsgs[0]||''),
+         H.confirmMsgs[0]);
+      ok('m31: it names the link being kept', (H.confirmMsgs[0]||'').indexOf('Slab bacon')>-1,
+         H.confirmMsgs[0]);
+      ok('m31: answering No writes nothing',
+         H.reqs.filter(function(r){return r.m==='PATCH';}).length===0);
+      ok('m31: answering No leaves the chooser up', visible($('pickChoose')));
+    });
+    step(function(){ H.confirms=0; H.confirmReturn=true; $('saveBtn').click(); });
+    step(function(){
+      var pt=H.reqs.filter(function(r){return r.m==='PATCH';});
+      ok('m31: answering Yes saves with the original link', pt.length===1, 'saw '+pt.length);
+      ok('m31: and the link really is the original one',
+         pt[0]&&pt[0].body.order_item_id===88, pt[0]&&JSON.stringify(pt[0].body.order_item_id));
+    });
+    /* and a resolved chooser saves without asking anything */
+    step(function(){ H.reqs.length=0; H.confirms=0; openEdit(502); });
+    step(function(){ $('pickChange').click(); });
+    step(function(){ rowFor('Asia Intl','Slab bacon').click(); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){
+      ok('m31: a resolved chooser asks nothing', H.confirms===0, 'confirms='+H.confirms);
+      ok('m31: a resolved chooser writes the new link',
+         H.reqs.filter(function(r){return r.m==='PATCH';}).length===1);
+    });
   }
 
   if(H.scen==='retired'){
@@ -729,6 +771,56 @@ RUNNER = r"""
     step(function(){
       ok('S2-3: a successful history write stays quiet', /histor/i.test(toast())===false, toast());
       ok('S2-3: the save still confirms itself', /saved/i.test(toast()), toast());
+      /* m32: both assertions above pass if logPrice never fires at all. This
+         is the one that does not - and a logPrice that never fires is
+         exactly what m24 was. */
+      ok('S2-3: a successful history write actually happens', hist().length===1,
+         'saw '+hist().length);
+    });
+
+    /* m24 THE RECOVERY, end to end. The doc claimed re-saving the same price
+       wrote the missing row; it wrote nothing, because priceChanged compares
+       the form against a stored row the PATCH had already overwritten. The
+       only thing that worked was $11 -> $12 -> $11, which puts a price that
+       was never in effect into the trail. */
+    step(function(){ H.failHistory=true; H.reqs.length=0; openEdit(502); });
+    step(function(){ set('fPrice','21'); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){});
+    step(function(){
+      ok('m24: the failing save still writes the ledger',
+         H.reqs.filter(function(r){return r.m==='PATCH';}).length===1);
+      ok('m24: the history row was attempted and failed', hist().length===1, 'saw '+hist().length);
+      ok('m24: and the failure is surfaced', /histor/i.test(toast()), toast());
+    });
+    /* history healthy again; re-save the SAME price, changing nothing */
+    step(function(){ H.failHistory=false; H.reqs.length=0; openEdit(502); });
+    step(function(){
+      ok('m24: the re-save really is of the same price', $('fPrice').value==='21',
+         $('fPrice').value);
+      $('saveBtn').click();
+    });
+    step(function(){});
+    step(function(){
+      ok('m24: re-saving an unchanged price writes the OWED history row',
+         hist().length===1, 'saw '+hist().length);
+      ok('m24: the owed row carries the price actually in effect',
+         hist()[0]&&Number(hist()[0].body.pack_price)===21,
+         hist()[0]&&JSON.stringify(hist()[0].body.pack_price));
+      ok('m24: no fabricated price was needed to get there',
+         hist().every(function(r){return Number(r.body.pack_price)===21;}),
+         JSON.stringify(hist().map(function(r){return r.body.pack_price;})));
+      ok('m24: the recovery is quiet once it works', /histor/i.test(toast())===false, toast());
+    });
+    /* the debt is now paid: an unchanged save must go back to writing nothing */
+    step(function(){ H.reqs.length=0; openEdit(502); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){});
+    step(function(){
+      ok('m24: once paid, an unchanged save writes no history row',
+         hist().length===0, 'saw '+hist().length);
+      ok('m24: but it still saves the ledger row',
+         H.reqs.filter(function(r){return r.m==='PATCH';}).length===1);
     });
   }
 
@@ -796,6 +888,36 @@ RUNNER = r"""
       ok('S2-4: an add never asks - there is no previous cost', H.confirms===0,
          'confirms='+H.confirms);
       ok('S2-4: the add is written', posts().length===1, 'saw '+posts().length);
+    });
+
+    /* m26: clearing the price is the largest possible change to it, and the
+       one edit a ratio cannot see (newUC is null). Slice 2 is the slice that
+       says when the gate fires, so it fires here too - and the removal is
+       recorded, as a history row with a null price. */
+    step(function(){ H.reqs.length=0; H.confirms=0; H.confirmMsgs=[]; H.confirmReturn=false;
+                     openEdit(502); });
+    step(function(){ set('fPrice',''); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){
+      ok('m26: wiping a price asks first', H.confirms===1, 'confirms='+H.confirms);
+      ok('m26: the question says the price is being removed',
+         /remove/i.test(H.confirmMsgs[0]||''), H.confirmMsgs[0]);
+      ok('m26: the question names the item', (H.confirmMsgs[0]||'').indexOf('Sea salt')>-1,
+         H.confirmMsgs[0]);
+      ok('m26: answering No writes nothing',
+         H.reqs.filter(function(r){return r.m==='PATCH';}).length===0);
+    });
+    step(function(){ H.reqs.length=0; H.confirms=0; H.confirmReturn=true; $('saveBtn').click(); });
+    step(function(){});
+    step(function(){
+      var pt=H.reqs.filter(function(r){return r.m==='PATCH';});
+      ok('m26: answering Yes removes the price', pt.length===1&&pt[0].body.pack_price===null,
+         pt[0]&&JSON.stringify(pt[0].body.pack_price));
+      ok('m26: removing a price is recorded in the history', hist().length===1,
+         'saw '+hist().length);
+      ok('m26: the history row records it as no price',
+         hist()[0]&&hist()[0].body.pack_price===null,
+         hist()[0]&&JSON.stringify(hist()[0].body.pack_price));
     });
   }
 

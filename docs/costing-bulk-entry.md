@@ -1,9 +1,11 @@
 # Costing — make the ledger fillable
 
-Status: **Slice 2 built** on `costing-slice2-undo` (PR #145) and **reviewed — one blocker
-open**: the price-history recovery this document states twice does not exist (m24). All four
-of the slice's promises are otherwise implemented and verified. See "Slice 2 as built"
-below, m21–m25 for what it left open, and m26–m32 for round 5's findings. **Slice 1 shipped** — merged to `main` as `7d79bd6` (PR #143, squashed; branch
+Status: **Slice 2 built** on `costing-slice2-undo` (PR #145), reviewed five times, and
+**round 5's blocker is fixed**: the price-history recovery this document used to claim twice
+now exists — a failed history write records a debt and the next save pays it (m24). Round 6
+also gated and recorded a wiped price (m26) and stopped a save on the relink chooser from
+silently keeping the old link (m31). See "Slice 2 as built" below, m21–m25 for what the
+slice left open, and m26–m33 for what rounds 5 and 6 found. **Slice 1 shipped** — merged to `main` as `7d79bd6` (PR #143, squashed; branch
 deleted). Four rounds of review; round 4 found no fourth async-staleness bug and passed it.
 See "Slice 1 as built" below, and m18–m20 for the three majors round 4 left open. Slices 2–6
 are still planned.
@@ -437,10 +439,26 @@ check could not be built honestly without it.
    turn a bookkeeping failure into a costing failure. So the price stands, and the failure is
    said out loud — "⚠ Sea salt saved, but its price history didn't record" — rather than
    swallowed. ~~Re-saving the same price writes the missing row (m24).~~
-   **That last sentence is false as built — see m24, which is an open blocker.** The
-   decision itself (never roll back) survives review; only the claimed recovery does not
-   exist. Do not merge this slice with the sentence standing: either make it true, or
-   strike it and say there is no recovery.
+   **That sentence was false when written, and round 6 made it true rather than striking
+   it.** What the code now does: a failed history POST records the ledger row's id in
+   `historyOwed`, and the *next* save of that row writes the missing history row whether or
+   not the price changed, clearing the debt only when the write really succeeds. So the
+   recovery is "save the row again" — no price needs to be altered to trigger it, and the
+   $11→$12→$11 detour that used to be the only working route (and that wrote a fabricated
+   $12) is gone. **The debt is held in memory only.** Close the tab or reload with one
+   outstanding and it is forgotten: the price stands, the trail keeps its gap, and nothing
+   says so. Persisting it was considered and declined — it would mean carrying a claim about
+   a table across sessions with no cheap way to re-check it, and a genuine retry belongs with
+   slice 4's reconcile-before-write.
+
+**Round 6 added three more, from round 5's review** — all inside slice 2's own remit,
+because slice 2 is the slice that defines when the save path stops and asks:
+
+| finding | as built | guarded by |
+|---|---|---|
+| **m24** (blocker) | A failed history write records a debt in `historyOwed`; the next save of that row pays it regardless of `priceChanged`, and the debt clears only on a history write that really lands. In memory only — see decision 2. | `histfail`, four `m24:` assertions |
+| **m26** | Clearing a price asks before saving, and records the removal as a history row with a null `pack_price`. | `magnitude`, seven `m26:` assertions |
+| **m31** | Saving on an unresolved relink chooser names the link it is keeping and asks; a resolved chooser asks nothing. No link is ever guessed. | `relink`, eleven `m31:` assertions |
 
 **Also closed, as a side effect:** the "unsolved from the main list" half of B1. Tapping
 either Slab bacon in the main list now opens an edit whose chosen line names its vendor,
@@ -595,8 +613,8 @@ use. B1 is solved on every surface that **writes**, and unsolved on these two th
   price again, which writes the history row.~~ Nothing in the message says that. A real
   retry belongs with slice 4's reconciliation.
 
-  > **BLOCKER, open (round 5). The stated recovery does not exist.** Measured against a
-  > stubbed `api()`, start to finish:
+  > **BLOCKER, round 5 — FIXED in round 6 (option 1).** What was measured, and what it is
+  > now. As found:
   >
   > ```
   > 1. save Sea salt at $11, history POST fails
@@ -620,9 +638,19 @@ use. B1 is solved on every surface that **writes**, and unsolved on these two th
   > produce a fabricated price before; now it can, and this document's own advice leads
   > there.
   >
-  > Two acceptable fixes, both small: track that a history row is owed and write it on the
-  > next save regardless of `priceChanged`; or strike the claim here and in decision 2 and
-  > say plainly there is no recovery. The first is better.
+  > **Fixed with option 1.** `historyOwed[ledgerId]` is set when the history POST fails and
+  > cleared only when one really lands. `saveItem()`'s EDIT branch now calls `logPrice` when
+  > `priceChanged || historyOwed[savingId]`, so re-saving the same price pays the debt:
+  >
+  > ```
+  > save $21, history fails  -> PATCH 1, history attempted 1, warning toast, debt owed
+  > re-save the same $21     -> PATCH 1, history rows written 1 @ $21   [recovery works]
+  > save again, unchanged    -> PATCH 1, history rows written 0         [debt is paid]
+  > ```
+  >
+  > No fabricated price is written at any point. The debt is **in memory only** — see
+  > decision 2 above for why, and for what is lost if the page is closed while one is
+  > outstanding. Guarded by four `m24:` assertions in `histfail`, all proved to bite.
 - m25. **The magnitude check compares against the row's own previous cost, including
   across a re-link.** Re-link and re-price in one save and the question contrasts the new
   unit cost with the *old item's* — the same ledger row, but arguably not a comparable
@@ -655,6 +683,19 @@ reading the warning while the screen showed a different item. Scope is clean and
   the slice that defines when the gate fires, and this is the gap in it. In a slice called
   "Mistakes can be undone" it is the least undoable mistake on the page. **Decide
   deliberately: gate it, log it, or accept it here.**
+
+  > **Fixed (round 6): gated and logged.** `magnitudeWarning()` returns the removal question
+  > before it reaches any ratio — *"Sea salt: $5.00 / lb → no price … This removes the price.
+  > Recipes costed from this item lose their cost until it is set again. Remove it?"* — and
+  > the history write is no longer guarded on `packPrice != null`, so the removal records
+  > **a history row with a null `pack_price`**.
+  >
+  > A null-price row rather than a gap-plus-something-else, because the history is read as a
+  > sequence of states the item has been in, and "no price" is one of those states. A gap
+  > cannot be distinguished from a history write that failed — which is the very thing m24
+  > exists to make visible — and anything recorded outside this table would be invisible to
+  > the price-history modal and to slice 3's provenance. Guarded by seven `m26:` assertions
+  > in `magnitude`, all proved to bite.
 
 - m27. **The history-failure toast is six lines at 390px** — the longest string on the
   page. Measured at the true 195px containing block (see m16): *"Distilled white vinegar
@@ -702,19 +743,33 @@ reading the warning while the screen showed a different item. Scope is clean and
   Confirmed: `saveItem()` on the chooser with no pick sends a PATCH carrying the original
   `order_item_id`.
 
-- m32. **The suite has no assertion that a history row was ever actually written.**
-  `check_costing.py:730`/`:731` both pass if `logPrice` is **never called at all** —
-  `H.reqs.length=0` is reset at `:722`, so one line would have closed it:
+  > **Fixed (round 6): it says so plainly.** A `relinking` flag is true from `changePick()`
+  > on an edit until the chooser is resolved (`showChosen()` clears it, as does
+  > `closeEdit()`/`clearPick()`). Saving while it is true asks: *"You have not tapped an
+  > item, so this row stays linked to Slab bacon (Birite). Save with the link unchanged?"* —
+  > naming the link it is keeping. Answering No writes nothing and leaves the chooser up.
+  > A resolved chooser asks nothing. **No link is ever guessed**, which is why this is a
+  > confirm and not a silent default; Save is left reachable rather than disabled because
+  > the chooser is always resolvable (the row's own item stays listed, and Custom unlinks),
+  > and a dead button explains nothing. Guarded by eleven `m31:` assertions in `relink`.
 
-  ```js
-  ok('S2-3: a successful history write actually happens', hist().length===1, 'saw '+hist().length);
-  ```
+- m32. **No assertion covered the RECOVERY path — the specific hole m24 slipped through.**
+  *(Corrected in round 6: the original wording, "the suite never asserts a history row was
+  written", was overstated. `check_costing.py:711` and `:746` both assert
+  `hist().length===1`, so a written row was covered.)* What was not covered anywhere was the
+  second save: the suite proved a history row is written when the price *changes*, and never
+  that one is written when the documented recovery says it should be. The two assertions
+  around the successful-write case (`:730`/`:731`, "stays quiet" and "still confirms
+  itself") do both pass if `logPrice` is never called at all, so neither backstopped it
+  either. The injection the "stays quiet" assertion was hardened against was "a `logPrice`
+  that always complains", never "a `logPrice` that never fires" — and **m24's blocker is a
+  `logPrice` that never fires**, which is why 199 assertions and three test-backed rounds
+  did not catch a claim this document stated twice.
 
-  The injection the "stays quiet" assertion was hardened against was "a `logPrice` that
-  always complains", never "a `logPrice` that never fires". **m24's blocker is a `logPrice`
-  that never fires**, which is why 199 assertions and three test-backed rounds did not
-  catch a claim this document states twice. Add the assertion regardless of how m24 is
-  resolved.
+  Closed in round 6: `S2-3: a successful history write actually happens` plus the four
+  `m24:` assertions that drive fail → re-save-unchanged → save-again. Proved to bite against
+  a `logPrice` that never fires (17 failures) and against the pre-fix `priceChanged &&
+  packPrice != null` guard (4).
 
   Also from the same audit, recorded rather than fixed:
   - The claim *"every new assertion was proved to bite"* is overstated. The 35 figure is
@@ -734,6 +789,35 @@ reading the warning while the screen showed a different item. Scope is clean and
     after any *edit*-save the local row has `active === undefined`. Adds are unaffected
     (the POST payload carries `active:true`). The suite therefore cannot distinguish
     "active-only filtering works" from "nothing matches at all" on any post-save state.
+
+### Added by round 6 (the fixes for m24, m26 and m31)
+
+Round 6 changed only what rounds 5 flagged as a blocker or a gap in slice 2's own gate. m29
+(the relink chooser at 856px, Save below an iPhone fold) is deliberately **left logged**:
+＋ Add was already 802px, so it is a modal-layout problem across two surfaces and gets its
+own pass. Slices 3–6 were not started.
+
+- m33. **The history debt does not survive the page.** `historyOwed` is a plain in-memory
+  map, so a reload, a closed tab or iOS dropping the page loses any outstanding debt: the
+  price stands, its trail keeps a hole, and nothing on screen says a row is missing. The
+  warning toast is the only notice it was ever owed, and it lasts 1.6s (m27). Deliberate —
+  see decision 2 — and the durable version is slice 4's reconcile, which can ask the table
+  what it actually holds instead of remembering a claim about it.
+- m34. **A removal row needs its own reading, and got one.** `openHist()` rendered
+  `money(x.pack_price)`, so m26's null-price row would have read **`$0.00`** — a price
+  nobody ever paid, in the table that exists to say what was. It now reads `no price`. Fixed
+  here because m26 is what created the row; nothing else on the page writes a null price.
+- m35. **Two confirms can now stack on one save.** Save on an unresolved relink chooser
+  after also clearing the price asks twice in a row — the link question, then the removal
+  question. Each is correct and each is about a different thing, but two modal dialogs back
+  to back is the shape people dismiss without reading. Recorded, not fixed; slice 4 owns the
+  save path and is where combining them belongs.
+- m36. **The recovery is silent when it works.** Paying a debt writes the owed row and says
+  only "saved" — the same as any other save. Someone who saw the failure toast has no
+  confirmation that the trail was repaired, and someone who did not see it never learns a
+  repair happened. Saying so would mean a toast about bookkeeping on an ordinary save;
+  judged not worth it at this size, and it belongs with slice 3's provenance view, which is
+  where the trail becomes visible at all.
 
 ### A correction to "How to verify without touching live data"
 
