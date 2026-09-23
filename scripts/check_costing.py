@@ -74,6 +74,11 @@ def find_chrome():
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+SCENARIOS = ("ok", "slow", "fail", "empty", "ledgerslow", "ledgerfail",
+             "inflight", "retry",
+             # slice 2 - mistakes can be undone
+             "relink", "retired", "histfail", "magnitude")
+
 # ---------------------------------------------------------------- fixtures --
 # Two "Slab bacon" rows on purpose: the whole of slice 1 is that the id we
 # POST is the id of the row that was tapped, and a name-matched harness would
@@ -85,6 +90,13 @@ ORDER_ITEMS = [
      "unit": "CS", "sort_order": 1, "active": True},
     {"id": 12, "location": "Tempest", "name": "Distilled white vinegar",
      "vendor": "Birite", "unit": "EA", "sort_order": 2, "active": True},
+    # slice 2: these two are held only by RETIRED ledger rows, so the picker
+    # must offer them as fresh - retiring a mis-linked row is the repair, and
+    # it must not remove the guide item forever.
+    {"id": 77, "location": "Tempest", "name": "Butter", "vendor": "Birite",
+     "unit": "CS", "sort_order": 3, "active": True},
+    {"id": 44, "location": "Tempest", "name": "Cornstarch", "vendor": "Birite",
+     "unit": "EA", "sort_order": 4, "active": True},
 ]
 INGREDIENT_COSTS = [
     # linked but unpriced - must stay in the picker, marked "needs price"
@@ -94,6 +106,15 @@ INGREDIENT_COSTS = [
     {"id": 502, "location": "Tempest", "order_item_id": None, "name": "Sea salt",
      "invoice_alias": None, "pack_qty": 2, "pack_unit": "lb", "pack_price": 10,
      "active": True},
+    # retired AND priced: must not hide guide item 77 from the picker
+    {"id": 503, "location": "Tempest", "order_item_id": 77, "name": "Butter",
+     "invoice_alias": None, "pack_qty": 36, "pack_unit": "lb", "pack_price": 108,
+     "active": False},
+    # retired AND unpriced: must not show as "needs price" and tap through
+    # into a retired row (m10)
+    {"id": 504, "location": "Tempest", "order_item_id": 44, "name": "Cornstarch",
+     "invoice_alias": None, "pack_qty": None, "pack_unit": None,
+     "pack_price": None, "active": False},
 ]
 
 # ------------------------------------------------------------ page surgery --
@@ -120,7 +141,18 @@ HARNESS = r"""
        an empty-but-successful guide */
     nextGuide:[],nextLedger:[],
     /* every ingredient_costs write fails (after being held, in inflight) */
-    failWrites:false};
+    failWrites:false,
+    /* slice 2: the price-history POST fails while the ledger write succeeds */
+    failHistory:false,
+    /* m39: hold every price-history POST open, so a second save can be made
+       INSIDE the debt-payment window. Without this the payment always
+       resolves before the next save and the duplicate can never be seen. */
+    deferHistory:false,
+    /* m45: what the price-history GET answers with */
+    histRows:[],
+    /* what confirm() was actually asked - the magnitude check has to SAY
+       what it is warning about, or it is just a speed bump */
+    confirmMsgs:[]};
   if(SCEN==='retry'){window.__h.nextGuide.push('err');window.__h.nextLedger.push('defer');}
   function planned(q,ok,empty){
     var p=q.shift();
@@ -148,7 +180,7 @@ HARNESS = r"""
       return planned(window.__h.nextLedger,ledger,ledger);
     }
     if(m==='GET'&&u.indexOf('/ingredient_price_history')>-1)
-      return {status:200,text:'[]'};
+      return {status:200,text:JSON.stringify(window.__h.histRows)};
     if(m==='POST'&&u.indexOf('/ingredient_costs')>-1){
       var row=JSON.parse(JSON.stringify(body));row.id=nextId++;
       var added=window.__h.failWrites?{err:true}:{status:201,text:JSON.stringify([row])};
@@ -165,6 +197,11 @@ HARNESS = r"""
         if(server[k].id===p.id)for(var f in p)server[k][f]=p[f];
       if(SCEN==='inflight')return {defer:true,res:patched};
       return patched;
+    }
+    if(m==='POST'&&u.indexOf('/ingredient_price_history')>-1){
+      var logged=window.__h.failHistory?{err:true}:{status:201,text:'[{"id":1}]'};
+      if(window.__h.deferHistory)return {defer:true,res:logged};
+      return logged;
     }
     if(m==='POST')return {status:201,text:'[]'};
     return {status:200,text:'[]'};
@@ -193,7 +230,9 @@ HARNESS = r"""
   window.__h.releaseOne=function(){var f=deferred.shift();if(f)f();};
 
   var realConfirm=window.confirm;
-  window.confirm=function(){window.__h.confirms++;return window.__h.confirmReturn;};
+  window.confirm=function(msg){window.__h.confirms++;
+    window.__h.confirmMsgs.push(String(msg==null?'':msg));
+    return window.__h.confirmReturn;};
 })();
 </script>
 """
@@ -202,6 +241,7 @@ RUNNER = r"""
 <script>
 (function(){
   var H=window.__h, F=H.fails;
+  var ORDER_ITEM_COUNT=__ORDER_ITEM_COUNT__;
   function ok(name,cond,extra){if(!cond)F.push(name+(extra?' :: '+extra:''));H.log.push((cond?'PASS ':'FAIL ')+name);}
   function $(id){return document.getElementById(id);}
   function pickRows(){return Array.prototype.slice.call($('pickList').querySelectorAll('.pick-row'));}
@@ -335,7 +375,7 @@ RUNNER = r"""
     /* both fixture GETs have to have landed before an id means anything -
        each takes a tick, and so does each step. */
     step(function(){});
-    step(function(){ ok('inflight: fixtures loaded', items.length===2, 'items='+items.length); });
+    step(function(){ ok('inflight: fixtures loaded', items.length===4, 'items='+items.length); });
 
     /* (a) save, then Cancel before the response */
     step(function(){ H.reqs.length=0; openEdit(502); });
@@ -511,7 +551,7 @@ RUNNER = r"""
     step(function(){});
     step(function(){ H.releaseDeferred(); });
     step(function(){
-      ok('M-a: a superseded guide does not replace the guide', orderItems.length===3, 'orderItems='+orderItems.length);
+      ok('M-a: a superseded guide does not replace the guide', orderItems.length===ORDER_ITEM_COUNT, 'orderItems='+orderItems.length);
     });
 
     /* the ledger's error path */
@@ -522,6 +562,707 @@ RUNNER = r"""
     step(function(){
       ok('M-a: a superseded ledger failure is ignored', ledgerLoaded&&!ledgerError);
       ok('M-a: the ledger survives it', !!costRowFor(169)&&count()==='3 items · 2 priced', count());
+    });
+  }
+
+  /* ---------------------------------------------------------- SLICE 2 --
+     "Mistakes can be undone". Four guards, one per promise. */
+
+  if(H.scen==='relink'){
+    /* (1) RE-LINK ON EDIT. openEdit() hid pickWrap, so a row bound to the
+       wrong guide item could never be corrected - only retired, which (2)
+       then blocked that guide item forever. */
+    step(function(){});
+    step(function(){ ok('relink: fixtures loaded', items.length===4, 'items='+items.length); });
+
+    step(function(){ openEdit(502); });
+    step(function(){
+      ok('S2-1: edit shows the picker at all', visible($('pickWrap')),
+         'display='+$('pickWrap').style.display);
+      ok('S2-1: edit shows what the row is linked to', visible($('pickChosen')));
+      ok('S2-1: an off-guide row says so', $('pickChosenV').textContent==='Off-guide items',
+         $('pickChosenV').textContent);
+      ok('S2-1: the chosen line names the row', $('pickChosenN').textContent==='Sea salt',
+         $('pickChosenN').textContent);
+      ok('S2-1: Change is reachable on an edit', visible($('pickChange')));
+    });
+    step(function(){ $('pickChange').click(); });
+    step(function(){
+      ok('S2-1: Change opens the chooser', visible($('pickChoose')));
+      /* a guide item already held by an ACTIVE row is not a legal re-link
+         target - the partial unique index would reject it */
+      ok('S2-1: a guide item held by an active row is not offered',
+         !rowFor('Birite','Distilled white vinegar'));
+      ok('S2-1: a free guide item is offered', !!rowFor('Birite','Slab bacon'));
+    });
+    step(function(){
+      /* the numbers must survive: the price is RIGHT, the link is WRONG -
+         that is the whole repair */
+      ok('S2-1: Change on an edit keeps the qty', $('fQty').value==='2', $('fQty').value);
+      ok('S2-1: Change on an edit keeps the unit', $('fUnit').value==='lb', $('fUnit').value);
+      ok('S2-1: Change on an edit keeps the price', $('fPrice').value==='10', $('fPrice').value);
+      rowFor('Birite','Slab bacon').click();
+    });
+    step(function(){
+      ok('S2-1: re-linking takes the tapped id', pickId===88, String(pickId));
+      ok('S2-1: re-linking renames to the new item', $('fName').value==='Slab bacon',
+         $('fName').value);
+      ok('S2-1: re-linking shows the new vendor', $('pickChosenV').textContent==='Birite',
+         $('pickChosenV').textContent);
+      ok('S2-1: re-linking still keeps the numbers',
+         $('fQty').value==='2'&&$('fUnit').value==='lb'&&$('fPrice').value==='10',
+         $('fQty').value+'/'+$('fUnit').value+'/'+$('fPrice').value);
+      H.reqs.length=0;
+    });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){
+      var pt=H.reqs.filter(function(r){return r.m==='PATCH';});
+      ok('S2-1: the re-link is written', pt.length===1, 'saw '+pt.length);
+      ok('S2-1: it PATCHes the row being edited', pt[0]&&/id=eq\.502/.test(pt[0].u), pt[0]&&pt[0].u);
+      ok('S2-1: it writes the new order_item_id', pt[0]&&pt[0].body.order_item_id===88,
+         pt[0]&&JSON.stringify(pt[0].body.order_item_id));
+      ok('S2-1: it writes the new name', pt[0]&&pt[0].body.name==='Slab bacon',
+         pt[0]&&JSON.stringify(pt[0].body.name));
+      ok('S2-1: it keeps the price it was repairing', pt[0]&&Number(pt[0].body.pack_price)===10,
+         pt[0]&&JSON.stringify(pt[0].body.pack_price));
+    });
+
+    /* re-link the other way: a linked row can be sent off-guide */
+    step(function(){ H.reqs.length=0; openEdit(501); });
+    step(function(){
+      ok('S2-1: a linked row shows its vendor', $('pickChosenV').textContent==='Birite',
+         $('pickChosenV').textContent);
+      $('pickChange').click();
+    });
+    step(function(){ $('pickList').querySelector('.pick-custom').click(); });
+    step(function(){
+      ok('S2-1: Custom unlinks the row', pickId==='custom', String(pickId));
+      ok('S2-1: unlinking re-enables the name field', $('fName').disabled===false);
+      set('fName','White vinegar (off guide)'); set('fQty','4'); set('fUnit','gal'); set('fPrice','20');
+    });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){
+      var pt=H.reqs.filter(function(r){return r.m==='PATCH';});
+      ok('S2-1: unlinking writes a null order_item_id', pt[0]&&pt[0].body.order_item_id===null,
+         pt[0]&&JSON.stringify(pt[0].body.order_item_id));
+      ok('S2-1: unlinking keeps the typed name',
+         pt[0]&&pt[0].body.name==='White vinegar (off guide)', pt[0]&&JSON.stringify(pt[0].body.name));
+    });
+
+    /* a pending re-link is unsaved work: the backdrop must ask */
+    step(function(){ H.confirms=0; openEdit(502); });
+    step(function(){ $('pickChange').click(); });
+    step(function(){ rowFor('Asia Intl','Slab bacon').click(); });
+    step(function(){ $('editModal').click(); });
+    step(function(){
+      ok('S2-1: discarding a pending re-link asks first', H.confirms===1, 'confirms='+H.confirms);
+    });
+
+    /* m31: Save while the chooser is open. pickId==null meaning "link
+       unchanged" is right, but the screen is asking for a pick, so it must
+       not be done in silence. No link is ever guessed. */
+    step(function(){ H.reqs.length=0; H.confirms=0; H.confirmMsgs=[]; H.confirmReturn=false;
+                     openEdit(502); });
+    step(function(){ $('pickChange').click(); });
+    step(function(){
+      ok('m31: the chooser really is what is on screen', visible($('pickChoose')));
+      ok('m31: and it is asking for a pick', /Tap the item this row should be linked to/
+         .test($('pickHint').textContent), $('pickHint').textContent);
+      $('saveBtn').click();
+    });
+    step(function(){
+      ok('m31: saving on the chooser does not keep the link silently',
+         H.confirms===1, 'confirms='+H.confirms);
+      ok('m31: it says plainly that the link is unchanged',
+         /link/i.test(H.confirmMsgs[0]||'')&&/unchanged/i.test(H.confirmMsgs[0]||''),
+         H.confirmMsgs[0]);
+      ok('m31: it names the link being kept', (H.confirmMsgs[0]||'').indexOf('Slab bacon')>-1,
+         H.confirmMsgs[0]);
+      ok('m31: answering No writes nothing',
+         H.reqs.filter(function(r){return r.m==='PATCH';}).length===0);
+      ok('m31: answering No leaves the chooser up', visible($('pickChoose')));
+    });
+    step(function(){ H.confirms=0; H.confirmReturn=true; $('saveBtn').click(); });
+    step(function(){
+      var pt=H.reqs.filter(function(r){return r.m==='PATCH';});
+      ok('m31: answering Yes saves with the original link', pt.length===1, 'saw '+pt.length);
+      ok('m31: and the link really is the original one',
+         pt[0]&&pt[0].body.order_item_id===88, pt[0]&&JSON.stringify(pt[0].body.order_item_id));
+    });
+    /* an off-guide row is linked to nothing, so the question must not name a
+       link that does not exist */
+    step(function(){ H.reqs.length=0; H.confirms=0; H.confirmMsgs=[]; H.confirmReturn=false;
+                     openEdit(501); });
+    step(function(){
+      ok('m31: the off-guide row really is off-guide', findItem(501).order_item_id==null,
+         String(findItem(501).order_item_id));
+      $('pickChange').click();
+    });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){
+      ok('m31: an off-guide row is asked about too', H.confirms===1, 'confirms='+H.confirms);
+      ok('m31: and it is not described as linked to anything',
+         /off the order guide/.test(H.confirmMsgs[0]||'')&&
+         !/stays linked to/.test(H.confirmMsgs[0]||''), H.confirmMsgs[0]);
+    });
+
+    /* and a resolved chooser saves without asking anything */
+    step(function(){ H.reqs.length=0; H.confirms=0; openEdit(502); });
+    step(function(){ $('pickChange').click(); });
+    step(function(){ rowFor('Asia Intl','Slab bacon').click(); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){
+      ok('m31: a resolved chooser asks nothing', H.confirms===0, 'confirms='+H.confirms);
+      ok('m31: a resolved chooser writes the new link',
+         H.reqs.filter(function(r){return r.m==='PATCH';}).length===1);
+    });
+
+    /* m42 THE QUESTION MUST NOT BE CONFIDENTLY WRONG ABOUT WHAT IT KEEPS.
+       m38 fixed the order_item_id == null half. The other half is a row
+       LINKED to a guide item orderById cannot resolve - the guide item was
+       deactivated while the ledger row still points at it, which init()'s
+       active=eq.true guarantees, or guideError is set, which hits every
+       linked row at once. There `label` falls back to the typed name and the
+       question read "stays linked to Old ketchup" while the chosen line on
+       the same screen read "Off-guide items". Injected here the way the live
+       table produces it: a ledger row whose guide id is not in the guide. */
+    step(function(){
+      items.push({id:505,location:'Tempest',order_item_id:999,name:'Old ketchup',
+                  invoice_alias:null,pack_qty:1,pack_unit:'gal',pack_price:8,active:true});
+      render();
+      ok('m42: the injected row really is linked but unresolvable',
+         findItem(505).order_item_id===999&&!orderById[999], 'orderById[999]='+orderById[999]);
+      H.reqs.length=0; H.confirms=0; H.confirmMsgs.length=0; H.confirmReturn=false;
+      openEdit(505);
+    });
+    step(function(){ $('pickChange').click(); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){
+      var msg=H.confirmMsgs.join(' | ');
+      ok('m42: it still asks before keeping an unresolved link', H.confirms===1,
+         'confirms='+H.confirms);
+      ok('m42: it does not claim a link to the typed name',
+         msg.indexOf('linked to Old ketchup')<0, msg);
+      ok('m42: nor does it claim the row is off the order guide',
+         msg.indexOf('off the order guide')<0, msg);
+      ok('m42: it says the link cannot be shown', /cannot show/i.test(msg), msg);
+      ok('m42: answering No writes nothing', H.reqs.length===0,
+         JSON.stringify(H.reqs.map(function(r){return r.m;})));
+      /* the measured contradiction: the chosen line says the row is off-guide
+         while the question said it stays linked to a named item */
+      ok('m42: it does not contradict the chosen line',
+         $('pickChosenV').textContent==='Off-guide items'&&
+         !/stays linked to/.test(msg),
+         'chosenV='+$('pickChosenV').textContent+' msg='+msg);
+      H.confirmReturn=true;
+    });
+  }
+
+  if(H.scen==='retired'){
+    /* (2) RETIRED ROWS STOP BLOCKING THE PICKER. Retiring a mis-linked row
+       is the documented repair; costedOrderIds() counted retired rows, so
+       the repair removed that guide item from + Add forever. */
+    step(function(){});
+    step(function(){ ok('retired: fixtures loaded', items.length===4, 'items='+items.length); });
+    step(function(){ openAdd(); });
+    step(function(){
+      ok('S2-2: a guide item held only by a RETIRED priced row is offered again',
+         !!rowFor('Birite','Butter'));
+      ok('S2-2: a guide item held only by a RETIRED unpriced row is offered again',
+         !!rowFor('Birite','Cornstarch'));
+      /* m10: it must be offered as FRESH, not as an existing row to edit */
+      ok('S2-2: the retired unpriced row is not labelled "needs price"',
+         !rowFor('Birite','Cornstarch').querySelector('.pick-badge'));
+      ok('S2-2: the retired priced row is not labelled "needs price"',
+         !rowFor('Birite','Butter').querySelector('.pick-badge'));
+      /* the ACTIVE unpriced row still is - slice 1's promise is untouched */
+      ok('S2-2: an active unpriced row is still marked',
+         !!rowFor('Birite','Distilled white vinegar').querySelector('.pick-badge'));
+      H.reqs.length=0;
+      rowFor('Birite','Cornstarch').click();
+    });
+    step(function(){
+      ok('S2-2: tapping it starts a new row, not the retired one', pickId===44, String(pickId));
+      ok('S2-2: tapping it does not open the retired row', editId===null, String(editId));
+      set('fQty','1'); set('fUnit','lb'); set('fPrice','3.50');
+    });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){
+      ok('S2-2: the add is not refused as already costed', posts().length===1, 'saw '+posts().length);
+      ok('S2-2: it adds against the right guide item', posts()[0]&&posts()[0].body.order_item_id===44,
+         posts()[0]&&String(posts()[0].body.order_item_id));
+      ok('S2-2: no "already costed" toast', toast().indexOf('already costed')<0, toast());
+    });
+    /* and the retired PRICED one, which used to vanish from the list entirely */
+    step(function(){ H.reqs.length=0; openAdd(); });
+    step(function(){ rowFor('Birite','Butter').click(); });
+    step(function(){ set('fQty','36'); set('fUnit','lb'); set('fPrice','110'); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){
+      ok('S2-2: re-adding a retired-and-priced guide item works',
+         posts().length===1&&posts()[0].body.order_item_id===77,
+         'posts='+posts().length+' toast='+toast());
+    });
+
+    /* m41 RESTORE IS NOW A ROUTE TO TWO ACTIVE ROWS ON ONE GUIDE ITEM. The
+       step above left an ACTIVE row on guide item 77; retired row 503 still
+       points at 77. Restore had no confirm and no legality check, so the
+       PATCH went out, the partial unique index rejected it, and the page said
+       "update failed, try again" about a state that can never succeed. Before
+       slice 2 this was unreachable, because retiring blocked the guide item
+       from + Add at all. */
+    step(function(){ H.reqs.length=0; H.confirms=0; openEdit(503); });
+    step(function(){
+      ok('m41: the retired row still points at the taken guide item',
+         findItem(503).order_item_id===77, String(findItem(503).order_item_id));
+      ok('m41: and that guide item is held by an ACTIVE row now',
+         !!costRowFor(77)&&costRowFor(77).id!==503,
+         costRowFor(77)&&String(costRowFor(77).id));
+      $('retireBtn').click();
+    });
+    step(function(){});
+    step(function(){
+      ok('m41: an illegal restore sends nothing', H.reqs.length===0,
+         JSON.stringify(H.reqs.map(function(r){return r.m+' '+r.u;})));
+      ok('m41: the row stays retired', findItem(503).active===false,
+         String(findItem(503).active));
+      ok('m41: it says why rather than "try again"',
+         /cannot restore/i.test(toast())&&toast().indexOf('try again')<0, toast());
+      /* must name the row IN THE WAY, not merely contain its name - a success
+         toast ("Butter restored") contains it too, which is m32's :717 defect */
+      ok('m41: and it names the row in the way',
+         /\u201cButter\u201d already costs/.test(toast()), toast());
+      ok('m41: it reads as a refusal, not a success',
+         $('toast').className.indexOf('err')>-1, $('toast').className);
+    });
+    /* a LEGAL restore is untouched: retire the active row, then restore 503 */
+    step(function(){ H.confirmReturn=true; openEdit(costRowFor(77).id); });
+    step(function(){ $('retireBtn').click(); });
+    step(function(){});
+    step(function(){ H.reqs.length=0; openEdit(503); });
+    step(function(){ $('retireBtn').click(); });
+    step(function(){});
+    step(function(){
+      ok('m41: a legal restore still goes through',
+         H.reqs.filter(function(r){return r.m==='PATCH';}).length===1&&findItem(503).active===true,
+         'patches='+H.reqs.filter(function(r){return r.m==='PATCH';}).length+
+         ' active='+findItem(503).active);
+      ok('m41: and confirms itself', /restored/i.test(toast()), toast());
+    });
+
+  }
+
+  if(H.scen==='histfail'){
+    /* (3) logPrice GETS A CALLBACK. The ledger write is the source of truth
+       and is never rolled back - but a price with no trail must not pass in
+       silence. */
+    step(function(){});
+    step(function(){ H.failHistory=true; openEdit(502); });
+    step(function(){ set('fPrice','14'); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){
+      var pt=H.reqs.filter(function(r){return r.m==='PATCH';});
+      ok('S2-3: the ledger write still happens', pt.length===1, 'saw '+pt.length);
+      ok('S2-3: the history write was attempted', hist().length===1, 'saw '+hist().length);
+      ok('S2-3: the price is not rolled back', Number(findItem(502).pack_price)===14,
+         String(findItem(502).pack_price));
+    });
+    step(function(){
+      ok('S2-3: a failed history write is surfaced', /histor/i.test(toast()), toast());
+      ok('S2-3: the failure names the item', toast().indexOf('Sea salt')>-1, toast());
+      ok('S2-3: it reads as a warning, not a success',
+         $('toast').className.indexOf('err')>-1, $('toast').className);
+    });
+    /* and when it succeeds, it says nothing extra */
+    step(function(){ H.failHistory=false; H.reqs.length=0; openEdit(502); });
+    step(function(){ set('fPrice','15'); });
+    step(function(){ $('saveBtn').click(); });
+    /* the history POST answers a tick after the save does - without this the
+       "quiet" assertion passes before the toast it is looking for could have
+       appeared, and a logPrice that always complains would sail through */
+    step(function(){});
+    step(function(){
+      ok('S2-3: a successful history write stays quiet', /histor/i.test(toast())===false, toast());
+      ok('S2-3: the save still confirms itself', /saved/i.test(toast()), toast());
+      /* m32: both assertions above pass if logPrice never fires at all. This
+         is the one that does not - and a logPrice that never fires is
+         exactly what m24 was.
+         TWO rows, not one: the $14 save above failed its history write, so
+         this save pays that debt at $14 as well as recording its own $15.
+         Before m40 it wrote one row, at $15, and dropped the $14 - which was
+         really PATCHed into the ledger and really was in effect. */
+      ok('S2-3: a successful history write actually happens', hist().length===2,
+         'saw '+hist().length);
+      ok('m40: and it pays the owed row as well as its own',
+         hist().map(function(r){return Number(r.body.pack_price);}).sort().join(',')==='14,15',
+         JSON.stringify(hist().map(function(r){return r.body.pack_price;})));
+    });
+
+    /* m24 THE RECOVERY, end to end. The doc claimed re-saving the same price
+       wrote the missing row; it wrote nothing, because priceChanged compares
+       the form against a stored row the PATCH had already overwritten. The
+       only thing that worked was $11 -> $12 -> $11, which puts a price that
+       was never in effect into the trail. */
+    step(function(){ H.failHistory=true; H.reqs.length=0; openEdit(502); });
+    step(function(){ set('fPrice','21'); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){});
+    step(function(){
+      ok('m24: the failing save still writes the ledger',
+         H.reqs.filter(function(r){return r.m==='PATCH';}).length===1);
+      ok('m24: the history row was attempted and failed', hist().length===1, 'saw '+hist().length);
+      ok('m24: and the failure is surfaced', /histor/i.test(toast()), toast());
+    });
+    /* history healthy again; re-save the SAME price, changing nothing */
+    step(function(){ H.failHistory=false; H.reqs.length=0; openEdit(502); });
+    step(function(){
+      ok('m24: the re-save really is of the same price', $('fPrice').value==='21',
+         $('fPrice').value);
+      $('saveBtn').click();
+    });
+    step(function(){});
+    step(function(){
+      ok('m24: re-saving an unchanged price writes the OWED history row',
+         hist().length===1, 'saw '+hist().length);
+      ok('m24: the owed row carries the price actually in effect',
+         hist()[0]&&Number(hist()[0].body.pack_price)===21,
+         hist()[0]&&JSON.stringify(hist()[0].body.pack_price));
+      /* m46: this was hist().every(...) alone, and [].every() is true, so it
+         passed vacuously under the very fault it sits beside — a logPrice
+         that never fires. The length check is what makes it bite. */
+      ok('m24: no fabricated price was needed to get there',
+         hist().length>0&&hist().every(function(r){return Number(r.body.pack_price)===21;}),
+         JSON.stringify(hist().map(function(r){return r.body.pack_price;})));
+      ok('m24: the recovery is quiet once it works', /histor/i.test(toast())===false, toast());
+    });
+    /* the debt is now paid: an unchanged save must go back to writing nothing */
+    step(function(){ H.reqs.length=0; openEdit(502); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){});
+    step(function(){
+      ok('m24: once paid, an unchanged save writes no history row',
+         hist().length===0, 'saw '+hist().length);
+      ok('m24: but it still saves the ledger row',
+         H.reqs.filter(function(r){return r.m==='PATCH';}).length===1);
+    });
+
+    /* m40 THE CORRECTION. The debt used to hold `true`, so it said a row was
+       owed and never WHICH. Correcting a price you have just been told did
+       not record - the obvious next action - wrote one row at the NEW price
+       and cleared the debt, and the old price, which really was PATCHed into
+       the ledger and really was in effect, lost its row with no notice.
+       Row 502 currently holds 21 with no debt. */
+    step(function(){ H.failHistory=true; H.reqs.length=0; openEdit(502); });
+    step(function(){ set('fPrice','21.50'); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){});
+    step(function(){
+      ok('m40: the failing save left a debt owed', hist().length===1&&/histor/i.test(toast()),
+         'hist='+hist().length+' '+toast());
+      ok('m40: and the failed price is live in the ledger',
+         Number(findItem(502).pack_price)===21.5, String(findItem(502).pack_price));
+    });
+    /* now CORRECT it to a different price, history healthy */
+    step(function(){ H.failHistory=false; H.reqs.length=0; openEdit(502); });
+    step(function(){ set('fPrice','30'); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){});
+    step(function(){});
+    step(function(){
+      var prices=hist().map(function(r){return Number(r.body.pack_price);});
+      /* BOTH rows: the price that was really in effect, and the one that is
+         now. Neither is fabricated - each was PATCHed into the ledger. */
+      ok('m40: correcting a price does not discard the failed one',
+         prices.indexOf(21.5)>-1, JSON.stringify(prices));
+      ok('m40: and the corrected price is recorded too',
+         prices.indexOf(30)>-1, JSON.stringify(prices));
+      ok('m40: exactly two rows, one per price that was in effect',
+         hist().length===2, 'saw '+hist().length+' '+JSON.stringify(prices));
+      ok('m40: no price that was never in effect', prices.every(function(v){
+         return v===21.5||v===30;}), JSON.stringify(prices));
+    });
+    /* and the debt is genuinely gone, not merely quiet */
+    step(function(){ H.reqs.length=0; openEdit(502); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){});
+    step(function(){
+      ok('m40: both debts are paid, so an unchanged save writes nothing',
+         hist().length===0, 'saw '+hist().length);
+    });
+
+    /* m39 THE PAYMENT WINDOW. done() frees savingKey before calling logPrice
+       and the debt clears only on the payment's RESPONSE, so every save made
+       while a payment was in flight fired another payment - two identical
+       rows, same price, same date, from the one action the m24 fix tells the
+       user to take, on the network that caused the failure. */
+    step(function(){ H.failHistory=true; H.reqs.length=0; openEdit(502); });
+    step(function(){ set('fPrice','40'); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){});
+    step(function(){
+      ok('m39: the debt is owed before the window opens', hist().length===1, 'saw '+hist().length);
+      /* history healthy, but now HELD: the payment stays in flight */
+      H.failHistory=false; H.deferHistory=true; H.reqs.length=0;
+      openEdit(502);
+    });
+    step(function(){ $('saveBtn').click(); });          // pays the debt, held
+    step(function(){});
+    step(function(){
+      ok('m39: the payment is in flight', hist().length===1, 'saw '+hist().length);
+      ok('m39: and Save is live again, so a second save is reachable',
+         $('saveBtn').disabled===false, 'disabled='+$('saveBtn').disabled);
+      openEdit(502);
+    });
+    step(function(){ $('saveBtn').click(); });          // the second save
+    step(function(){});
+    step(function(){
+      ok('m39: a save inside the payment window does not pay the debt twice',
+         hist().length===1, 'saw '+hist().length);
+      H.releaseDeferred();
+    });
+    step(function(){});
+    step(function(){
+      var prices=hist().map(function(r){return Number(r.body.pack_price);});
+      ok('m39: one owed row, not two identical ones', hist().length===1,
+         'saw '+hist().length+' '+JSON.stringify(prices));
+      ok('m39: and it records the price that was owed', prices[0]===40,
+         JSON.stringify(prices));
+      H.deferHistory=false;
+    });
+
+    /* m43 THE TIGHTENED GUARD. m26 dropped the `packPrice != null` guard so a
+       removal would record; that also made a pack edit on a NEVER-priced row
+       write a null-price row, while the identical edit through + Add wrote
+       nothing. Row 501 is linked and unpriced. */
+    step(function(){ H.reqs.length=0; openEdit(501); });
+    step(function(){ set('fQty','4'); set('fUnit','gal'); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){});
+    step(function(){
+      ok('m43: a pack edit on a never-priced row writes the ledger row',
+         H.reqs.filter(function(r){return r.m==='PATCH';}).length===1);
+      ok('m43: and writes NO null-price history row', hist().length===0,
+         'saw '+hist().length+' '+JSON.stringify(hist().map(function(r){return r.body;})));
+    });
+    /* m26 is untouched by the tightening: removing a REAL price still records */
+    step(function(){ H.reqs.length=0; H.confirmReturn=true; openEdit(502); });
+    step(function(){ set('fPrice',''); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){});
+    step(function(){
+      ok('m43: removing a real price still records a null-price row',
+         hist().length===1&&hist()[0].body.pack_price===null,
+         'saw '+hist().length+' '+JSON.stringify(hist().map(function(r){return r.body.pack_price;})));
+    });
+
+    /* m45 A NULL-PRICE ROW MUST NOT END IN AN ARROW POINTING AT NOTHING.
+       m34 fixed the price half ($0.00 -> "no price"); openHist() still emitted
+       the pack parenthetical whenever pack_qty was truthy, and uc is '' when
+       the price is null, so m26's own primary row read "no price (2 lb -> )". */
+    step(function(){
+      H.histRows=[{id:9,ingredient_cost_id:502,pack_price:null,pack_qty:2,
+                   pack_unit:'lb',source:'manual',effective_date:'2026-09-23'},
+                  {id:8,ingredient_cost_id:502,pack_price:10,pack_qty:2,
+                   pack_unit:'lb',source:'manual',effective_date:'2026-09-20'}];
+      openEdit(502);
+    });
+    step(function(){ openHist(); });
+    step(function(){});
+    step(function(){
+      var rows=$('histBody').querySelectorAll('.hist-row');
+      var t0=rows[0]?rows[0].textContent:'';
+      ok('m45: the null-price row still reads "no price"', /no price/.test(t0), t0);
+      ok('m45: and no arrow pointing at nothing', t0.indexOf('\u2192')<0, t0);
+      ok('m45: but it keeps its pack size', /2 lb/.test(t0), t0);
+      /* a priced row is unaffected - the arrow is still there when it means something */
+      var t1=rows[1]?rows[1].textContent:'';
+      ok('m45: a priced row still shows its unit cost', t1.indexOf('\u2192')>-1&&/\$5\.00/.test(t1), t1);
+      H.histRows=[];
+    });
+
+    /* m43 / m37: the debt on a REMOVAL row. m37 declined the tightening
+       because it "would make the m24 debt on a removal row unpayable
+       forever"; round 8's doc asserts that is unsound. Assert it, do not
+       argue it. Give 502 a real price first, then fail its removal. */
+    step(function(){ H.failHistory=false; H.reqs.length=0; openEdit(502); });
+    step(function(){ set('fPrice','12'); set('fQty','2'); set('fUnit','lb'); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){});
+    step(function(){ H.failHistory=true; H.reqs.length=0; H.confirmReturn=true; openEdit(502); });
+    step(function(){ set('fPrice',''); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){});
+    step(function(){
+      ok('m43: a failed removal attempted a history row', hist().length===1, 'saw '+hist().length);
+      ok('m43: and it failed, leaving a debt', /histor/i.test(toast()), toast());
+      ok('m43: the ledger price really is gone', findItem(502).pack_price==null,
+         String(findItem(502).pack_price));
+    });
+    /* history healthy; re-save the removal UNCHANGED. Under m37's claim this
+       writes nothing forever, because priceChanged is now false on both sides. */
+    step(function(){ H.failHistory=false; H.reqs.length=0; openEdit(502); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){});
+    step(function(){
+      ok('m43: the debt on a removal row IS payable', hist().length===1, 'saw '+hist().length);
+      ok('m43: and it pays it as a null price', hist()[0]&&hist()[0].body.pack_price===null,
+         hist()[0]&&JSON.stringify(hist()[0].body));
+    });
+    step(function(){ H.reqs.length=0; openEdit(502); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){});
+    step(function(){
+      ok('m43: and once a removal debt is paid it goes quiet', hist().length===0, 'saw '+hist().length);
+    });
+
+    /* m20: the slice-2 table said "a unit-only edit writes a history
+       row". Row 501 has never had a price. Does it still? */
+    step(function(){ H.reqs.length=0; openEdit(501); });
+    step(function(){
+      /* the unit must really CHANGE, or this asserts nothing - 501 was left
+         on "gal" by the m43 block above and re-typing it is not an edit */
+      ok('m20: (precondition) the never-priced row is not already on qt',
+         $('fUnit').value!=='qt', $('fUnit').value);
+      set('fUnit','qt');
+    });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){});
+    step(function(){
+      ok('m20: a unit-only edit on a NEVER-PRICED row writes NO history row',
+         hist().length===0, 'saw '+hist().length);
+      ok('m20: (control) the ledger row still took the edit',
+         H.reqs.filter(function(r){return r.m==='PATCH';}).length===1&&
+         findItem(501).pack_unit==='qt', String(findItem(501).pack_unit));
+    });
+    /* and on a priced row, which is what m20 was actually about */
+    step(function(){ H.reqs.length=0; openEdit(502); });
+    step(function(){ set('fPrice','10'); set('fQty','2'); set('fUnit','lb'); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){});
+    step(function(){ H.reqs.length=0; H.confirmReturn=true; openEdit(502); });
+    step(function(){ set('fUnit','oz'); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){});
+    step(function(){
+      ok('m20: a unit-only edit on a PRICED row still writes one',
+         hist().length===1, 'saw '+hist().length);
+    });
+
+    /* m40 / sameVals: a debt owed with qty null, discharged by a save of qty 0 */
+    step(function(){ H.failHistory=true; H.reqs.length=0; openEdit(501); });
+    step(function(){ set('fQty',''); set('fUnit','gal'); set('fPrice','9'); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){});
+    step(function(){
+      ok('m40: a debt can be recorded with a null qty',
+         hist().length===1&&hist()[0].body.pack_qty===null,
+         hist()[0]&&JSON.stringify(hist()[0].body));
+      H.failHistory=false; H.reqs.length=0; openEdit(501);
+    });
+    step(function(){ set('fQty','0'); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){});
+    step(function(){
+      var qs=hist().map(function(r){return r.body.pack_qty;});
+      ok('m40: a null-qty debt is NOT discharged by a qty-0 write',
+         hist().length===2, 'rows='+hist().length+' qtys='+JSON.stringify(qs));
+    });
+  }
+
+  if(H.scen==='magnitude'){
+    /* (4) MAGNITUDE CHECK ON EDIT, and m20: priceChanged was blind to a
+       unit-only edit - the single change that most reliably swings unit
+       cost (lb -> oz is 16x) wrote no history row at all. */
+    step(function(){});
+
+    /* m20 first: a unit-only edit must write history */
+    step(function(){ H.reqs.length=0; H.confirms=0; H.confirmMsgs=[]; openEdit(502); });
+    step(function(){ set('fUnit','oz'); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){
+      ok('m20: a unit-only edit writes a history row', hist().length===1, 'saw '+hist().length);
+      ok('m20: the history row carries the new unit',
+         hist()[0]&&hist()[0].body.pack_unit==='oz', hist()[0]&&JSON.stringify(hist()[0].body.pack_unit));
+      ok('S2-4: a unit-only edit asks before saving', H.confirms===1, 'confirms='+H.confirms);
+      ok('S2-4: the question names both units',
+         /lb/.test(H.confirmMsgs[0]||'')&&/oz/.test(H.confirmMsgs[0]||''), H.confirmMsgs[0]);
+    });
+
+    /* a 20x price jump must ask, and No must not write */
+    step(function(){ H.reqs.length=0; H.confirms=0; H.confirmMsgs=[]; H.confirmReturn=false;
+                     openEdit(502); });
+    step(function(){ set('fPrice','200'); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){
+      ok('S2-4: a 20x unit cost asks first', H.confirms===1, 'confirms='+H.confirms);
+      ok('S2-4: the question names the item', (H.confirmMsgs[0]||'').indexOf('Sea salt')>-1,
+         H.confirmMsgs[0]);
+      ok('S2-4: the question shows the old and new unit cost',
+         /5\.00/.test(H.confirmMsgs[0]||'')&&/100\.00/.test(H.confirmMsgs[0]||''), H.confirmMsgs[0]);
+      ok('S2-4: answering No writes nothing',
+         H.reqs.filter(function(r){return r.m==='PATCH';}).length===0);
+      ok('S2-4: answering No keeps the modal open', shown());
+      ok('S2-4: answering No leaves Save usable', $('saveBtn').disabled===false);
+    });
+    /* 1/10th is the other side of the same gate */
+    step(function(){ H.reqs.length=0; H.confirms=0; H.confirmMsgs=[]; H.confirmReturn=true;
+                     closeEdit(); openEdit(502); });
+    step(function(){ set('fPrice','0.40'); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){
+      ok('S2-4: a 1/10th unit cost asks too', H.confirms===1, 'confirms='+H.confirms);
+      ok('S2-4: answering Yes does write',
+         H.reqs.filter(function(r){return r.m==='PATCH';}).length===1);
+    });
+    /* an ordinary price move must NOT ask - a gate that always fires is a
+       gate nobody reads */
+    step(function(){ H.reqs.length=0; H.confirms=0; openEdit(502); });
+    step(function(){ set('fPrice','0.44'); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){
+      ok('S2-4: an ordinary price change does not ask', H.confirms===0, 'confirms='+H.confirms);
+      ok('S2-4: an ordinary price change still saves',
+         H.reqs.filter(function(r){return r.m==='PATCH';}).length===1);
+    });
+    /* an ADD has nothing to compare against, so it must never ask */
+    step(function(){ H.reqs.length=0; H.confirms=0; openAdd(); });
+    step(function(){ rowFor('Asia Intl','Slab bacon').click(); });
+    step(function(){ set('fQty','1'); set('fUnit','lb'); set('fPrice','9999'); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){
+      ok('S2-4: an add never asks - there is no previous cost', H.confirms===0,
+         'confirms='+H.confirms);
+      ok('S2-4: the add is written', posts().length===1, 'saw '+posts().length);
+    });
+
+    /* m26: clearing the price is the largest possible change to it, and the
+       one edit a ratio cannot see (newUC is null). Slice 2 is the slice that
+       says when the gate fires, so it fires here too - and the removal is
+       recorded, as a history row with a null price. */
+    step(function(){ H.reqs.length=0; H.confirms=0; H.confirmMsgs=[]; H.confirmReturn=false;
+                     openEdit(502); });
+    step(function(){ set('fPrice',''); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){
+      ok('m26: wiping a price asks first', H.confirms===1, 'confirms='+H.confirms);
+      ok('m26: the question says the price is being removed',
+         /remove/i.test(H.confirmMsgs[0]||''), H.confirmMsgs[0]);
+      ok('m26: the question names the item', (H.confirmMsgs[0]||'').indexOf('Sea salt')>-1,
+         H.confirmMsgs[0]);
+      ok('m26: answering No writes nothing',
+         H.reqs.filter(function(r){return r.m==='PATCH';}).length===0);
+    });
+    step(function(){ H.reqs.length=0; H.confirms=0; H.confirmReturn=true; $('saveBtn').click(); });
+    step(function(){});
+    step(function(){
+      var pt=H.reqs.filter(function(r){return r.m==='PATCH';});
+      ok('m26: answering Yes removes the price', pt.length===1&&pt[0].body.pack_price===null,
+         pt[0]&&JSON.stringify(pt[0].body.pack_price));
+      ok('m26: removing a price is recorded in the history', hist().length===1,
+         'saw '+hist().length);
+      ok('m26: the history row records it as no price',
+         hist()[0]&&hist()[0].body.pack_price===null,
+         hist()[0]&&JSON.stringify(hist()[0].body.pack_price));
     });
   }
 
@@ -723,7 +1464,9 @@ def build_page():
     src = re.sub(r'<link rel="stylesheet" href="https://fonts[^>]*>\s*', '', src)
 
     # 4. assertions go last, so they see the page exactly as it ships.
-    src = src.replace("</body>", RUNNER + "</body>", 1)
+    src = src.replace("</body>",
+                      RUNNER.replace("__ORDER_ITEM_COUNT__", str(len(ORDER_ITEMS)))
+                      + "</body>", 1)
     return src
 
 
@@ -785,8 +1528,7 @@ def main():
         # the page links assets/kitchen.css relatively; without this copy
         # every scenario runs unstyled and no CSS fault can be caught
         shutil.copytree(os.path.join(ROOT, "assets"), os.path.join(td, "assets"))
-        for scen in ("ok", "slow", "fail", "empty", "ledgerslow",
-                     "ledgerfail", "inflight", "retry"):
+        for scen in SCENARIOS:
             res, err = run_scenario(chrome, path, scen)
             if res is None:
                 fails.append("%s: harness never reported\n%s" % (scen, err))
@@ -800,7 +1542,7 @@ def main():
             print("  " + x)
         print("\nsee docs/costing-bulk-entry.md, slice 1")
         return 1
-    print("costing guard: clean (%d assertions, %d scenarios, %s)" % (total, 8, PAGE))
+    print("costing guard: clean (%d assertions, %d scenarios, %s)" % (total, len(SCENARIOS), PAGE))
     return 0
 
 

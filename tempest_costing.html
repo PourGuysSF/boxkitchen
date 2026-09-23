@@ -90,7 +90,7 @@
           <div class="pick-chosen-v" id="pickChosenV"></div>
           <div class="pick-chosen-n" id="pickChosenN"></div>
         </div>
-        <button class="pick-change" id="pickChange" onclick="clearPick()">Change</button>
+        <button class="pick-change" id="pickChange" onclick="changePick()">Change</button>
       </div>
       <div class="hint" id="pickHint">Tap the item you are pricing, or “Custom” for something not on the order guide.</div>
     </div>
@@ -175,6 +175,29 @@ var modalGen=0;               // bumped whenever the edit modal stops showing wh
 var histGen=0;                // bumped whenever the price-history modal opens or closes
 var savingGen={};             // modalGen -> true while THAT modal state's save is in flight
 var savingKey={};             // 'oi:<order_item id>' / 'ic:<ledger id>' -> true while in flight
+/* m24: a ledger id whose price-history row FAILED to write, so one is owed.
+   The next save of that row writes it whether or not the price changed —
+   without this, re-saving the same price writes nothing (priceChanged
+   compares against the stored row, which the successful PATCH has already
+   overwritten), and the only thing that did write a row was $11→$12→$11,
+   which puts a price that was never in effect into the trail.
+   m40: the debt holds the VALUES it owes, not a bare `true`. Holding `true`
+   meant the debt said a row was owed and never which one, so correcting the
+   price you had just been told did not record paid the debt with the NEW
+   price and dropped the old row for good — while that old price really had
+   been PATCHed into the ledger and really had been in effect. A list, because
+   a row can fall into debt more than once before any of it is paid; each
+   entry is removed only by a write of its own values.
+   In memory only: close the tab with a debt outstanding and it is forgotten.
+   Persisting it would mean remembering, across sessions, a claim about a
+   table we cannot re-read cheaply; a real retry is slice 4's reconcile. */
+var historyOwed={};           // ledger id -> [{price,qty,unit}] rows still owed
+/* m39: `savingKey` stops a second LEDGER write while one is in flight; the
+   debt payment had no equivalent, and the debt clears only on its response,
+   so every save issued inside the payment window fired another payment and
+   wrote another identical row. Counts payments in flight per ledger id. */
+var historyPaying={};         // ledger id -> number of payment POSTs in flight
+var relinking=false;          // the relink chooser is open on an edit with no pick yet
 
 function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
 function api(m,t,q,d,cb){var x=new XMLHttpRequest();x.open(m,SB+'/rest/v1/'+t+(q?'?'+q:''));x.setRequestHeader('apikey',SK);x.setRequestHeader('Authorization','Bearer '+SK);if(d){x.setRequestHeader('Content-Type','application/json');x.setRequestHeader('Prefer','return=representation');}x.onload=function(){var r=null;try{r=JSON.parse(x.responseText);}catch(e){}if(cb)cb(r,x.status);};x.onerror=function(){if(cb)cb(null);};x.send(d?JSON.stringify(d):null);}
@@ -276,7 +299,12 @@ function render(){
 
 /* ---- Add / Edit modal ---- */
 function findItem(id){for(var i=0;i<items.length;i++)if(items[i].id===id)return items[i];return null;}
-function costedOrderIds(){var s={};for(var i=0;i<items.length;i++)if(items[i].order_item_id!=null)s[items[i].order_item_id]=true;return s;}
+/* Which guide items are spoken for. ACTIVE rows only, which is what the
+   database's partial unique index enforces too
+   (…one_active_per_order_item … where active = true). Counting retired rows
+   made Retire a one-way door: retiring a mis-linked row — the documented
+   repair — removed that guide item from ＋ Add forever. */
+function costedOrderIds(){var s={};for(var i=0;i<items.length;i++)if(items[i].active&&items[i].order_item_id!=null)s[items[i].order_item_id]=true;return s;}
 
 /* "Slab bacon (Asia Intl)" — how a toast names an item, so the message is
    true whatever the modal is showing by the time it appears. */
@@ -288,8 +316,13 @@ function modalMoved(){modalGen++;syncSaveBtn();}
 /* Save is never silently dead: busy means busy for what is on screen now. */
 function syncSaveBtn(){var b=document.getElementById('saveBtn'),busy=!!savingGen[modalGen];b.disabled=busy;b.textContent=busy?'Saving…':'Save';}
 
-/* ingredient_costs row for an order-guide item, or null. */
-function costRowFor(orderItemId){for(var i=0;i<items.length;i++)if(items[i].order_item_id===orderItemId)return items[i];return null;}
+/* The ACTIVE ingredient_costs row for an order-guide item, or null. Retired
+   rows do not count: a retired unpriced row used to show “needs price” in the
+   picker and tap through into a retired item (m10), and a retired priced row
+   used to hide its guide item from the list entirely. Active-only also makes
+   the first match the only match — the partial index allows just one — which
+   settles m9's "list-order luck". */
+function costRowFor(orderItemId){for(var i=0;i<items.length;i++)if(items[i].active&&items[i].order_item_id===orderItemId)return items[i];return null;}
 
 function openAdd(){
   modalMoved();
@@ -313,7 +346,22 @@ function clearFields(){
 }
 /* Back to choosing. Changing the item clears the numbers with it — one item's
    pack price can never be carried onto another. */
-function clearPick(){modalMoved();pickId=null;clearFields();showChooser();setTimeout(function(){document.getElementById('pickFilter').focus();},60);}
+function clearPick(){modalMoved();pickId=null;relinking=false;clearFields();showChooser();setTimeout(function(){document.getElementById('pickFilter').focus();},60);}
+/* Change means two different things, and confusing them loses data.
+   On ＋ Add the numbers were typed FOR the item being abandoned, so they go
+   with it (slice 1). On an edit the numbers are what you are repairing — the
+   price is right, the link is wrong — so re-linking keeps qty, unit, price
+   and alias and replaces only the name/vendor binding, which a different
+   item genuinely invalidates. */
+function changePick(){
+  if(editId==null){clearPick();return;}
+  modalMoved();
+  pickId=null;                 // null here means "link unchanged"
+  relinking=true;              // m31: and Save must say so rather than assume it
+  showChooser();
+  document.getElementById('pickHint').textContent='Tap the item this row should be linked to. The pack size and price you see stay as they are.';
+  setTimeout(function(){document.getElementById('pickFilter').focus();},60);
+}
 function showChooser(){
   document.getElementById('pickChange').style.display='';
   document.getElementById('pickChoose').style.display='';
@@ -326,16 +374,27 @@ function showChooser(){
    that row rather than making a second one. */
 function renderPick(){
   var q=(document.getElementById('pickFilter').value||'').trim().toLowerCase();
+  // Re-linking an existing row is a different list from adding a new one.
+  var relink=(editId!=null);
   var h='',shown=0;
   for(var i=0;i<orderItems.length;i++){
     var o=orderItems[i],row=costRowFor(o.id);
-    if(row&&unitCost(row)!=null)continue;
+    if(relink){
+      // A guide item already held by another ACTIVE row is not a legal
+      // target — the partial unique index would reject it. The row's own
+      // current item stays listed, so you can change your mind back.
+      if(row&&row.id!==editId)continue;
+    }else{
+      if(row&&unitCost(row)!=null)continue;
+    }
     if(q&&(o.vendor+' '+o.name).toLowerCase().indexOf(q)<0)continue;
     shown++;
-    h+='<div class="pick-row" onclick="'+(row?('pickExisting('+row.id+','+o.id+')'):('pickItem('+o.id+')'))+'">'+
+    // In relink mode a tap re-points THIS row; it never navigates to another.
+    var act=relink?('pickItem('+o.id+')'):(row?('pickExisting('+row.id+','+o.id+')'):('pickItem('+o.id+')'));
+    h+='<div class="pick-row" onclick="'+act+'">'+
          '<div class="pick-row-main"><div class="pick-v">'+esc(o.vendor)+'</div>'+
          '<div class="pick-n">'+esc(o.name)+'</div></div>'+
-         (row?'<div class="pick-badge">needs price</div>':'')+
+         (!relink&&row?'<div class="pick-badge">needs price</div>':'')+
        '</div>';
   }
   // Four states, not one. Until the guide has loaded there is nothing to tap —
@@ -372,9 +431,13 @@ function pickItem(id){
   showChosen(o.vendor,o.name);
 }
 function pickCustom(){
+  var relink=(editId!=null);
   modalMoved();
   pickId='custom';
-  document.getElementById('fName').value='';document.getElementById('fName').disabled=false;
+  // Unlinking an existing row keeps its name as the starting point; a fresh
+  // Custom add starts empty.
+  if(!relink)document.getElementById('fName').value='';
+  document.getElementById('fName').disabled=false;
   showChosen('Off-guide','✎ Custom item');
   setTimeout(function(){document.getElementById('fName').focus();},60);
 }
@@ -383,6 +446,7 @@ function pickCustom(){
    open an identical modal reading only "Slab bacon". */
 function pickExisting(icId,orderItemId){openEdit(icId,orderById[orderItemId]||null);}
 function showChosen(vendor,name){
+  relinking=false;
   document.getElementById('pickChosenV').textContent=vendor;
   document.getElementById('pickChosenN').textContent=name;
   document.getElementById('pickChoose').style.display='none';
@@ -397,16 +461,14 @@ function openEdit(id,chosen){
   editId=id;
   document.getElementById('editTitle').textContent='Edit item';
   document.getElementById('editSub').textContent=it.active?'Update pack size or price.':'This item is retired.';
-  if(chosen){
-    // Keep the chosen line on screen: which item you tapped is the one thing
-    // this modal cannot afford to drop. Change is hidden — re-linking an
-    // existing row is slice 2, not this one.
-    document.getElementById('pickWrap').style.display='';
-    showChosen(chosen.vendor,chosen.name);
-    document.getElementById('pickChange').style.display='none';
-  }else{
-    document.getElementById('pickWrap').style.display='none';
-  }
+  // The picker stays on screen for an edit too. Hiding it was why a row bound
+  // to the wrong guide item could never be corrected — only retired, which
+  // then blocked that guide item for good. `chosen` is the row tapped in the
+  // picker when that is how we got here; otherwise the link is read off the
+  // row itself, which is what the main list needs.
+  document.getElementById('pickWrap').style.display='';
+  document.getElementById('pickChange').style.display='';
+  showChosen(chosen?chosen.vendor:vendorOf(it),chosen?chosen.name:nameOf(it));
   document.getElementById('fName').value=nameOf(it);document.getElementById('fName').disabled=(it.order_item_id!=null);
   document.getElementById('fAlias').value=it.invoice_alias||'';
   document.getElementById('fQty').value=(it.pack_qty==null?'':it.pack_qty);
@@ -430,7 +492,7 @@ function snapFields(){
 function closeEdit(){
   modalMoved();
   document.getElementById('editModal').classList.remove('show');
-  pickId=null;editId=null;editSnap=null;
+  pickId=null;editId=null;editSnap=null;relinking=false;
   document.getElementById('pickFilter').value='';
   clearFields();
   showChooser();
@@ -440,6 +502,33 @@ function ucPreview(){
   var el=document.getElementById('ucPreview');
   if(q>0&&p>0){el.className='uc-preview';el.textContent='Unit cost: '+ucFmt(p/q)+' / '+u;}
   else{el.className='uc-preview none';el.textContent='Enter pack qty & price to see unit cost';}
+}
+
+/* A unit cost 10× out, or a unit swapped underneath one, is what a lb/CS
+   mix-up looks like from the outside. Returns the question to ask, or null
+   when there is nothing worth stopping for — a gate that always fires is a
+   gate nobody reads. Only edits reach it: an add has no previous cost. */
+function magnitudeWarning(it,packQty,packPrice,unit,label){
+  var oldUC=unitCost(it),oldUnit=it.pack_unit||'';
+  var newUC=(num(packQty)>0&&num(packPrice)>0)?(num(packPrice)/num(packQty)):null;
+  var unitSwapped=!!(oldUnit&&unit&&oldUnit!==unit);
+  // m26: deleting a price is the largest possible change to it, and the one
+  // edit a ratio cannot see — newUC is null, so nothing below fires. It is
+  // also the least undoable, so it is asked about first.
+  if(it.pack_price!=null&&packPrice==null)
+    return label+': '+(oldUC!=null?ucFmt(oldUC)+' / '+(oldUnit||'unit'):money(it.pack_price))+' → no price'+
+           '\n\nThis removes the price. Recipes costed from this item lose their cost until it is set again.'+
+           '\n\nRemove it?';
+  var ratio=(oldUC!=null&&newUC!=null&&oldUC>0)?(newUC/oldUC):null;
+  var wild=(ratio!=null&&(ratio>=10||ratio<=0.1));
+  if(!wild&&!unitSwapped)return null;
+  var from=(oldUC!=null?ucFmt(oldUC)+' / '+(oldUnit||'unit'):'no price yet');
+  var to=(newUC!=null?ucFmt(newUC)+' / '+(unit||'unit'):'no price');
+  var why='';
+  if(wild)why=(ratio>=10)?('That is '+Math.round(ratio)+'× the old unit cost.')
+                         :('That is about a '+Math.round(1/ratio)+'× drop from the old unit cost.');
+  if(unitSwapped)why=(why?why+' ':'')+'The unit changed from '+oldUnit+' to '+unit+', so it is not the same measure.';
+  return label+': '+from+' → '+to+'\n\n'+why+'\n\nSave anyway?';
 }
 
 function saveItem(){
@@ -473,9 +562,53 @@ function saveItem(){
     // closeEdit() sets editId=null and opening another item overwrites it,
     // so a callback that re-read the shared editId would update the wrong
     // row and log the price against the wrong item — or against null.
-    savingId=editId;label=itemLabel(it);key='ic:'+savingId;
-    priceChanged=(num(it.pack_price)!==num(packPrice))||(num(it.pack_qty)!==num(packQty));
-    payload={name:(it.order_item_id!=null?it.name:name),invoice_alias:alias,pack_qty:packQty,pack_unit:unit,pack_price:packPrice,updated_at:nowIso};
+    savingId=editId;key='ic:'+savingId;
+    // A pending re-link: pickId is null on an edit until the user re-points
+    // the row, so null means "leave the link alone".
+    var newOiId=(pickId!=null)?((pickId!=='custom')?pickId:null):it.order_item_id;
+    if(pickId!=null&&newOiId!=null){
+      // the partial unique index allows one ACTIVE row per guide item
+      var holder=costRowFor(newOiId);
+      if(holder&&holder.id!==savingId){showToast('That order-guide item is already costed',true);return;}
+    }
+    var newO=newOiId!=null?orderById[newOiId]:null;
+    label=labelOf(newO?newO.name:name,newO&&newO.vendor);
+    // m20: pack_unit is part of the price. Editing only the unit moved the
+    // real unit cost 16× (lb → oz) and wrote no history row at all, which
+    // would also have made the magnitude check below blind to it.
+    // m43: a price on one side or the other. Dropping m26's `packPrice != null`
+    // guard let a pack edit on a never-priced row write a null-price history
+    // row, while the identical edit through + Add wrote nothing — the same
+    // action recorded or not depending on which door it came through. m37
+    // declined this tightening because it "would make the m24 debt on a
+    // removal row unpayable forever"; that was wrong. The call site is
+    // `priceChanged || historyOwed[...]`, two independent disjuncts, so
+    // tightening this one leaves the debt fully payable. A removal still
+    // records, because it.pack_price is non-null on the save that removes it.
+    priceChanged=((num(it.pack_price)!==num(packPrice))||(num(it.pack_qty)!==num(packQty))||((it.pack_unit||'')!==unit))
+                 &&(it.pack_price!=null||packPrice!=null);
+    // m31: the screen says "Tap the item this row should be linked to" and
+    // Save would quietly keep the old link. Keeping it is right; doing it
+    // without saying so, while asking for a pick, is not. Never guess a link.
+    // An off-guide row is linked to nothing, and saying it "stays linked to
+    // Sea salt" would describe a link that does not exist.
+    // m42: guard on newO, the RESOLVED guide row — not on newOiId != null.
+    // A row can be linked to a guide item this page cannot resolve (the item
+    // was deactivated while the row still points at it, which init()'s
+    // active=eq.true guarantees, or the guide GET failed, which hits every
+    // linked row at once). There `label` falls back to the typed name, and
+    // the question read "stays linked to Old ketchup" while the chosen line
+    // on the same screen read "Off-guide items" — the m38 shape from a
+    // second cause. Naming nothing is better than naming it wrongly.
+    if(relinking&&pickId==null&&
+       !confirm('You have not tapped an item, so this row '+
+                (newO?('stays linked to '+label)
+                     :(newOiId!=null?'keeps its current order-guide link, which this page cannot show right now'
+                                    :'stays off the order guide'))+
+                '.\n\nSave with the link unchanged?'))return;
+    var warn=magnitudeWarning(it,packQty,packPrice,unit,label);
+    if(warn&&!confirm(warn))return;
+    payload={order_item_id:newOiId,name:(newO?newO.name:name),invoice_alias:alias,pack_qty:packQty,pack_unit:unit,pack_price:packPrice,updated_at:nowIso};
   }
   // Cancel and reopen the same item mid-save and it is still offered; a
   // second write for it would race the first. Say so rather than send it.
@@ -486,9 +619,25 @@ function saveItem(){
     delete savingGen[gen];if(key)delete savingKey[key];
     var ok=!!(r&&r.length);
     if(ok){
-      if(savingId==null){items.push(r[0]);if(packPrice!=null)logPrice(r[0].id,packPrice,packQty,unit,null);}
+      if(savingId==null){items.push(r[0]);if(packPrice!=null)logPrice(r[0].id,packPrice,packQty,unit,null,label);}
       else{for(var i=0;i<items.length;i++)if(items[i].id===savingId)items[i]=r[0];
-        if(priceChanged&&packPrice!=null)logPrice(savingId,packPrice,packQty,unit,null);}
+        // m24: `owed` is the recovery. priceChanged compares the form against
+        // the stored row, which this PATCH has just overwritten, so re-saving
+        // the same price can never look changed — the documented recovery
+        // wrote nothing at all. m26: a removed price is a state worth
+        // recording, so a null price writes a row too rather than a silent gap.
+        // m39: while a payment is in flight the debt is still recorded, so
+        // treat it as already being dealt with rather than paying it twice.
+        // A genuine priceChanged still writes — that is a new row, not a
+        // second copy of an owed one.
+        var owed=historyPaying[savingId]?[]:(historyOwed[savingId]||[]).slice();
+        // m40: pay each owed row with the values IT owes. An owed row whose
+        // values match what is being saved now is left to the save's own
+        // write below, so an unchanged re-save still writes exactly one row.
+        for(var k=0;k<owed.length;k++)
+          if(!sameVals(owed[k],packPrice,packQty,unit))
+            logPrice(savingId,owed[k].price,owed[k].qty,owed[k].unit,null,label,true);
+        if(priceChanged||owed.length)logPrice(savingId,packPrice,packQty,unit,null,label,owed.length>0);}
       // Only close what is still this save. If the user has moved on, the
       // data and the list update silently and what they are typing stays.
       if(gen===modalGen)closeEdit();else refreshPicker();
@@ -499,14 +648,61 @@ function saveItem(){
   if(savingId==null)api('POST','ingredient_costs',null,payload,function(r){done(r,'added');});
   else api('PATCH','ingredient_costs','id=eq.'+savingId,payload,function(r){done(r,'saved');});
 }
-/* Append a price-history row (fire-and-forget; the master already holds current price). */
-function logPrice(icId,price,qty,unit,invoiceRef){
-  api('POST','ingredient_price_history',null,{ingredient_cost_id:icId,pack_price:price,pack_qty:qty,pack_unit:unit,source:'manual',invoice_ref:invoiceRef},null);
+/* Append a price-history row. The ledger write has already succeeded and is
+   the source of truth, so a failure here is NEVER rolled back — the price the
+   kitchen sees stays correct. But a price with no trail is exactly what makes
+   a wrong entry untraceable afterwards, so it is said out loud instead of
+   swallowed. Re-saving the row writes the missing one: the debt is recorded
+   in historyOwed and the next save honours it whether or not the price
+   changed. The debt lives in memory only — close the page with one
+   outstanding and it is gone (a real retry is slice 4's reconciliation). */
+/* One owed row, identified by the values it records. m40: the debt is keyed
+   on the values so a write of a DIFFERENT price can never discharge it. */
+function sameVals(a,price,qty,unit){
+  // null-ness is compared before num(), on BOTH price and qty: num(null) is 0,
+  // so without this a debt owed at "no qty" is discharged by a write of qty 0,
+  // which is m40's own defect in miniature - a debt paid by different values.
+  return (a.price==null)===(price==null)&&num(a.price)===num(price)&&
+         (a.qty==null)===(qty==null)&&num(a.qty)===num(qty)&&
+         (a.unit||'')===(unit||'');
+}
+function owedIndex(icId,price,qty,unit){
+  var L=historyOwed[icId]||[];
+  for(var i=0;i<L.length;i++)if(sameVals(L[i],price,qty,unit))return i;
+  return -1;
+}
+function logPrice(icId,price,qty,unit,invoiceRef,label,paying){
+  if(paying)historyPaying[icId]=(historyPaying[icId]||0)+1;
+  api('POST','ingredient_price_history',null,{ingredient_cost_id:icId,pack_price:(price==null?null:price),pack_qty:qty,pack_unit:unit,source:'manual',invoice_ref:invoiceRef},function(r){
+    if(paying&&!(historyPaying[icId]=(historyPaying[icId]||1)-1))delete historyPaying[icId];
+    var i=owedIndex(icId,price,qty,unit);
+    // Cleared only when THIS row is really on the wire — a debt that clears on
+    // a failure, or on somebody else's price, is worse than no debt at all.
+    if(r&&r.length){
+      if(i>-1){historyOwed[icId].splice(i,1);if(!historyOwed[icId].length)delete historyOwed[icId];}
+      return;
+    }
+    if(i<0)(historyOwed[icId]||(historyOwed[icId]=[])).push({price:price,qty:qty,unit:unit});
+    showToast((label||'That item')+' saved, but its price history didn’t record',true);
+  });
 }
 function toggleActive(){
   var it=findItem(editId);if(!it)return;
   var toActive=!it.active,id=it.id,label=itemLabel(it);
   if(!toActive&&!confirm('Retire this item? It keeps its price history but drops off the active list.'))return;
+  /* m41: slice 2 let a guide item held only by a retired row be re-costed, and
+     nothing then stopped Restore on the retired row — two active rows on one
+     order_item_id, which the partial unique index forbids. Unguarded, the
+     PATCH went out, was rejected, and said "update failed, try again" about
+     something that can never succeed. This is LEGALITY, not locking: Retire
+     during a save is m19, slice 4. */
+  if(toActive&&it.order_item_id!=null){
+    var holder=costRowFor(it.order_item_id);
+    if(holder&&holder.id!==id){
+      showToast('Cannot restore: “'+nameOf(holder)+'” already costs that order-guide item. Retire it first.',true);
+      return;
+    }
+  }
   var gen=modalGen;
   api('PATCH','ingredient_costs','id=eq.'+id,{active:toActive,updated_at:new Date().toISOString()},function(r){
     if(r&&r.length){var cur=findItem(id);if(cur)cur.active=toActive;
@@ -531,7 +727,7 @@ function openHist(){
     var h='';
     for(var i=0;i<rows.length;i++){
       var x=rows[i],uc=(num(x.pack_qty)>0&&num(x.pack_price)>0)?ucFmt(num(x.pack_price)/num(x.pack_qty))+' / '+esc(x.pack_unit||'unit'):'';
-      h+='<div class="hist-row"><div><span class="hprice">'+money(x.pack_price)+'</span>'+(x.pack_qty?' <span class="hdate">('+num(x.pack_qty)+' '+esc(x.pack_unit||'')+' → '+uc+')</span>':'')+'<span class="hsrc">'+esc(x.source||'')+'</span></div><div class="hdate">'+esc(x.effective_date||'')+'</div></div>';
+      h+='<div class="hist-row"><div><span class="hprice">'+(x.pack_price==null?'no price':money(x.pack_price))+'</span>'+(x.pack_qty?' <span class="hdate">('+num(x.pack_qty)+' '+esc(x.pack_unit||'')+(uc?' → '+uc:'')+')</span>':'')+'<span class="hsrc">'+esc(x.source||'')+'</span></div><div class="hdate">'+esc(x.effective_date||'')+'</div></div>';
     }
     document.getElementById('histBody').innerHTML=h;
   });
@@ -541,7 +737,8 @@ function closeHist(){histGen++;document.getElementById('histModal').classList.re
 function showToast(msg,isErr){var t=document.getElementById('toast');t.textContent=(isErr?'⚠ ':'✓ ')+msg;t.classList.toggle('err',!!isErr);t.classList.add('show');clearTimeout(st);st=setTimeout(function(){t.classList.remove('show');},1600);}
 /* A stray tap outside the modal used to throw away everything typed. */
 function editDirty(){
-  if(pickId!=null&&editId==null)return true;
+  // a pending re-link is unsaved work just as a pending pick is
+  if(pickId!=null)return true;
   if(!editSnap)return false;
   for(var i=0;i<EDIT_FIELDS.length;i++)
     if(document.getElementById(EDIT_FIELDS[i]).value!==editSnap[i])return true;
