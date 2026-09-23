@@ -1,6 +1,7 @@
 # Costing — make the ledger fillable
 
-Status: **Slice 2 built** on `costing-slice2-undo` (PR #145), reviewed seven times.
+Status: **Slice 3 built** on `costing-slice3-provenance` — the invoice bar, real provenance on
+every history row, and #140 closed. See "Slice 3 as built" and m54–m58. **Slice 2 built** on `costing-slice2-undo` (PR #145), reviewed seven times.
 **Round 5's blocker is fixed** — the price-history recovery this document used to claim twice
 now exists (m24) — and round 6 also gated a wiped price (m26) and stopped a save on the
 relink chooser from silently keeping the old link (m31). **Round 7 found no blocker and no
@@ -479,6 +480,110 @@ because the picker is no longer hidden there.
 **Not in this slice, on purpose:** speed of any kind (slices 5 and 6), invoice provenance
 (slice 3), and control locking during a save — including Retire as a second write path,
 m19 — which is slice 4.
+
+## Slice 3 as built
+
+"Every price has a provenance." Built on `costing-slice3-provenance`. **Closes #140.**
+
+**Scope:** `tempest_costing.html` and `scripts/check_costing.py` only. `assets/kitchen.css` is
+untouched, so **no `?v=` bump** — the invoice bar's rules are page-only, because no other page
+files a delivery and a shared component with one caller is not a component.
+
+| promise | as built | guarded by |
+|---|---|---|
+| **A sticky header carrying the mode and the current invoice** | `.inv-bar` is the first child of the edit modal, `position:sticky; top:0; z-index:2`, with negative margins pulling it over `.modal`'s 22px padding so the content scrolls *under* it rather than beside it. A segmented toggle — **Setting up** / **Working an invoice** — then the number and date fields in invoice mode, then a line saying in words what the next save will record. | five `s3-1:` assertions |
+| **Set once, holds until changed** | `invMode`, `invRef` and `invDate` are page-level and **not** touched by `closeEdit()`. One invoice is typed once; three means changing it twice. | four `s3-4:` assertions |
+| **`effective_date` from the invoice, not today** | `provNow()` returns `{source,ref,date}` — `manual`/`null`/today when setting up, `invoice`/the number/**the invoice's own date** when working one. Captured at save time, never re-read later. | `s3-3:`, `s3-5:` |
+| **`logPrice` passes the real ref and source** | Its fifth argument is now a `prov` object rather than a bare `invoiceRef`, and the POST body carries `source`, `invoice_ref` **and** `effective_date`. Every one of the five call sites passes a real one. | `s3-2:`, `s3-3:` |
+| **`invoice_ref` in the price-history modal (#140)** | `openHist()` emits `.hinv` beside `.hsrc` when the row has a reference. The data has been written since before slice 1 and invisible the whole time. | five `#140:` assertions |
+
+**Invoice mode requires a number.** Saving in invoice mode with an empty reference sends
+nothing and says which field is missing. `source:'invoice'` with `invoice_ref:null` claims a
+price came off paper and gives no way to find the paper — worse than "setting up", which says
+plainly that it did not. Switching to invoice mode also fills the date with today rather than
+leaving it empty, because an empty date would silently fall back to today, which is the exact
+bug this mode exists to fix.
+
+### The decision this slice had to make
+
+**A debt owed under one invoice, paid after the mode changed, records the invoice it was
+OWED under.** Not the one current at payment.
+
+`historyOwed` entries now carry `prov` alongside `{price,qty,unit}`, and `sameVals` compares
+provenance as well as values. The reasoning: the owed row records a price that really was in
+effect and really was established by the paper named when it was entered. Stamping it with
+whatever happens to be in the bar when you get round to re-saving would attribute a price to
+an invoice it never appeared on — which is the fabricated-row class m24 and m40 exist to keep
+out of this table, arrived at from a third direction.
+
+The corollary is that a debt owed under invoice A is **not** discharged by a write of the same
+numbers under invoice B: the two rows say different things about where the price came from, so
+both are written. Measured — fail at $60 under `INV-A`, switch to `INV-B`, re-save unchanged →
+**two rows, one `INV-A`/`2026-08-01`, one `INV-B`/`2026-09-02`** — and a further unchanged save
+writes none. Six `s3-5:` assertions, four of them proved to bite.
+
+### m29: what this adds, measured
+
+Modal *content* height at a pinned 358px width (`scrollHeight`, so viewport-independent and
+safe from trap 3), before and after:
+
+| state | slice 2 | slice 3 | Δ |
+|---|---|---|---|
+| main-list edit | 640px | **716px** | +76 |
+| ＋ Add chooser | 802px | **878px** | +76 |
+| relink chooser open | 856px | **932px** | +76 |
+
+The bar is 84px tall and consumes 8px of the modal's existing top padding, so it costs +76 in
+every state. 88vh of an 844px iPhone is 743px, so the worst state is now 189px over rather
+than 113px. **m29 is not fixed here and is deliberately worse by a measured amount** — but the
+thing that grew is the one element that is *pinned*, so the header this slice adds is the only
+part of the modal that cannot fall below the fold.
+
+### What was proved, and what was not
+
+**324 assertions, 13 scenarios, clean.** Up from 280, so **+44** — one new scenario,
+`provenance`. Faults reintroduced, each the exact fault:
+
+| fault reintroduced | failures |
+|---|---|
+| the bar is `position:static` again | **1** |
+| `logPrice` sends `source:'manual', invoice_ref:null` and no `effective_date` | **9** |
+| `effective_date` is `today()` again, not the invoice's | **3** |
+| `invoice_ref:null` again, date kept | **5** |
+| a debt is paid under the CURRENT prov, not the owed one | **3** |
+| `sameProv` always true, so provenance cannot keep a debt alive | **2** |
+| the invoice-number requirement removed | **6** |
+| the `.hinv` span removed from `openHist()` | **2** |
+| `closeEdit()` resets the mode, ref and date | **10** |
+| the bar `display:none` | **1** |
+| the bar's `z-index` removed | **1** |
+| `invMode` defaults to `'invoice'` | **130** |
+| the toggle's active class never moves | **1** |
+| the invoice fields never show | **1** |
+| invoice mode does not fill an empty date | **1** |
+| the bar's spoken line never renders | **2** |
+| the reference renders even when null | **1** |
+| the source is dropped from the row | **2** |
+| the bar moved below the title | **2** |
+
+**Of the 44 new assertions, 41 are proved to bite and 3 are not.** The three, named:
+`s3-3: and today is not what was written` (a date sanity control — it can only fail if the
+suite is run on 2026-08-04), `s3-5: the invoice-A save failed its history write` and
+`s3-5: the re-save really is of the same price` (the setup step and the precondition of the
+debt sequence). Not "every".
+
+Two notes on the injections. The `invMode` default fault produces **130** failures across
+almost every scenario, because the whole suite saves in setting-up mode; only 8 of those are
+`s3-2:` assertions and the rest are slice 1 and 2's guards refusing to save at all. And the
+first attempt at the "spoken line never renders" injection was a **no-op** — `x=''||inv?a:b`
+still evaluates the ternary — which the suite correctly reported as clean; it was rewritten to
+assign to a dead property instead. An injection that changes nothing proves nothing, and it is
+easy to write one by accident.
+
+### Not in this slice, on purpose
+
+Control locking during a save (m19, m44's widened cost, m30, m52 — slice 4); speed of any kind
+(slices 5 and 6); and **m29's modal height as its own layout pass**, measured above.
 
 ## Minors list
 
@@ -1237,6 +1342,37 @@ blocks. Those are round 8's guards doing their job, not round 9's, and are not c
 assertion could not fail under any injection. It now sets `qt` and carries a precondition
 asserting the row is not already on it. That is the m46 class, written fresh in the round that
 fixed m46; it is worth knowing the shape is easy to reproduce by accident.
+
+### Added by slice 3 (branch `costing-slice3-provenance`)
+
+- m54. **The invoice bar does not survive the page.** `invMode`, `invRef` and `invDate` are
+  plain variables, so a reload or iOS dropping the tab returns to setting-up mode mid-invoice.
+  The next save then records `manual`/today against prices that came off the paper still in
+  your hand — quietly, because setting-up mode is the honest default and says nothing is
+  wrong. Same shape as m33's lost debt, and worse in one way: the debt at least produced a
+  toast once. `sessionStorage` would hold it the way the PIN unlock already does; deliberately
+  not done here, because M5 already notes that a restored session *looking* like where you
+  left off is its own trap, and deciding what the bar should say after a reload is a
+  conversation, not a one-liner.
+- m55. **m48 is narrowed, not closed.** `logPrice` now sends `effective_date`, so a stack of
+  last month's invoices records against their own dates. But when m40 writes an owed row and
+  the save's own row together *in setting-up mode*, both still carry today — the owed price
+  came first in reality and nothing in the row says so. In invoice mode the two rows now
+  usually differ, because the debt carries the invoice it was owed under. So m48 survives
+  exactly where provenance is weakest.
+- m56. **Nothing shows which invoice an existing ledger row was last priced under.** The bar
+  says what the *next* save will record; the main list and the edit modal say nothing about
+  what the *last* one did. The price-history modal now does (#140), but that is two taps away
+  and per-row. Recorded — a per-row provenance line is the reader m36 and m21 both wanted.
+- m57. **The invoice date is a native `<input type="date">`, unmeasured on a phone.** It is
+  the first one on the site. iOS renders it as a wheel picker and it is 16px, so #135 does not
+  apply, but its rendered width inside a 358px modal beside the number field was measured only
+  in headless Chrome, which draws a different control. Check it on a real phone before the
+  first real invoice run.
+- m58. **Switching from invoice mode back to Setting up keeps the number in the box.** It is
+  hidden, not cleared, and switching back restores it — which is right for "I misread the
+  mode" and wrong for "I have finished that invoice". Nothing distinguishes the two. Cosmetic,
+  and clearing it would lose work in the commoner case.
 
 ### A correction to "How to verify without touching live data"
 
