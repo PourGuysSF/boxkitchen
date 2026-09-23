@@ -1,7 +1,9 @@
 # Costing — make the ledger fillable
 
-Status: **Slice 2 built** on `costing-slice2-undo`, awaiting review — see "Slice 2 as
-built" below, and m21–m25 for what it left open. **Slice 1 shipped** — merged to `main` as `7d79bd6` (PR #143, squashed; branch
+Status: **Slice 2 built** on `costing-slice2-undo` (PR #145) and **reviewed — one blocker
+open**: the price-history recovery this document states twice does not exist (m24). All four
+of the slice's promises are otherwise implemented and verified. See "Slice 2 as built"
+below, m21–m25 for what it left open, and m26–m32 for round 5's findings. **Slice 1 shipped** — merged to `main` as `7d79bd6` (PR #143, squashed; branch
 deleted). Four rounds of review; round 4 found no fourth async-staleness bug and passed it.
 See "Slice 1 as built" below, and m18–m20 for the three majors round 4 left open. Slices 2–6
 are still planned.
@@ -434,7 +436,11 @@ check could not be built honestly without it.
    the kitchen prices from; unwinding a correct price because its audit row failed would
    turn a bookkeeping failure into a costing failure. So the price stands, and the failure is
    said out loud — "⚠ Sea salt saved, but its price history didn't record" — rather than
-   swallowed. Re-saving the same price writes the missing row (m24).
+   swallowed. ~~Re-saving the same price writes the missing row (m24).~~
+   **That last sentence is false as built — see m24, which is an open blocker.** The
+   decision itself (never roll back) survives review; only the claimed recovery does not
+   exist. Do not merge this slice with the sentence standing: either make it true, or
+   strike it and say there is no recovery.
 
 **Also closed, as a side effect:** the "unsolved from the main list" half of B1. Tapping
 either Slab bacon in the main list now opens an edit whose chosen line names its vendor,
@@ -585,13 +591,149 @@ use. B1 is solved on every surface that **writes**, and unsolved on these two th
   **Custom** below". In relink mode "already priced" should be "already costed", and
   Custom means *unlink*, not *add off-guide*. Cosmetic, recorded.
 - m24. **A failed price-history write has no retry affordance.** It is surfaced as a
-  warning toast naming the item (slice 2's fix), and the recovery is to save the same
-  price again, which writes the history row. Nothing in the message says that. A real
+  warning toast naming the item (slice 2's fix). ~~and the recovery is to save the same
+  price again, which writes the history row.~~ Nothing in the message says that. A real
   retry belongs with slice 4's reconciliation.
+
+  > **BLOCKER, open (round 5). The stated recovery does not exist.** Measured against a
+  > stubbed `api()`, start to finish:
+  >
+  > ```
+  > 1. save Sea salt at $11, history POST fails
+  >    -> toast "Sea salt saved, but its price history didn't record"   [correct]
+  >    -> ledger holds 11                                               [correct]
+  > 2. history healthy again. Reopen, save the same $11 — the documented recovery:
+  >    -> requests: ["PATCH ingredient_costs ..."]
+  >    -> history rows written: 0        <-- recovery DOES NOT WORK
+  > 3. what actually writes it: 11 -> 12 -> 11, two extra saves
+  >    -> 2 history rows, one recording $12 — a price never in effect
+  > ```
+  >
+  > Cause: `priceChanged` (`tempest_costing.html:547`) compares the form against the stored
+  > row, so re-saving identical values makes all three comparisons false and the guarded
+  > `logPrice` at `:563` never fires.
+  >
+  > This blocks rather than being a minor because slice 3 builds provenance on this trail,
+  > and step 3 is what a person will actually do when told their history didn't record. It
+  > writes a fabricated $12 into `ingredient_price_history` — the same class of artifact
+  > v1's M7 found and that Stephen cleared the table over in Slice 0. The UI could not
+  > produce a fabricated price before; now it can, and this document's own advice leads
+  > there.
+  >
+  > Two acceptable fixes, both small: track that a history row is owed and write it on the
+  > next save regardless of `priceChanged`; or strike the claim here and in decision 2 and
+  > say plainly there is no recovery. The first is better.
 - m25. **The magnitude check compares against the row's own previous cost, including
   across a re-link.** Re-link and re-price in one save and the question contrasts the new
   unit cost with the *old item's* — the same ledger row, but arguably not a comparable
   number. Left as is: the alternative is not asking at all on the save that changes most.
+
+### Added by round 5's review (PR #145, slice 2, pre-merge)
+
+Slice 2's four promises were driven end to end against a stubbed `api()` and all four work:
+re-link writes the new `order_item_id` while preserving qty/unit/price/alias; the legality
+guard refuses a target held by an active row and accepts one held only by a retired row;
+retired rows return their guide items to ＋ Add; the magnitude gate fires on 10× and on a
+unit swap; m20 is fixed; B1's main-list half is closed. No fifth async-staleness bug — the
+new `logPrice` callback captures `label` and touches nothing but `showToast`, verified by
+reading the warning while the screen showed a different item. Scope is clean and
+`check_styling.py` passes. The one blocker is recorded under m24 above.
+
+- m26. **Wiping a price asks nothing and records nothing.** The largest possible change to
+  a price is deleting it, and it is the one edit the new gate cannot see:
+
+  ```
+  Sea salt 2 oz @ $10  ->  clear the price field  ->  Save
+    confirm():      []        (no gate)
+    PATCH:          pack_price: null
+    history rows:   0
+  ```
+
+  `magnitudeWarning()` needs `newUC` non-null to compute a ratio and `unitSwapped` is
+  false, so it returns `null`; separately `priceChanged` is true but `packPrice != null`
+  is false, so no history row is written either. Pre-existing behaviour, but slice 2 is
+  the slice that defines when the gate fires, and this is the gap in it. In a slice called
+  "Mistakes can be undone" it is the least undoable mistake on the page. **Decide
+  deliberately: gate it, log it, or accept it here.**
+
+- m27. **The history-failure toast is six lines at 390px** — the longest string on the
+  page. Measured at the true 195px containing block (see m16): *"Distilled white vinegar
+  (Birite) saved, but its price history didn't record"* → **195w × 134h, ~6 lines**,
+  reaching 164px up from the bottom, over the modal's button row. It shows for 1.6s and
+  arrives *after* the green success toast, so on the slow network that caused the failure
+  the user may see "✓ saved" and look away before the warning lands. m16 predicted a
+  `max-width` would be needed "if slice 6's longer run makes it grating"; slice 2 made it
+  grating early. This is the error channel for the failure the slice exists to surface.
+
+- m28. **The unit trigger fires on cosmetic edits.** `oz` → `ozs` asks *"The unit changed
+  from oz to ozs, so it is not the same measure."* Pedantically true, but
+  `magnitudeWarning()`'s own comment says "a gate that always fires is a gate nobody
+  reads", and every unit typo fix now gates.
+
+- m29. **The relink chooser is the tallest state on the page.** Modal *content* height at
+  a pinned 358px width (`scrollHeight`, so viewport-independent and safe from trap 3):
+
+  | state | content height |
+  |---|---|
+  | main-list edit, slice 1 (`pickWrap` hidden) | 514px |
+  | main-list edit, slice 2 (chosen line shown) | **640px** (+126) |
+  | relink chooser open | **856px** |
+  | ＋ Add chooser (pre-existing) | 802px |
+
+  88vh of an 844px iPhone is 743px, so Cancel and Save sit below the fold whenever the
+  relink chooser is open. ＋ Add was already over at 802px, so this is a worsening rather
+  than a new class — but it now applies to a second surface. With the keyboard up it is m1.
+
+- m30. **The re-link duplicate guard is correct but untested, and two concurrent re-links
+  are unguarded.** Reached by hand, it behaves correctly: re-linking row 502 onto guide
+  item 12 (held by active row 501) is refused with "That order-guide item is already
+  costed", zero requests, row unchanged. But **no assertion in any scenario reaches
+  `tempest_costing.html:539`**, and the stub's PATCH echo makes it hard to — after a
+  re-link the echoed row loses `active`, so `costRowFor()` reads the target as free again.
+  Separately, `costRowFor(newOiId)` reads `items[]` and an in-flight re-link is not there
+  yet, while `savingKey` keys on the row id rather than the target, so two rows re-linked
+  to the same target both pass. The partial unique index catches it and the save reports
+  "failed — try again", so it is not corruption; slice 4's reconcile-before-retry covers
+  it. Reasoned, not measured.
+
+- m31. **Saving while sitting on the relink chooser silently keeps the old link.**
+  `pickId == null` meaning "link unchanged" is the right call, but at that moment the
+  screen shows a chooser and the hint reads "Tap the item this row should be linked to."
+  Confirmed: `saveItem()` on the chooser with no pick sends a PATCH carrying the original
+  `order_item_id`.
+
+- m32. **The suite has no assertion that a history row was ever actually written.**
+  `check_costing.py:730`/`:731` both pass if `logPrice` is **never called at all** —
+  `H.reqs.length=0` is reset at `:722`, so one line would have closed it:
+
+  ```js
+  ok('S2-3: a successful history write actually happens', hist().length===1, 'saw '+hist().length);
+  ```
+
+  The injection the "stays quiet" assertion was hardened against was "a `logPrice` that
+  always complains", never "a `logPrice` that never fires". **m24's blocker is a `logPrice`
+  that never fires**, which is why 199 assertions and three test-backed rounds did not
+  catch a claim this document states twice. Add the assertion regardless of how m24 is
+  resolved.
+
+  Also from the same audit, recorded rather than fixed:
+  - The claim *"every new assertion was proved to bite"* is overstated. The 35 figure is
+    credible (~37–38 would genuinely fail against the slice-1 page), but 35 plus the seven
+    listed injections accounts for 42 of the 63 new assertions; roughly 19–20 are proved
+    neither way. They are legitimate regression guards, not padding — but not "every".
+  - Three weak assertions: `:768` cannot be false on any reachable path; `:686` asserts an
+    absence that holds even in the failure state; `:717` ("the failure names the item")
+    cannot distinguish `"⚠ … price history didn't record"` from `"✓ Sea salt saved"`,
+    since both contain the name. Matching `/price history/i` would fix `:717`.
+  - The `:728` timing fix is real and deterministic under this stub, but it encodes "the
+    history response is exactly one tick behind the ledger response" implicitly. If that
+    route ever gains a `defer` branch the way `/ingredient_costs` has for `inflight`, both
+    `:730` and `:716` go quiet with nothing to flag it.
+  - **The PATCH-echo limitation has stopped being cosmetic.** Slice 2 made `active`
+    load-bearing in `costedOrderIds()` and `costRowFor()`, and the stub's echo drops it, so
+    after any *edit*-save the local row has `active === undefined`. Adds are unaffected
+    (the POST payload carries `active:true`). The suite therefore cannot distinguish
+    "active-only filtering works" from "nothing matches at all" on any post-save state.
 
 ### A correction to "How to verify without touching live data"
 
