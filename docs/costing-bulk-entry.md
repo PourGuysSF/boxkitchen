@@ -1,6 +1,12 @@
 # Costing — make the ledger fillable
 
-Status: **Slice 3 built** on `costing-slice3-provenance` (PR #146) — the invoice bar, real
+Status: **The m29 layout pass is built** on `costing-m29-invoice-bar`, between slices 3 and 4
+— a set invoice folds the bar to one line, which brings the everyday invoice-mode edit back
+inside an 844px iPhone (778 → 699px), and the bar no longer covers the top of the modal title,
+which it had done in every state since slice 3. See "The m29 layout pass, as built". Not yet
+reviewed. **Slices 4–6 are still planned.**
+
+**Slice 3 shipped** — merged to `main` as `54d8ec2` (PR #146, squashed) — the invoice bar, real
 provenance on every history row, and #140 closed. **Round 10 fixed one blocker and three
 majors**: the invoice number field was rendering at 15.2px and zooming iOS (#135 again, the
 fourth time, B1), the invoice date was gated by nothing so an emptied date box silently wrote
@@ -9,7 +15,7 @@ every state" height claim had been measured in one mode only (M2). It failed the
 **fifth time running on the document claiming more than the code delivered** — and this time
 one of those claims covered the live iOS bug. The provenance logic itself was attacked hard,
 held on every path, and is untouched. See "Slice 3 as built", m54–m58, and round 10's section
-for B1–M3, m63–m65 and the corrected counts. **Slice 2 built** on `costing-slice2-undo` (PR #145), reviewed seven times.
+for B1–M3, m63–m65 and the corrected counts. **Slice 2 shipped** — merged to `main` as `cf898bd` (PR #145, squashed), reviewed seven times.
 **Round 5's blocker is fixed** — the price-history recovery this document used to claim twice
 now exists (m24) — and round 6 also gated a wiped price (m26) and stopped a save on the
 relink chooser from silently keeping the old link (m31). **Round 7 found no blocker and no
@@ -21,8 +27,7 @@ declined tightening was done and its recorded reasoning corrected (m43). See "Sl
 built" below, m21–m25 for what the slice left open, m26–m33 for rounds 5 and 6, m39–m46 for
 round 7, and m47–m51 for what round 8 left recorded. **Slice 1 shipped** — merged to `main` as `7d79bd6` (PR #143, squashed; branch
 deleted). Four rounds of review; round 4 found no fourth async-staleness bug and passed it.
-See "Slice 1 as built" below, and m18–m20 for the three majors round 4 left open. Slices 2–6
-are still planned.
+See "Slice 1 as built" below, and m18–m20 for the three majors round 4 left open.
 v2, rewritten 2026-09-16 after the v1 plan was reviewed and rejected. The review that rejected it is preserved verbatim in the
 appendix; read it before this, because this document is the answer to it.
 
@@ -574,6 +579,9 @@ work it does not: the simplest edit is over, and it compounds with the keyboard 
 that has just taken focus. **m29 is not fixed here and is deliberately worse by a measured
 amount**, as its own layout pass.
 
+**Update:** the invoice-work half is now addressed by folding the bar — see "The m29 layout
+pass, as built" below. The table above is left as it was measured.
+
 ### What was proved, and what was not
 
 **324 assertions, 13 scenarios, clean.** Up from 280, so **+44** — one new scenario,
@@ -630,6 +638,126 @@ easy to write one by accident.
 
 Control locking during a save (m19, m44's widened cost, m30, m52 — slice 4); speed of any kind
 (slices 5 and 6); and **m29's modal height as its own layout pass**, measured above.
+
+## The m29 layout pass, as built
+
+Built on `costing-m29-invoice-bar`, after slice 3 shipped and before slice 4. **Scope:**
+`tempest_costing.html` and `scripts/check_costing.py`. `assets/kitchen.css` is untouched, so
+**no `?v=` bump**. Two commits, one per problem.
+
+### 1. A set invoice folds to one line
+
+Once an invoice has both a number and a date, the bar folds to a single line —
+**FILING AGAINST INVOICE / SR-88214, dated 2026-08-04 [Change]** — the shape `.pick-chosen`
+already gives a pick, with the same `.pick-change` button. Change opens the full bar, holding
+the number, date and mode it had.
+
+| rule | why |
+|---|---|
+| **It folds in `closeEdit()` and nowhere else** — between items, never while the modal is open | A bar that shrank as you finished typing would slide the picker list up under your next tap, and a tap on a list row is a pick: the spine's rule 1, broken by layout rather than by code. Folding on blur, or as soon as both fields are filled, has that shape. So does folding in `openEdit()`, which also fires mid-modal — tapping a "needs price" row in the Add picker is `openEdit()` with the modal already up. |
+| **Cancel folds as surely as a save** | Closing is the boundary, not saving. |
+| **Only a whole invoice folds** — number *and* date | The save gate `focus()`es the missing field; a gate that says "enter the number" while the box is hidden is no gate. `syncInvBar()` re-checks completeness itself rather than trusting the flag. |
+| **Setting up never folds** | Its toggle is the only control it has; folding it would put invoice mode two taps away. |
+| **What a save records does not change** | `provNow()` is untouched. The fold changes what is on screen, never what is filed. |
+
+**The cost, named:** the first item of each invoice still opens full, because that is the modal
+the invoice is typed into. That edit is still 778px — over the fold, once per invoice. A Done
+button to fold it sooner was offered on 2026-09-24 and not chosen: one more tap per invoice, and
+a narrower number field, to save one short scroll.
+
+#### Measured
+
+Same method as m29's table — modal content `scrollHeight` at a pinned 358px, fixture item 502 —
+and the probe was checked against that table before anything was changed: it reproduced every
+number in it (640/802/856, 722/884/938, 778/940/994; bar 90 and 146).
+
+| state | setting up | invoice, full (first item) | invoice, **folded** |
+|---|---|---|---|
+| main-list edit | 722px | 778px | **699px** |
+| ＋ Add chooser | 884px | 940px | **861px** |
+| relink chooser open | 938px | 994px | **915px** |
+| the bar itself | 90px | 146px | **67px** |
+
+Against 743px (88vh of an 844px iPhone): **the everyday invoice edit fits again, with 44px to
+spare**, and needs less room than setting up does. The two chooser states are still over the
+fold in every mode, as they have been since slice 2 (802/856); folded, they are 23px less over
+than setting up.
+
+A long reference (m65): a 10-digit number stays on one line; a 28-character one wraps the folded
+line to two, taking the bar 67 → **72px** and the edit to 704px — still inside 743.
+
+m64, partly: folded, the invoice is shown at 0.95rem bold rather than in the 11.52px `.inv-say`
+line. The label above it is 11px, the same as `.pick-chosen-v`. Unfolded, m64 stands as it was.
+
+**Not measured:** the keyboard up, and a real device. 743px is this document's yardstick (88vh
+of 844), not a Safari measurement; how much of it Safari's toolbars leave visible was not
+checked. The fold was judged from the arithmetic and from a headless screenshot at 358px.
+
+### 2. The bar no longer covers the modal title
+
+Found in the screenshots for the above. **Since slice 3 the invoice bar has sat 22px below the
+top of the edit modal, in every state and both modes.** Sticky sticks at the scroll container's
+*padding* edge, so the `margin-top:-22px` meant to pull the bar over `.modal`'s 22px padding was
+undone as soon as it stuck — at `scrollTop` 0 too. Measured: the bar's top 23px below the
+modal's edge (1px of that is the border), and its bottom 8px below the top of "Edit item", so
+the title's top 8px sat under the bar; and a 22px strip above the bar where scrolled content
+showed through — what the negative margin was there to prevent.
+
+The fix removes what sticky was pushing against: `#editModal .modal{padding-top:0}`, and the
+bar's top margin to 0. A one-line alternative, `top:-22px`, also fixes it in Chrome — but only
+because Chrome insets sticky by the padding; an engine that did not would clip the top 22px of
+the bar whenever the modal scrolled. With no top padding there is nothing to inset, in any
+engine. Scoped to `#editModal`; the price-history modal keeps its padding. Content heights are
+unchanged: the padding and the margin cancelled before and are both zero now.
+
+Measured after: the bar 1px from the modal's edge, at rest and scrolled (was 23 both ways); the
+title 14px below the bar (was −8).
+
+One more trap for "How to verify without touching live data": **a sticky element's resting
+position is not its normal-flow position when the scroller has padding.** Read
+`getBoundingClientRect()` against the scroller; don't infer it from the margins.
+
+### What was proved, and what was not
+
+**362 assertions, 13 scenarios, clean.** Up from 337 on `main`, so **+25**: 20 for the fold
+(`m29:`, in `provenance`) and 5 for the bar's seat (`css:`). Faults reintroduced, each run
+against a scratch copy of the page, all nineteen re-run on the final code:
+
+| fault reintroduced | failures |
+|---|---|
+| `closeEdit()` never folds | 7 |
+| a half invoice folds (the completeness check removed from both places) | 2 |
+| setting up folds | 1 |
+| every `openEdit()` folds, mid-modal too | 1 |
+| typing folds it | 1 |
+| Change does not unfold | 4 |
+| Change clears the number | 2 |
+| Change switches to setting up | 8 |
+| folded, the toggle stays on screen | 2 |
+| folded, the spoken line stays on screen | 1 |
+| folded, the fields stay on screen | 2 |
+| the folded line drops the number | 1 |
+| the folded line drops the date | 1 |
+| Change is a 30px target | 1 |
+| the fold saves no room (`.inv-set` padded 24px) | 1 |
+| a folded save files as setting up | 8 |
+| **the original bar margin — the exact slice-3 shape** | **3** |
+| the top padding kept, the bar's margin zeroed | 2 |
+| `padding-top:0` on every modal, unscoped | 1 |
+
+**Of the 25 new assertions, 22 are proved to bite and 3 are not** — all three are preconditions,
+checking that the test set up what it meant to:
+
+- `m29: (the tap really opened the unpriced row)`
+- `m29: (a whole invoice is still held while setting up)` — added after the first draft of
+  `m29: setting up never folds` was found to run with the number already cleared, where it
+  could not have failed.
+- `css: (the modal really scrolled)`
+
+Two notes. "A folded save files as setting up" also fails **7 slice-3 assertions** (`s3-4:`,
+`s3-5:`): those sequences close the modal between saves, so they now run through the folded bar
+and guard it too. And the original-margin injection fails with the title's top at 129.8px
+against the bar's bottom at 137.8 — the 8px, reproduced by its own guard.
 
 ## Minors list
 
