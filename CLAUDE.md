@@ -48,7 +48,33 @@ Run this before opening any PR that touches a page or the stylesheet:
 python3 scripts/check_styling.py
 ```
 
-It is the #114 consistency sweep, made runnable. CI runs it too.
+It is the #114 consistency sweep, made runnable. CI runs it too. **It needs Chrome**
+(`CHROME=/path/to/chrome` if it is somewhere unusual): its last check renders the ten pages and
+reads the computed font-size of every input, because the bug it exists to catch is a rule
+*losing the cascade*, which no amount of reading the CSS will show you.
+
+### The 16px rule, and the 75 inputs that break it
+
+**No input may render below 16px.** Below that, iOS Safari zooms the page the moment the field
+takes focus — issue #135, which this project has now produced four times, every one the same
+shape: a new input whose bare class lost to `kitchen.css`'s
+`.modal textarea,.modal select,.modal input[type="tel"],.modal input[type="text"]` (`0.95rem` =
+15.2px). That selector is **(0,2,1)** and beats a bare class's **(0,1,0)** whatever the source
+order. A new field in a modal must be written qualified, the way `.pick-filter` and `.inv-input`
+are:
+
+```css
+.modal input[type="text"].your-class,.your-class{ … font-size:16px … }
+```
+
+Declaring `font-size:16px` on the bare class looks right, passes review, and renders at 15.2px.
+
+**75 inputs on nine of the ten pages are already under 16px** (69 at 15.2px, 4 at 13.12px, 2 at
+14.4px) and are recorded in `FS_REGISTER` in `scripts/check_styling.py` with their measured
+sizes. The guard fails a *new* one, and fails a registered one that changes size in either
+direction, so the list cannot rot. #135 is not a bug that got fixed — it is the site's default,
+and clearing it is one edit to that shared rule plus a `?v=` bump on all ten pages, waiting on
+a pass of its own that can be looked at.
 
 ### The four rules that matter
 

@@ -1,6 +1,15 @@
 # Costing — make the ledger fillable
 
-Status: **Slice 2 built** on `costing-slice2-undo` (PR #145), reviewed seven times.
+Status: **Slice 3 built** on `costing-slice3-provenance` (PR #146) — the invoice bar, real
+provenance on every history row, and #140 closed. **Round 10 fixed one blocker and three
+majors**: the invoice number field was rendering at 15.2px and zooming iOS (#135 again, the
+fourth time, B1), the invoice date was gated by nothing so an emptied date box silently wrote
+today under an invoice number (M1), the toggle was a 38px tap target (M3), and the "+76px in
+every state" height claim had been measured in one mode only (M2). It failed the round for the
+**fifth time running on the document claiming more than the code delivered** — and this time
+one of those claims covered the live iOS bug. The provenance logic itself was attacked hard,
+held on every path, and is untouched. See "Slice 3 as built", m54–m58, and round 10's section
+for B1–M3, m63–m65 and the corrected counts. **Slice 2 built** on `costing-slice2-undo` (PR #145), reviewed seven times.
 **Round 5's blocker is fixed** — the price-history recovery this document used to claim twice
 now exists (m24) — and round 6 also gated a wiped price (m26) and stopped a save on the
 relink chooser from silently keeping the old link (m31). **Round 7 found no blocker and no
@@ -479,6 +488,148 @@ because the picker is no longer hidden there.
 **Not in this slice, on purpose:** speed of any kind (slices 5 and 6), invoice provenance
 (slice 3), and control locking during a save — including Retire as a second write path,
 m19 — which is slice 4.
+
+## Slice 3 as built
+
+"Every price has a provenance." Built on `costing-slice3-provenance`. **Closes #140.**
+
+**Scope:** `tempest_costing.html` and `scripts/check_costing.py` only. `assets/kitchen.css` is
+untouched, so **no `?v=` bump** — the invoice bar's rules are page-only, because no other page
+files a delivery and a shared component with one caller is not a component.
+
+| promise | as built | guarded by |
+|---|---|---|
+| **A sticky header carrying the mode and the current invoice** | `.inv-bar` is the first child of the edit modal, `position:sticky; top:0; z-index:2`, with negative margins pulling it over `.modal`'s 22px padding so the content scrolls *under* it rather than beside it. A segmented toggle — **Setting up** / **Working an invoice** — then the number and date fields in invoice mode, then a line saying in words what the next save will record. | five `s3-1:` assertions |
+| **Set once, holds until changed** | `invMode`, `invRef` and `invDate` are page-level and **not** touched by `closeEdit()`. One invoice is typed once; three means changing it twice. | four `s3-4:` assertions |
+| **`effective_date` from the invoice, not today** | `provNow()` returns `{source,ref,date}` — `manual`/`null`/today when setting up, `invoice`/the number/**the invoice's own date** when working one. Captured at save time, never re-read later. | `s3-3:`, `s3-5:` |
+| **`logPrice` passes the real ref and source** | Its fifth argument is now a `prov` object rather than a bare `invoiceRef`, and the POST body carries `source`, `invoice_ref` **and** `effective_date`. There are **three** call sites (`:715`, `:741`, `:742`) and each passes a real `prov` — the earlier "five" was a miscount, not a missed site. | `s3-2:`, `s3-3:` |
+| **`invoice_ref` in the price-history modal (#140)** | `openHist()` emits `.hinv` beside `.hsrc` when the row has a reference. The data has been written since before slice 1 and invisible the whole time. | five `#140:` assertions |
+
+**Invoice mode requires a number *and* a date.** Saving in invoice mode with either one empty
+sends nothing and says which field is missing. `source:'invoice'` with `invoice_ref:null` claims
+a price came off paper and gives no way to find the paper — worse than "setting up", which says
+plainly that it did not. Switching to invoice mode also fills the date with today rather than
+leaving it empty.
+
+Round 10 corrected this: **as built, only the number was gated.** `provNow()` was asymmetric —
+`ref: invRef||null` behind the save-blocking gate, `date: invDate||today()` behind nothing — so
+`setInvMode()` filled the date once and *clearing it afterwards brought the fallback back*.
+Reproduced: mode invoice, ref `INV-CLEAR`, date box emptied → a row written `source:'invoice'`,
+`invoice_ref:'INV-CLEAR'`, `effective_date` today, with the date box visibly empty and the toast
+reading "✓ … saved". That is the bug this mode exists to fix, inside the mode that exists to fix
+it. The date is now gated the same way the number is, and the bar's spoken line no longer
+speaks a date the save would refuse. `provNow()`'s own fallbacks are untouched: the gate is at
+the save boundary, where the ref's already is.
+
+### The decision this slice had to make
+
+**A debt owed under one invoice, paid after the mode changed, records the invoice it was
+OWED under.** Not the one current at payment.
+
+`historyOwed` entries now carry `prov` alongside `{price,qty,unit}`, and `sameVals` compares
+provenance as well as values. The reasoning: the owed row records a price that really was in
+effect and really was established by the paper named when it was entered. Stamping it with
+whatever happens to be in the bar when you get round to re-saving would attribute a price to
+an invoice it never appeared on — which is the fabricated-row class m24 and m40 exist to keep
+out of this table, arrived at from a third direction.
+
+The corollary is that a debt owed under invoice A is **not** discharged by a write of the same
+numbers under invoice B: the two rows say different things about where the price came from, so
+both are written. Measured — fail at $60 under `INV-A`, switch to `INV-B`, re-save unchanged →
+**two rows, one `INV-A`/`2026-08-01`, one `INV-B`/`2026-09-02`** — and a further unchanged save
+writes none. **Eleven `s3-5:` assertions, nine of them proved to bite** — the two that are not
+are the sequence's setup step and its precondition, named below. The earlier "six … four" was
+a miscount of both halves.
+
+### m29: what this adds, measured
+
+Modal *content* height at a pinned 358px width (`scrollHeight`, so viewport-independent and
+safe from trap 3), before and after:
+
+**The first version of this table measured one mode and reported it as "every state".** The
+bar is two different heights: the invoice number and date fields (`.inv-fields`) only exist in
+invoice mode. Both branches, re-measured at a pinned 358px after round 10's fixes (the slice-2
+column re-measured here too, with the bar `display:none`, rather than carried over):
+
+| state | slice 2 | setting up | working an invoice |
+|---|---|---|---|
+| main-list edit | 640px | **722px** (+82) | **778px** (+138) |
+| ＋ Add chooser | 802px | **884px** (+82) | **940px** (+138) |
+| relink chooser open | 856px | **938px** (+82) | **994px** (+138) |
+
+The bar itself is **90px** setting up and **146px** working an invoice. (Round 10's 44px toggle
+added 6px to both against the review's 84/144 and +76/+136.)
+
+Against 743px — 88vh of an 844px iPhone — the split matters:
+
+- **Setting up:** the everyday main-list edit still fits (722 of 743). The two chooser states
+  were already over the fold under slice 2 and are further over now.
+- **Working an invoice:** **every state is over, including the simplest edit** (778). 640 → 778
+  crosses the fold: the state that fitted under slice 2 no longer does.
+
+So **m29 is deferrable for the setting-up bootstrap and is not deferrable for invoice work.**
+For the bootstrap the argument holds — those states were already over, and the thing that grew
+is the one element that is *pinned*, so the bar cannot itself fall below the fold. For invoice
+work it does not: the simplest edit is over, and it compounds with the keyboard up on a field
+that has just taken focus. **m29 is not fixed here and is deliberately worse by a measured
+amount**, as its own layout pass.
+
+### What was proved, and what was not
+
+**324 assertions, 13 scenarios, clean.** Up from 280, so **+44** — one new scenario,
+`provenance`. Faults reintroduced, each the exact fault:
+
+| fault reintroduced | failures |
+|---|---|
+| the bar is `position:static` again | **1** |
+| `logPrice` sends `source:'manual', invoice_ref:null` and no `effective_date` | **9** |
+| `effective_date` is `today()` again, not the invoice's | **3** |
+| `invoice_ref:null` again, date kept | **5** |
+| a debt is paid under the CURRENT prov, not the owed one | **3** |
+| `sameProv` always true, so provenance cannot keep a debt alive | **2** |
+| the invoice-number requirement removed | **6** |
+| the `.hinv` span removed from `openHist()` | **2** |
+| `closeEdit()` resets the mode, ref and date | **10** |
+| the bar `display:none` | **1** |
+| the bar's `z-index` removed | **1** |
+| `invMode` defaults to `'invoice'` | **130** |
+| the toggle's active class never moves | **1** |
+| the invoice fields never show | **1** |
+| invoice mode does not fill an empty date | **1** |
+| the bar's spoken line never renders | **2** |
+| the reference renders even when null | **1** |
+| the source is dropped from the POST body | **2** |
+| the bar moved below the title | **2** |
+
+**Corrected in round 10. Of the 44 new assertions, 39 are proved to bite and 5 are not.**
+The earlier "41 and 3" needed 20 injections to be true; the table above lists **19**, and one
+entry — then written "the source is dropped from the row" — was ambiguous between two distinct
+faults that prove different pairs. It was the POST body's `source` that was dropped, which
+proves the `s3-2:`/`s3-3:` pair; dropping the *rendered* source from `openHist()`, which is
+what would prove the two `#140:` source assertions, was never injected. So the honest union
+is 39 proved, and the five unproved, named:
+
+- `s3-3: and today is not what was written` — a date sanity control; it can only fail if the
+  suite is run on 2026-08-04.
+- `s3-5: the invoice-A save failed its history write` and `s3-5: the re-save really is of the
+  same price` — the setup step and the precondition of the debt sequence.
+- `#140: the source is still shown beside it` and `#140: and the manual row still reads as
+  manual` — the two the ambiguous entry was read as covering, and does not.
+
+Not "every", and not 41.
+
+Two notes on the injections. The `invMode` default fault produces **130** failures across
+almost every scenario, because the whole suite saves in setting-up mode; only 8 of those are
+`s3-2:` assertions and the rest are slice 1 and 2's guards refusing to save at all. And the
+first attempt at the "spoken line never renders" injection was a **no-op** — `x=''||inv?a:b`
+still evaluates the ternary — which the suite correctly reported as clean; it was rewritten to
+assign to a dead property instead. An injection that changes nothing proves nothing, and it is
+easy to write one by accident.
+
+### Not in this slice, on purpose
+
+Control locking during a save (m19, m44's widened cost, m30, m52 — slice 4); speed of any kind
+(slices 5 and 6); and **m29's modal height as its own layout pass**, measured above.
 
 ## Minors list
 
@@ -1237,6 +1388,197 @@ blocks. Those are round 8's guards doing their job, not round 9's, and are not c
 assertion could not fail under any injection. It now sets `qt` and carries a precondition
 asserting the row is not already on it. That is the m46 class, written fresh in the round that
 fixed m46; it is worth knowing the shape is easy to reproduce by accident.
+
+### Added by slice 3 (branch `costing-slice3-provenance`)
+
+- m54. **The invoice bar does not survive the page.** `invMode`, `invRef` and `invDate` are
+  plain variables, so a reload or iOS dropping the tab returns to setting-up mode mid-invoice.
+  The next save then records `manual`/today against prices that came off the paper still in
+  your hand — quietly, because setting-up mode is the honest default and says nothing is
+  wrong. Same shape as m33's lost debt, and worse in one way: the debt at least produced a
+  toast once. `sessionStorage` would hold it the way the PIN unlock already does; deliberately
+  not done here, because M5 already notes that a restored session *looking* like where you
+  left off is its own trap, and deciding what the bar should say after a reload is a
+  conversation, not a one-liner.
+- m55. **m48 is narrowed, not closed.** `logPrice` now sends `effective_date`, so a stack of
+  last month's invoices records against their own dates. But when m40 writes an owed row and
+  the save's own row together *in setting-up mode*, both still carry today — the owed price
+  came first in reality and nothing in the row says so. In invoice mode the two rows now
+  usually differ, because the debt carries the invoice it was owed under. So m48 survives
+  exactly where provenance is weakest.
+- m56. **Nothing shows which invoice an existing ledger row was last priced under.** The bar
+  says what the *next* save will record; the main list and the edit modal say nothing about
+  what the *last* one did. The price-history modal now does (#140), but that is two taps away
+  and per-row. Recorded — a per-row provenance line is the reader m36 and m21 both wanted.
+- m57. **The invoice date is a native `<input type="date">`, unmeasured on a phone.** It is
+  the first one on the site. iOS renders it as a wheel picker, and its rendered width inside a
+  358px modal beside the number field was measured only in headless Chrome, which draws a
+  different control. Check it on a real phone before the first real invoice run.
+  **Corrected in round 10:** this entry used to say "it is 16px, so #135 does not apply". True
+  of the date input, **false of the number field beside it** — which computed to 15.2px and
+  did zoom (B1 below). The field that got measured was the one that happened to be safe. Both
+  are now asserted at ≥16px.
+- m58. **Switching from invoice mode back to Setting up keeps the number in the box.** It is
+  hidden, not cleared, and switching back restores it — which is right for "I misread the
+  mode" and wrong for "I have finished that invoice". Nothing distinguishes the two. Cosmetic,
+  and clearing it would lose work in the commoner case.
+
+### Added by round 10's review (PR #146, slice 3, pre-merge)
+
+Round 10 found one blocker and three majors, and failed the round for the fifth time running
+on the same thing: **the document and the commit described a slice slightly better than the one
+built** — and this time one of those claims covered a live iOS bug. What was fixed here:
+
+- **B1 (blocker, fixed). The invoice number field rendered at 15.2px, not the 16px it
+  declared.** `.inv-input` was written unqualified, so `kitchen.css`'s
+  `.modal textarea,.modal select,.modal input[type="tel"],.modal input[type="text"]`
+  (`0.95rem`) out-specified it — **(0,2,1) beats (0,1,0) whatever the source order**. Below
+  16px iOS zooms the page on focus: **#135, newly introduced, in this slice's primary
+  control.** The codebase already knew — `.pick-filter` is written
+  `.modal input[type="text"].pick-filter,.pick-filter` with a comment four lines above saying
+  an unqualified one "silently renders at 15.2px" — and slice 3 walked into the documented trap
+  anyway. Fixed with the same one-liner. Measured: `#invRef` 16px, `#invDate` 16px,
+  `#pickFilter` 16px. **This is the fourth #135-class regression this project has produced, and
+  every one was a new input that did not get the qualified selector.** The durable fix is a
+  check in `check_styling.py` that fails any input rendering under 16px — that would have caught
+  this without a review round. **Now done** — see "The 16px input rule, built" below.
+- **M1 (major, fixed). The invoice date was gated by nothing.** See "Invoice mode requires a
+  number *and* a date" above for the reproduction.
+- **M2 (major, fixed — documentation). "+76px in every modal state" was measured in one mode
+  only.** Corrected in "m29: what this adds, measured" above, which now states both modes and
+  says plainly which states cross the fold in which.
+- **M3 (major, fixed). The mode toggle was a 38px tap target.** `#invSetupBtn` 155×38 and
+  `#invInvoiceBtn` 156×38, from `.inv-btn{min-height:38px}`, against the Risks table's ≥44px —
+  the same reason slice 1 raised `.pick-change` from 40px. This is the control that decides what
+  every subsequent price claims about its origin. Now 155×44 and 156×44, measured. The mismatch
+  noted alongside it was a one-liner too: `#invRef` was 44px tall and `#invDate` 52px, side by
+  side, because `.inv-input` set `min-height` (which cannot shrink the native date control) and
+  `kitchen.css` gives `input[type="text"]` an 8px bottom margin the date never got. Both are now
+  an explicit `box-sizing:border-box; height:48px; margin:0` — measured 167×48 and 137×48.
+
+**M1's other half, closed after the round.** The gate M1 added reads the `invDate` *variable*,
+and the date field refreshed it on `change` alone while `#invRef` beside it refreshes on every
+keystroke. A box emptied before `change` had fired would still save under the date the variable
+was last told about — the box and the value disagreeing, which is the shape the gate exists to
+close. iOS's date wheel fires `change` when it is dismissed, so the window is narrow and this
+was never reproduced on a phone; the **asymmetry** is the point, and it is the same asymmetry
+M1 was. `#invDate` is wired to both events now, and `invChanged()` is idempotent, so both
+firing costs nothing. Four `s3-6:` assertions drive `input` on its own and are proved to bite:
+with the `oninput` removed the save goes through and writes a history row dated `2026-08-04`
+while the box is visibly empty — M1 exactly, through the other door.
+
+Recorded, not fixed:
+
+- m63. **Correcting a typo in the invoice date between a failed save and the re-save writes the
+  mistyped date permanently.** `sameProv` compares the date, so a debt owed under
+  `INV-A`/`2026-08-0**5**` is not discharged by a re-save under `INV-A`/`2026-08-0**4**`: both
+  rows are written, and the typo is preserved as "a state the item was in". **This is the real
+  cost of the owed-invoice decision, and the document never named it.** The decision is still
+  right — the alternative is stamping an owed price with whatever is in the bar later, which is
+  the fabricated-row class m24 and m40 exist to keep out of this table — but the cost is that
+  provenance is append-only and a typo in it is not correctable from this screen.
+- m64. **The bar's spoken line is the smallest text in the modal.** `.inv-say` computes to
+  **11.52px** (`0.72rem`), and it is what M1's mitigation now relies on: "Enter the invoice date
+  before saving" is said in the smallest type on screen. The toast on a blocked save is the
+  louder channel and carries the same words, but the line that is meant to stop the mistake
+  before it happens is the quiet one.
+- m65. **A long reference wraps the spoken line and grows the pinned bar.** Measured: a
+  28-character reference wraps `.inv-say` to two lines and takes the bar from **146px to
+  158px**, in the mode where every modal state is already over the fold (m29). Real Sysco and
+  Restaurant Depot numbers are shorter than that, so this is a ceiling, not a daily cost.
+- **`effective_date` in setting-up mode changed, and the document presented both sides as
+  "today".** It did not previously send `effective_date` at all in setting-up mode, so the
+  column took its server-side default — UTC — and a row saved late in a Texas evening recorded
+  **tomorrow's** date. It now sends an explicit local `today()`. That is an improvement, and a
+  real behaviour change to rows that carry no invoice: "today" before and "today" after are not
+  the same day between 7pm and midnight. m55 still holds for the rest — an owed row and the
+  save's own row both carry today in setting-up mode, and nothing says which price came first.
+
+#### What was proved, and what was not
+
+**333 assertions, 13 scenarios, clean.** Up from 324, so **+9** — no new scenario; the
+assertions live in `provenance`. Faults reintroduced, **six injections**, each the exact fault:
+
+| fault reintroduced | failures |
+|---|---|
+| `.inv-input` unqualified again (the exact B1 shape) | **1** (`#invRef` :: 15.2px) |
+| `.inv-input` set to `font-size:0.95rem` | **2** (both fields :: 15.2px) |
+| the invoice-date gate removed | **3** |
+| the spoken line speaks `today()` for an empty date again | **1** |
+| `.inv-btn` back to `min-height:38px` | **2** (:: 38) |
+| the fields back to `min-height:44px` (44 vs 52) | **1** |
+
+**All 9 of the new assertions are proved to bite. None are unproved.** Counted from the
+injections, not from the assertion list.
+
+Two notes. The unqualified-selector injection fails **only** the number field, because the
+date input is `type="date"` and `kitchen.css`'s rule matches `input[type="text"]` — which is
+exactly why the original bug was invisible: the field that was measured was the safe one. And
+removing the date gate produced its failures with the toast reading **"✓ Sea salt saved"** and
+a history row stamped `invoice`/`SR-88214`/today — M1 reproduced verbatim by its own guard.
+
+One thing these assertions needed: the invoice fields must be measured **with the modal open**.
+Measured anywhere `#editModal` is not `.show`, every box is 0px high and a tap-target assertion
+passes or fails on nothing. The first placement of these checks sat one step after a save had
+closed the modal and reported 0.
+
+### The 16px input rule, built
+
+B1's durable fix, added after round 10: **check 11 in `scripts/check_styling.py`.** It renders
+the ten pages in headless Chrome and fails any `input`/`textarea`/`select` whose *computed*
+font-size is under 16px. Every other check in that guard is static text, and every one of them
+passed B1 — the page declared `font-size:16px` and meant it. Only resolving the cascade shows a
+rule losing it.
+
+**What it found.** Not the one field B1 named: **75 inputs on nine of the ten pages** are under
+16px — 69 at 15.2px, 4 at **13.12px** (`#viewAs` / `#viewStation` on prep and line, the smallest
+on the site) and 2 at 14.4px. On the costing page that is `#search` and all five Add/Edit form
+fields: **every field a price is typed into zooms**, not only the invoice reference. #135 is not
+a slice-3 bug that got fixed; it is the site's default, and roughly 69 of the 75 share one cause
+— the `0.95rem` on `.modal textarea,.modal select,.modal input[type="tel"],
+.modal input[type="text"]`. One edit to that rule plus a `?v=` bump on all ten pages would clear
+them, and that is a pass of its own: a visible change to every form on the site, to be looked at
+rather than slipped into a slice.
+
+They are recorded in `FS_REGISTER` with the size each one measured. The register is checked both
+ways — an entry must still exist and must still measure exactly what is recorded — so fixing one
+and leaving it listed fails, and so does making one worse. A register that can drift is a
+register that quietly grows.
+
+**Two limits, both real.** It sees only inputs that exist in the markup, so fields built at
+runtime (`.count-input`, `.task-input`, `.who-select`) are invisible to it; all four #135
+regressions so far were markup-declared. And `check_styling.py` now needs Chrome, so
+`styling-guard.yml` installs it the way `costing-guard.yml` already did.
+
+**The bug this check nearly shipped with.** The first version neutralised the site-password
+bounce by matching the comment above it — `// Site-password gate` — which **only two of the nine
+inner pages carry.** The other seven redirected to `index.html`, Chrome dumped *index's* DOM,
+and index's collector answered with index's one password field. Seven pages reported "0 under
+16px" for a page that was never loaded, and the guard said clean. It is now matched on the
+redirect itself, and the collector **stamps which page it really ran on**, which is what caught
+it. Proved: breaking the gate regex fails all nine pages by name instead of passing.
+
+**Eight injections, each the exact fault, all eight proved to bite:**
+
+| fault reintroduced | result |
+|---|---|
+| `.inv-input` unqualified again (B1 itself) | `#invRef` … 15.2px |
+| a brand-new modal input declaring 16px, unqualified (the fifth regression) | `#fNote` … 15.2px |
+| the gate neutralisation broken | all nine pages named, not a silent pass |
+| a registered input fixed but left on the register | "take it off `FS_REGISTER`" |
+| a registered input made smaller | "that is a new #135" |
+| a registered input renamed | "`FS_REGISTER` lists #staffName, which this page no longer has" |
+| an under-16px input with no `id` | one message, with "give it an id" appended — not two |
+| `FS_REGISTER` naming a page that no longer exists | named, rather than lingering silently |
+| a page with no `</body>` | "check 11 cannot measure this page" |
+| no Chrome on the machine | exits 1 saying the 16px rule could not run — never a silent skip |
+
+(Ten rows, eight of them injected faults; the last two are the tool's own refusal paths, checked
+the same way.)
+
+Runtime: ten Chromes launched at once, ~2s wall clock. Nothing clicks or types, and
+`--host-resolver-rules=MAP * ~NOTFOUND` blocks every hostname, so the guard cannot reach the
+live database or wait on webfonts.
 
 ### A correction to "How to verify without touching live data"
 

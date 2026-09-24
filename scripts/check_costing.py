@@ -77,7 +77,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCENARIOS = ("ok", "slow", "fail", "empty", "ledgerslow", "ledgerfail",
              "inflight", "retry",
              # slice 2 - mistakes can be undone
-             "relink", "retired", "histfail", "magnitude")
+             "relink", "retired", "histfail", "magnitude",
+             # slice 3 - every price has a provenance
+             "provenance")
 
 # ---------------------------------------------------------------- fixtures --
 # Two "Slab bacon" rows on purpose: the whole of slice 1 is that the id we
@@ -1431,6 +1433,291 @@ RUNNER = r"""
     step(function(){ H.confirms=0; openAdd(); });
     step(function(){ $('editModal').click(); });
     step(function(){ ok('slice1: empty Add does not prompt', H.confirms===0, 'confirms='+H.confirms); });
+  }
+
+  /* ---------------- slice 3: every price has a provenance ---------------- */
+  if(H.scen==='provenance'){
+    function lastHist(){var h=hist();return h.length?h[h.length-1].body:null;}
+    function refs(){return hist().map(function(r){return r.body.invoice_ref;});}
+    function srcs(){return hist().map(function(r){return r.body.source;});}
+    function dates(){return hist().map(function(r){return r.body.effective_date;});}
+    var TODAY=null;
+
+    step(function(){ TODAY=today(); });
+
+    /* (1) THE STICKY HEADER. "Always visible without scrolling" is a layout
+       claim, so assert the layout: really on screen, really sticky, and above
+       the content it has to stay in front of. */
+    step(function(){ openAdd(); });
+    step(function(){
+      var bar=$('invBar'),cs=getComputedStyle(bar);
+      ok('s3-1: the invoice bar is really on screen', visible(bar));
+      ok('s3-1: and it is sticky, so scrolling the modal cannot lose it',
+         cs.position==='sticky', cs.position);
+      ok('s3-1: it sits above the content that scrolls under it',
+         Number(cs.zIndex)>0, cs.zIndex);
+      ok('s3-1: it is the first thing in the modal',
+         $('editModal').querySelector('.modal').firstElementChild===bar,
+         $('editModal').querySelector('.modal').firstElementChild.className);
+      ok('s3-1: it is inside the modal, so it scrolls with nothing else',
+         $('editTitle').compareDocumentPosition(bar)&Node.DOCUMENT_POSITION_PRECEDING);
+    });
+
+    /* (2) SETTING UP IS THE DEFAULT, and it invents no invoice. */
+    step(function(){
+      ok('s3-2: setting up is the default mode', invMode==='manual', invMode);
+      ok('s3-2: and the toggle says so', $('invSetupBtn').className.indexOf('on')>-1,
+         $('invSetupBtn').className);
+      ok('s3-2: no invoice fields are demanded', $('invFields').style.display==='none');
+      ok('s3-2: and it says what it will record', /no invoice/i.test($('invSay').textContent),
+         $('invSay').textContent);
+    });
+    step(function(){ H.reqs.length=0; pickItem(88); });
+    step(function(){ set('fQty','20'); set('fUnit','lb'); set('fPrice','150'); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){});
+    step(function(){
+      var b=lastHist();
+      ok('s3-2: setting up records a history row', hist().length===1, 'saw '+hist().length);
+      ok('s3-2: as source manual', b&&b.source==='manual', b&&b.source);
+      ok('s3-2: with NO invented invoice number', b&&b.invoice_ref===null,
+         b&&JSON.stringify(b.invoice_ref));
+      ok('s3-2: dated today', b&&b.effective_date===TODAY, b&&b.effective_date);
+    });
+
+    /* (3) WORKING AN INVOICE. The number is the one you set, and the date is
+       the INVOICE's own - a stack of last month's invoices used to record as
+       the day they were typed. */
+    step(function(){ H.reqs.length=0; setInvMode('invoice'); });
+    step(function(){
+      ok('s3-3: invoice mode shows its fields', $('invFields').style.display!=='none');
+      ok('s3-3: and the toggle moved', $('invInvoiceBtn').className.indexOf('on')>-1&&
+         $('invSetupBtn').className.indexOf('on')<0,
+         $('invSetupBtn').className+' / '+$('invInvoiceBtn').className);
+      ok('s3-3: the date is never left empty', $('invDate').value!=='', $('invDate').value);
+    });
+    /* the invoice number is REQUIRED here: source 'invoice' with a null ref
+       claims the price came off paper and gives no way to find the paper */
+    step(function(){ invRef=''; syncInvBar(); H.reqs.length=0; openEdit(502); });
+    step(function(){ set('fPrice','77'); });
+    /* The invoice fields are on screen here: the modal is open on 502 in
+       invoice mode. Measured anywhere the modal is closed, every box is 0. */
+    step(function(){
+      /* B1 (#135): kitchen.css's .modal input[type="text"] is 0.95rem = 15.2px
+         and out-specifies an unqualified .inv-input, (0,2,1) beating (0,1,0)
+         whatever the source order. At 15.2px iOS zooms the page the moment this
+         field takes focus - in the primary control of this slice. The styling
+         guard cannot see this; it is arithmetic on a computed style. */
+      ok('css: the invoice number field computes to >= 16px, or iOS zooms (#135)',
+         parseFloat(getComputedStyle($('invRef')).fontSize)>=16,
+         getComputedStyle($('invRef')).fontSize);
+      ok('css: and so does the invoice date field',
+         parseFloat(getComputedStyle($('invDate')).fontSize)>=16,
+         getComputedStyle($('invDate')).fontSize);
+      /* M3: the control that decides what every subsequent price claims about
+         its origin. The Risks table wants >= 44px; this was 38. */
+      ok('css: the Setting up button is a 44px tap target',
+         $('invSetupBtn').getBoundingClientRect().height>=44,
+         $('invSetupBtn').getBoundingClientRect().height);
+      ok('css: and so is Working an invoice',
+         $('invInvoiceBtn').getBoundingClientRect().height>=44,
+         $('invInvoiceBtn').getBoundingClientRect().height);
+      /* mismatched controls side by side: these were 44 and 52. */
+      ok('css: the number and date fields are the same height',
+         Math.abs($('invRef').getBoundingClientRect().height-
+                  $('invDate').getBoundingClientRect().height)<1,
+         $('invRef').getBoundingClientRect().height+' vs '+
+         $('invDate').getBoundingClientRect().height);
+    });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){});
+    step(function(){
+      ok('s3-3: invoice mode with no number saves NOTHING',
+         H.reqs.length===0, JSON.stringify(H.reqs.map(function(r){return r.m+' '+r.u;})));
+      ok('s3-3: and it says which field is missing', /invoice number/i.test(toast()), toast());
+    });
+    /* M1: the DATE was gated by nothing. provNow() falls back to today() when it
+       is empty, so a number with an emptied date box wrote a row stamped
+       'invoice'/the ref/TODAY, with the box visibly empty and the toast reading
+       "saved" - "an empty date silently falling back to today" is the exact bug
+       this mode exists to fix. Gated now, the way the number is. */
+    step(function(){
+      set('invRef','SR-88214');
+      $('invDate').value=''; $('invDate').dispatchEvent(new Event('change',{bubbles:true}));
+    });
+    step(function(){
+      ok('s3-6: an emptied invoice date is not spoken as today',
+         $('invSay').textContent.indexOf(TODAY)<0, $('invSay').textContent);
+      H.reqs.length=0; $('saveBtn').click();
+    });
+    step(function(){});
+    step(function(){
+      ok('s3-6: invoice mode with no date saves NOTHING',
+         H.reqs.length===0, JSON.stringify(H.reqs.map(function(r){return r.m+' '+r.u;})));
+      ok('s3-6: and no row was stamped with today under an invoice number',
+         hist().length===0, JSON.stringify(dates()));
+      ok('s3-6: and it says which field is missing', /invoice date/i.test(toast()), toast());
+    });
+    /* That gate reads the invDate VARIABLE, and the date field refreshed it on
+       `change` alone while the number field beside it refreshes on every
+       keystroke. A box emptied before `change` fired would then still save under
+       the date the variable was last told about - the box and the value
+       disagreeing, which is the shape the gate exists to close. Both events are
+       wired now, so this drives `input` on its own and nothing else. */
+    step(function(){
+      set('invRef','SR-88214');
+      $('invDate').value='2026-08-04';
+      $('invDate').dispatchEvent(new Event('change',{bubbles:true}));
+    });
+    step(function(){
+      $('invDate').value='';
+      $('invDate').dispatchEvent(new Event('input',{bubbles:true}));
+    });
+    step(function(){
+      ok('s3-6: an emptied box is noticed on input alone, not only on change',
+         /invoice date/i.test($('invSay').textContent), $('invSay').textContent);
+      ok('s3-6: and the bar stops speaking the date it was last told',
+         $('invSay').textContent.indexOf('2026-08-04')<0, $('invSay').textContent);
+      H.reqs.length=0; $('saveBtn').click();
+    });
+    step(function(){});
+    step(function(){
+      ok('s3-6: so the save is refused on input alone too',
+         H.reqs.length===0, JSON.stringify(H.reqs.map(function(r){return r.m+' '+r.u;})));
+      ok('s3-6: and no row was written under the emptied box stale date',
+         hist().length===0, JSON.stringify(dates()));
+    });
+    step(function(){
+      set('invRef','SR-88214');
+      $('invDate').value='2026-08-04'; $('invDate').dispatchEvent(new Event('change',{bubbles:true}));
+    });
+    step(function(){
+      ok('s3-3: the bar names the invoice it is filing against',
+         $('invSay').textContent.indexOf('SR-88214')>-1, $('invSay').textContent);
+      H.reqs.length=0; $('saveBtn').click();
+    });
+    step(function(){});
+    step(function(){
+      var b=lastHist();
+      ok('s3-3: the invoice save records a history row', hist().length===1, 'saw '+hist().length);
+      ok('s3-3: as source invoice', b&&b.source==='invoice', b&&b.source);
+      ok('s3-3: carrying the invoice number', b&&b.invoice_ref==='SR-88214',
+         b&&JSON.stringify(b.invoice_ref));
+      ok('s3-3: dated the INVOICE, not today', b&&b.effective_date==='2026-08-04',
+         b&&b.effective_date);
+      ok('s3-3: and today is not what was written', TODAY!=='2026-08-04');
+    });
+
+    /* (4) SET ONCE AND IT HOLDS. Not per session, not per item: one invoice
+       is typed once, three means changing it twice. */
+    step(function(){ closeEdit(); });
+    step(function(){ H.reqs.length=0; openEdit(502); });
+    step(function(){
+      ok('s3-4: the mode survives closing the modal', invMode==='invoice', invMode);
+      ok('s3-4: and so does the number', $('invRef').value==='SR-88214', $('invRef').value);
+      ok('s3-4: and the invoice date', $('invDate').value==='2026-08-04', $('invDate').value);
+      set('fPrice','88');
+    });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){});
+    step(function(){
+      var b=lastHist();
+      ok('s3-4: the next item files against the same invoice, untyped',
+         b&&b.invoice_ref==='SR-88214'&&b.effective_date==='2026-08-04',
+         b&&JSON.stringify([b.invoice_ref,b.effective_date]));
+    });
+
+    /* (5) THE DEBT AND THE INVOICE. historyOwed holds the values a row owes;
+       provenance is now part of what a row SAYS. A debt owed under one invoice
+       and paid after the mode changed records the invoice it was OWED under -
+       the price really was in effect and really was established by that paper,
+       and stamping it with whatever is in the bar at payment time would
+       attribute a price to an invoice it never appeared on. That is the
+       fabricated-row class m24 and m40 exist to keep out of this table. */
+    step(function(){
+      H.failHistory=true; H.reqs.length=0;
+      set('invRef','INV-A'); $('invDate').value='2026-08-01';
+      $('invDate').dispatchEvent(new Event('change',{bubbles:true}));
+      openEdit(502);
+    });
+    step(function(){ set('fPrice','60'); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){});
+    step(function(){
+      ok('s3-5: the invoice-A save failed its history write',
+         hist().length===1&&/histor/i.test(toast()), 'hist='+hist().length+' '+toast());
+      ok('s3-5: and it is owed under invoice A',
+         (historyOwed[502]||[]).length===1&&historyOwed[502][0].prov.ref==='INV-A',
+         JSON.stringify(historyOwed[502]));
+    });
+    /* pick up the NEXT invoice, then re-save the row unchanged */
+    step(function(){
+      H.failHistory=false; H.reqs.length=0;
+      set('invRef','INV-B'); $('invDate').value='2026-09-02';
+      $('invDate').dispatchEvent(new Event('change',{bubbles:true}));
+      openEdit(502);
+    });
+    step(function(){
+      ok('s3-5: the re-save really is of the same price', $('fPrice').value==='60',
+         $('fPrice').value);
+      $('saveBtn').click();
+    });
+    step(function(){});
+    step(function(){});
+    step(function(){
+      var r=refs(),d=dates();
+      ok('s3-5: the owed row is paid under the invoice it was OWED under',
+         r.indexOf('INV-A')>-1, JSON.stringify(r));
+      ok('s3-5: and it keeps invoice A’s own date',
+         hist().filter(function(x){return x.body.invoice_ref==='INV-A';})
+               .every(function(x){return x.body.effective_date==='2026-08-01';}),
+         JSON.stringify(d));
+      ok('s3-5: the save’s own row is filed under invoice B',
+         r.indexOf('INV-B')>-1, JSON.stringify(r));
+      ok('s3-5: two rows, one per invoice the price was filed under',
+         hist().length===2, 'saw '+hist().length+' '+JSON.stringify(r));
+      ok('s3-5: no row claims an invoice it was never entered under',
+         r.every(function(x){return x==='INV-A'||x==='INV-B';}), JSON.stringify(r));
+      ok('s3-5: and every row says where it came from',
+         srcs().every(function(x){return x==='invoice';}), JSON.stringify(srcs()));
+    });
+    /* both debts really are discharged, not merely quiet */
+    step(function(){ H.reqs.length=0; openEdit(502); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){});
+    step(function(){
+      ok('s3-5: both are paid, so an unchanged save writes nothing',
+         hist().length===0, 'saw '+hist().length+' '+JSON.stringify(refs()));
+      ok('s3-5: and no debt is left behind', !historyOwed[502],
+         JSON.stringify(historyOwed[502]));
+    });
+
+    /* (6) #140: the reference has been written since before slice 1 and has
+       never been shown. A row that says "invoice" without saying WHICH is not
+       a provenance. */
+    step(function(){
+      H.histRows=[{id:9,ingredient_cost_id:502,pack_price:60,pack_qty:2,pack_unit:'lb',
+                   source:'invoice',invoice_ref:'SR-88214',effective_date:'2026-08-04'},
+                  {id:8,ingredient_cost_id:502,pack_price:10,pack_qty:2,pack_unit:'lb',
+                   source:'manual',invoice_ref:null,effective_date:'2026-09-20'}];
+      openEdit(502);
+    });
+    step(function(){ openHist(); });
+    step(function(){});
+    step(function(){
+      var rows=$('histBody').querySelectorAll('.hist-row');
+      var t0=rows[0]?rows[0].textContent:'',t1=rows[1]?rows[1].textContent:'';
+      ok('#140: the price history shows the invoice reference',
+         t0.indexOf('SR-88214')>-1, t0);
+      ok('#140: and it is really on screen, not merely in the markup',
+         visible(rows[0]&&rows[0].querySelector('.hinv')),
+         rows[0]&&rows[0].innerHTML);
+      ok('#140: the source is still shown beside it', /invoice/.test(t0), t0);
+      ok('#140: a manual row shows no reference and invents none',
+         t1.indexOf('SR-88214')<0&&!(rows[1]&&rows[1].querySelector('.hinv')), t1);
+      ok('#140: and the manual row still reads as manual', /manual/.test(t1), t1);
+      H.histRows=[];
+    });
   }
 
   if(document.readyState==='complete')setTimeout(run,0);

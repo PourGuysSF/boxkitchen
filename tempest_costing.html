@@ -35,6 +35,49 @@
   /* stacked label/input pairs share one rhythm, as on Prep and Line */
   .modal input,.modal select{margin-bottom:0}
   .nb-label{margin:14px 0 7px}
+
+  /* Slice 3 — the invoice bar. Page-only: no other page files a delivery,
+     so this stays out of kitchen.css rather than becoming a shared
+     component with one caller.
+     Sticky, because "which paper am I filing against" must be answerable
+     without scrolling a modal that is already 856px with the relink
+     chooser open (m29). The negative margins pull it over .modal's 22px
+     padding so it spans the full width and nothing shows through beside
+     it as the content scrolls under. */
+  .inv-bar{position:sticky;top:0;z-index:2;margin:-22px -22px 14px;padding:12px 22px 10px;
+           background:var(--paper);border-bottom:1px solid var(--hair)}
+  /* the segmented toggle, same shape as .filter-btn / .mode-btn elsewhere.
+     State is an INK FILL, never a hue. */
+  .inv-mode{display:flex;gap:0;border:1px solid var(--edge);border-radius:6px;overflow:hidden}
+  /* 44px, not 38: this is the control that decides what every subsequent price
+     claims about its origin. Slice 1 raised .pick-change from 40 for the same
+     reason (Risks table: tap targets >= 44px). */
+  .inv-btn{flex:1;min-height:44px;padding:8px 10px;background:transparent;border:none;
+           color:var(--ink);font-family:var(--font-cond);font-size:0.8rem;font-weight:600;
+           letter-spacing:.06em;text-transform:uppercase;cursor:pointer}
+  .inv-btn+.inv-btn{border-left:1px solid var(--edge)}
+  .inv-btn.on{background:var(--ink);color:#fff}
+  .inv-fields{display:flex;gap:8px;margin-top:8px}
+  /* qualified to out-specify kitchen.css's .modal input[type="text"], which is
+     0.95rem = 15.2px; an unqualified .inv-input loses on specificity — (0,2,1)
+     beats (0,1,0) whatever the source order — and iOS then zooms the page on
+     focus (#135). Same one-liner .pick-filter carries for the same reason. */
+  /* an explicit box-sizing height rather than min-height, so the text field and
+     the native date field are the same height side by side (they were 44 and 52
+     — kitchen.css also gives input[type="text"] an 8px bottom margin the date
+     never got, so both are neutralised here). */
+  .modal input[type="text"].inv-input,.inv-input{flex:1;min-width:0;
+             box-sizing:border-box;height:48px;margin:0;
+             padding:9px 12px;background:var(--paper);
+             border:1px solid var(--edge);border-radius:6px;color:var(--ink);
+             font-family:var(--font);font-size:16px;outline:none;-webkit-appearance:none;appearance:none}
+  .inv-input::placeholder{color:var(--grey)}
+  .inv-date{flex:0 0 auto;max-width:44%}
+  /* live secondary text is --grey, never --faint */
+  .inv-say{margin-top:7px;font-size:0.72rem;color:var(--grey)}
+  /* the reference a row was filed under, beside its source */
+  .hist-row .hinv{margin-left:6px;font-family:var(--font-cond);font-size:11px;font-weight:600;
+                  letter-spacing:.06em;color:var(--ink)}
 </style>
 </head>
 <body>
@@ -74,6 +117,26 @@
 <!-- Add / Edit modal -->
 <div class="modal-bg" id="editModal">
   <div class="modal">
+    <!-- Slice 3: what every price saved from this modal is filed under.
+         Set once and it holds until changed — one invoice means typing it
+         once, three means changing it twice. -->
+    <div class="inv-bar" id="invBar">
+      <div class="inv-mode">
+        <button class="inv-btn on" id="invSetupBtn" onclick="setInvMode('manual')">Setting up</button>
+        <button class="inv-btn" id="invInvoiceBtn" onclick="setInvMode('invoice')">Working an invoice</button>
+      </div>
+      <div class="inv-fields" id="invFields" style="display:none">
+        <input class="inv-input" id="invRef" type="text" placeholder="Invoice #" autocomplete="off" oninput="invChanged()">
+        <!-- both events, deliberately. The save gate reads the VARIABLE, so a box
+             emptied without `change` having fired yet would still save under the old
+             date - the same "the box and the value disagree" shape the gate exists to
+             close. `input` is what the number field beside it already uses; `change` is
+             what iOS's date wheel fires when it is dismissed. Either one refreshes, and
+             invChanged() is idempotent, so both firing costs nothing. -->
+        <input class="inv-input inv-date" id="invDate" type="date" oninput="invChanged()" onchange="invChanged()">
+      </div>
+      <div class="inv-say" id="invSay"></div>
+    </div>
     <h3 id="editTitle">Add costed item</h3>
     <div class="msub" id="editSub">Price what you buy.</div>
 
@@ -198,6 +261,52 @@ var historyOwed={};           // ledger id -> [{price,qty,unit}] rows still owed
    wrote another identical row. Counts payments in flight per ledger id. */
 var historyPaying={};         // ledger id -> number of payment POSTs in flight
 var relinking=false;          // the relink chooser is open on an edit with no pick yet
+/* Slice 3 — provenance. Two modes, because the first 250 items are not
+   invoice entry: the ledger is being bootstrapped off the order guide, and
+   demanding an invoice number for that work would make one get invented,
+   which is worse than recording nothing.
+     setting up (default) : source 'manual',  no ref, effective_date today
+     working an invoice   : source 'invoice', the ref you set, the INVOICE's date
+   These are page-level and are NOT reset by closeEdit(): set the invoice once
+   and it holds until you change it. */
+var invMode='manual';         // 'manual' | 'invoice'
+var invRef='';                // the invoice number, as typed
+var invDate='';               // the invoice's OWN date, yyyy-mm-dd
+function today(){var d=new Date();return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);}
+/* What a history row written right now is filed under. Captured at save time
+   and carried through, never re-read later — the mode can change while a
+   write is in flight, and a row must say what it was filed under. */
+function provNow(){
+  if(invMode!=='invoice')return {source:'manual',ref:null,date:today()};
+  return {source:'invoice',ref:invRef||null,date:invDate||today()};
+}
+function setInvMode(m){
+  invMode=(m==='invoice')?'invoice':'manual';
+  // never leave the date empty in invoice mode: an empty one would silently
+  // fall back to today, which is the bug this mode exists to fix
+  if(invMode==='invoice'&&!invDate)invDate=today();
+  syncInvBar();
+}
+function invChanged(){
+  invRef=document.getElementById('invRef').value.trim();
+  invDate=document.getElementById('invDate').value||'';
+  syncInvBar();
+}
+function syncInvBar(){
+  var inv=invMode==='invoice';
+  document.getElementById('invSetupBtn').className='inv-btn'+(inv?'':' on');
+  document.getElementById('invInvoiceBtn').className='inv-btn'+(inv?' on':'');
+  document.getElementById('invFields').style.display=inv?'':'none';
+  document.getElementById('invRef').value=invRef;
+  document.getElementById('invDate').value=invDate;
+  document.getElementById('invSay').textContent=inv
+    // with the date now gated, the bar must not claim a date the save would
+    // refuse: name the missing field instead of speaking today()'s.
+    ? (!invRef?'Enter the invoice number before saving.'
+       :(!invDate?'Enter the invoice date before saving.'
+         :('Filing against invoice '+invRef+', dated '+invDate)))
+    : 'Setting up — no invoice, recorded as today ('+today()+').';
+}
 
 function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
 function api(m,t,q,d,cb){var x=new XMLHttpRequest();x.open(m,SB+'/rest/v1/'+t+(q?'?'+q:''));x.setRequestHeader('apikey',SK);x.setRequestHeader('Authorization','Bearer '+SK);if(d){x.setRequestHeader('Content-Type','application/json');x.setRequestHeader('Prefer','return=representation');}x.onload=function(){var r=null;try{r=JSON.parse(x.responseText);}catch(e){}if(cb)cb(r,x.status);};x.onerror=function(){if(cb)cb(null);};x.send(d?JSON.stringify(d):null);}
@@ -220,6 +329,7 @@ function submitGate(){
 }
 document.getElementById('gateInput').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();submitGate();}});
 function boot(){
+  syncInvBar();
   var already=false;try{already=sessionStorage.getItem('boxkitchen_mgr')==='1';}catch(e){}
   if(already){revealApp();}
   else{document.getElementById('gate').classList.remove('hide');setTimeout(function(){document.getElementById('gateInput').focus();},120);}
@@ -542,6 +652,18 @@ function saveItem(){
   // Required, per slice 1. Without it "40 · $120" previews "$3.00 / unit" and
   // every recipe costed off it inherits a unit nobody chose.
   if(!unit){showToast('Unit is required',true);document.getElementById('fUnit').focus();return;}
+  // Invoice mode with no number would write source:'invoice', invoice_ref:null
+  // — a claim that this came off paper, with no way to find the paper. That is
+  // worse than "setting up", which says plainly that it did not.
+  if(invMode==='invoice'&&!invRef){showToast('Invoice number is required — or switch to Setting up',true);
+    document.getElementById('invRef').focus();return;}
+  // The date is gated the same way, and for the same reason. setInvMode() fills
+  // it once; clearing it afterwards brought back the today() fallback, which
+  // wrote a row dated today under an invoice number with the date box visibly
+  // empty and the toast reading "saved" — the exact bug this mode exists to fix.
+  if(invMode==='invoice'&&!invDate){showToast('Invoice date is required — or switch to Setting up',true);
+    document.getElementById('invDate').focus();return;}
+  var prov=provNow();      // captured NOW: the mode can change while this is in flight
   var packQty=qtyRaw!==''?num(qtyRaw):null,packPrice=priceRaw!==''?num(priceRaw):null;
   var nowIso=new Date().toISOString();
   // What this save belongs to, captured NOW — never re-read in the callback.
@@ -619,7 +741,7 @@ function saveItem(){
     delete savingGen[gen];if(key)delete savingKey[key];
     var ok=!!(r&&r.length);
     if(ok){
-      if(savingId==null){items.push(r[0]);if(packPrice!=null)logPrice(r[0].id,packPrice,packQty,unit,null,label);}
+      if(savingId==null){items.push(r[0]);if(packPrice!=null)logPrice(r[0].id,packPrice,packQty,unit,prov,label);}
       else{for(var i=0;i<items.length;i++)if(items[i].id===savingId)items[i]=r[0];
         // m24: `owed` is the recovery. priceChanged compares the form against
         // the stored row, which this PATCH has just overwritten, so re-saving
@@ -634,10 +756,19 @@ function saveItem(){
         // m40: pay each owed row with the values IT owes. An owed row whose
         // values match what is being saved now is left to the save's own
         // write below, so an unchanged re-save still writes exactly one row.
+        // Slice 3: a debt is paid under the provenance it was OWED under, not
+        // the one current at payment. The owed row records a price that really
+        // was in effect, established by the paper named when it was entered;
+        // stamping it with whichever invoice happens to be in the bar when you
+        // get round to re-saving would attribute a price to an invoice it never
+        // appeared on. That is the fabricated-row class m24 and m40 exist to
+        // keep out of this table. So the debt carries its own prov, and
+        // sameVals compares it — a write under a different invoice cannot
+        // discharge a debt owed under this one.
         for(var k=0;k<owed.length;k++)
-          if(!sameVals(owed[k],packPrice,packQty,unit))
-            logPrice(savingId,owed[k].price,owed[k].qty,owed[k].unit,null,label,true);
-        if(priceChanged||owed.length)logPrice(savingId,packPrice,packQty,unit,null,label,owed.length>0);}
+          if(!sameVals(owed[k],packPrice,packQty,unit,prov))
+            logPrice(savingId,owed[k].price,owed[k].qty,owed[k].unit,owed[k].prov,label,true);
+        if(priceChanged||owed.length)logPrice(savingId,packPrice,packQty,unit,prov,label,owed.length>0);}
       // Only close what is still this save. If the user has moved on, the
       // data and the list update silently and what they are typing stays.
       if(gen===modalGen)closeEdit();else refreshPicker();
@@ -658,31 +789,43 @@ function saveItem(){
    outstanding and it is gone (a real retry is slice 4's reconciliation). */
 /* One owed row, identified by the values it records. m40: the debt is keyed
    on the values so a write of a DIFFERENT price can never discharge it. */
-function sameVals(a,price,qty,unit){
+function sameProv(a,prov){
+  var p=a.prov||{};
+  return (p.source||'manual')===(prov.source||'manual')&&
+         (p.ref||'')===(prov.ref||'')&&(p.date||'')===(prov.date||'');
+}
+function sameVals(a,price,qty,unit,prov){
   // null-ness is compared before num(), on BOTH price and qty: num(null) is 0,
   // so without this a debt owed at "no qty" is discharged by a write of qty 0,
   // which is m40's own defect in miniature - a debt paid by different values.
   return (a.price==null)===(price==null)&&num(a.price)===num(price)&&
          (a.qty==null)===(qty==null)&&num(a.qty)===num(qty)&&
-         (a.unit||'')===(unit||'');
+         (a.unit||'')===(unit||'')&&
+         // slice 3: and the provenance. A debt owed under invoice A is not
+         // discharged by a write of the same numbers under invoice B — the
+         // two rows say different things about where the price came from.
+         sameProv(a,prov||{});
 }
-function owedIndex(icId,price,qty,unit){
+function owedIndex(icId,price,qty,unit,prov){
   var L=historyOwed[icId]||[];
-  for(var i=0;i<L.length;i++)if(sameVals(L[i],price,qty,unit))return i;
+  for(var i=0;i<L.length;i++)if(sameVals(L[i],price,qty,unit,prov))return i;
   return -1;
 }
-function logPrice(icId,price,qty,unit,invoiceRef,label,paying){
+/* `prov` is {source,ref,date} — captured at save time by provNow() and passed
+   through unchanged, including when an owed row is paid later (see done()). */
+function logPrice(icId,price,qty,unit,prov,label,paying){
+  prov=prov||{source:'manual',ref:null,date:today()};
   if(paying)historyPaying[icId]=(historyPaying[icId]||0)+1;
-  api('POST','ingredient_price_history',null,{ingredient_cost_id:icId,pack_price:(price==null?null:price),pack_qty:qty,pack_unit:unit,source:'manual',invoice_ref:invoiceRef},function(r){
+  api('POST','ingredient_price_history',null,{ingredient_cost_id:icId,pack_price:(price==null?null:price),pack_qty:qty,pack_unit:unit,source:prov.source,invoice_ref:prov.ref,effective_date:prov.date},function(r){
     if(paying&&!(historyPaying[icId]=(historyPaying[icId]||1)-1))delete historyPaying[icId];
-    var i=owedIndex(icId,price,qty,unit);
+    var i=owedIndex(icId,price,qty,unit,prov);
     // Cleared only when THIS row is really on the wire — a debt that clears on
     // a failure, or on somebody else's price, is worse than no debt at all.
     if(r&&r.length){
       if(i>-1){historyOwed[icId].splice(i,1);if(!historyOwed[icId].length)delete historyOwed[icId];}
       return;
     }
-    if(i<0)(historyOwed[icId]||(historyOwed[icId]=[])).push({price:price,qty:qty,unit:unit});
+    if(i<0)(historyOwed[icId]||(historyOwed[icId]=[])).push({price:price,qty:qty,unit:unit,prov:prov});
     showToast((label||'That item')+' saved, but its price history didn’t record',true);
   });
 }
@@ -727,7 +870,7 @@ function openHist(){
     var h='';
     for(var i=0;i<rows.length;i++){
       var x=rows[i],uc=(num(x.pack_qty)>0&&num(x.pack_price)>0)?ucFmt(num(x.pack_price)/num(x.pack_qty))+' / '+esc(x.pack_unit||'unit'):'';
-      h+='<div class="hist-row"><div><span class="hprice">'+(x.pack_price==null?'no price':money(x.pack_price))+'</span>'+(x.pack_qty?' <span class="hdate">('+num(x.pack_qty)+' '+esc(x.pack_unit||'')+(uc?' → '+uc:'')+')</span>':'')+'<span class="hsrc">'+esc(x.source||'')+'</span></div><div class="hdate">'+esc(x.effective_date||'')+'</div></div>';
+      h+='<div class="hist-row"><div><span class="hprice">'+(x.pack_price==null?'no price':money(x.pack_price))+'</span>'+(x.pack_qty?' <span class="hdate">('+num(x.pack_qty)+' '+esc(x.pack_unit||'')+(uc?' → '+uc:'')+')</span>':'')+'<span class="hsrc">'+esc(x.source||'')+'</span>'+(x.invoice_ref?'<span class="hinv">'+esc(x.invoice_ref)+'</span>':'')+'</div><div class="hdate">'+esc(x.effective_date||'')+'</div></div>';
     }
     document.getElementById('histBody').innerHTML=h;
   });
