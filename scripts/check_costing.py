@@ -1442,6 +1442,7 @@ RUNNER = r"""
     function srcs(){return hist().map(function(r){return r.body.source;});}
     function dates(){return hist().map(function(r){return r.body.effective_date;});}
     var TODAY=null;
+    var SETUP_BAR=null,FOLDED_BAR=null;    // m29: the bar's height in each state
 
     step(function(){ TODAY=today(); });
 
@@ -1461,6 +1462,7 @@ RUNNER = r"""
          $('editModal').querySelector('.modal').firstElementChild.className);
       ok('s3-1: it is inside the modal, so it scrolls with nothing else',
          $('editTitle').compareDocumentPosition(bar)&Node.DOCUMENT_POSITION_PRECEDING);
+      SETUP_BAR=bar.getBoundingClientRect().height;
     });
 
     /* (2) SETTING UP IS THE DEFAULT, and it invents no invoice. */
@@ -1717,6 +1719,99 @@ RUNNER = r"""
          t1.indexOf('SR-88214')<0&&!(rows[1]&&rows[1].querySelector('.hinv')), t1);
       ok('#140: and the manual row still reads as manual', /manual/.test(t1), t1);
       H.histRows=[];
+    });
+
+    /* (7) m29: A SET INVOICE FOLDS TO ONE LINE. Full, the bar is 146px and
+       took the simplest invoice-mode edit past the fold on an 844px iPhone
+       (778px of content against 743). Folded it is one row. It folds as the
+       modal CLOSES and never while it is open: a bar that shrank as you
+       finished typing would slide the picker up under your next tap, and a
+       tap on a list row is a pick. */
+    step(function(){ closeHist(); closeEdit(); H.reqs.length=0; openEdit(502); });
+    step(function(){
+      FOLDED_BAR=$('invBar').getBoundingClientRect().height;
+      ok('m29: a set invoice opens folded to one line', visible($('invSet')));
+      ok('m29: with the controls out of the way',
+         !visible($('invModeRow'))&&!visible($('invFields'))&&!visible($('invSay')));
+      ok('m29: the folded line names the invoice number',
+         $('invSetV').textContent.indexOf('INV-B')>-1, $('invSetV').textContent);
+      ok('m29: and the invoice date',
+         $('invSetV').textContent.indexOf('2026-09-02')>-1, $('invSetV').textContent);
+      ok('m29: its Change is a 44px tap target',
+         $('invChange').getBoundingClientRect().height>=44,
+         $('invChange').getBoundingClientRect().height);
+      ok('m29: folded, a set invoice takes less room than setting up does',
+         SETUP_BAR!=null&&FOLDED_BAR<SETUP_BAR, FOLDED_BAR+' vs '+SETUP_BAR);
+    });
+    /* folding changes what is on screen, never what is filed */
+    step(function(){ set('fPrice','66'); H.reqs.length=0; $('saveBtn').click(); });
+    step(function(){});
+    step(function(){
+      var b=lastHist();
+      ok('m29: a save from the folded bar files under the invoice it shows',
+         b&&b.source==='invoice'&&b.invoice_ref==='INV-B'&&b.effective_date==='2026-09-02',
+         b&&JSON.stringify([b.source,b.invoice_ref,b.effective_date]));
+    });
+    /* Change is a way in, not a reset */
+    step(function(){ openEdit(502); });
+    step(function(){ $('invChange').click(); });
+    step(function(){
+      ok('m29: Change opens the full bar',
+         visible($('invModeRow'))&&visible($('invFields'))&&!visible($('invSet')));
+      ok('m29: and keeps the invoice it folded',
+         $('invRef').value==='INV-B'&&$('invDate').value==='2026-09-02',
+         $('invRef').value+' / '+$('invDate').value);
+      ok('m29: and the mode', invMode==='invoice', invMode);
+      ok('m29: open, the bar is taller than folded - the fold is what bought the room',
+         FOLDED_BAR!=null&&$('invBar').getBoundingClientRect().height>FOLDED_BAR,
+         $('invBar').getBoundingClientRect().height+' vs '+FOLDED_BAR);
+    });
+    /* a whole invoice typed into an OPEN modal does not fold under your finger */
+    step(function(){ set('invRef','INV-C'); });
+    step(function(){
+      ok('m29: typing a whole invoice does not fold the bar while the modal is open',
+         !visible($('invSet'))&&visible($('invFields')));
+    });
+    /* nor does tapping into another item from inside the open modal: that is
+       openEdit() running with the modal already up, and a fold there would
+       move the list the moment after a pick */
+    step(function(){ closeEdit(); openAdd(); });
+    step(function(){
+      ok('m29: a new Add opens folded too', visible($('invSet')));
+      $('invChange').click();
+    });
+    step(function(){ rowFor('Birite','Distilled white vinegar').click(); });
+    step(function(){
+      ok('m29: (the tap really opened the unpriced row)', editId===501, 'editId='+editId);
+      ok('m29: opening another item inside the open modal does not fold the bar',
+         !visible($('invSet'))&&visible($('invFields')));
+    });
+    /* closing is the boundary, not saving */
+    step(function(){ closeEdit(); openEdit(502); });
+    step(function(){ ok('m29: Cancel folds it as surely as a save does', visible($('invSet'))); });
+    /* an invoice with no number never folds: the save gate focuses #invRef,
+       and a gate that says "enter the number" while hiding the box to enter it
+       in is no gate */
+    step(function(){ $('invChange').click(); });
+    step(function(){ set('invRef',''); closeEdit(); openEdit(502); });
+    step(function(){
+      ok('m29: an invoice with no number never folds',
+         !visible($('invSet'))&&visible($('invRef')));
+      $('saveBtn').click();
+    });
+    step(function(){
+      ok('m29: so the gate focuses a field that is on screen',
+         document.activeElement===$('invRef')&&visible($('invRef')),
+         document.activeElement&&document.activeElement.id);
+    });
+    /* setting up never folds, even with a whole invoice still held from
+       before: its toggle stays one tap away */
+    step(function(){ set('invRef','INV-C'); });
+    step(function(){ $('invSetupBtn').click(); closeEdit(); openEdit(502); });
+    step(function(){
+      ok('m29: (a whole invoice is still held while setting up)',
+         invMode==='manual'&&invRef==='INV-C'&&invDate==='2026-09-02', invMode+' '+invRef+' '+invDate);
+      ok('m29: setting up never folds', !visible($('invSet'))&&visible($('invModeRow')));
     });
   }
 

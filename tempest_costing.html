@@ -75,6 +75,14 @@
   .inv-date{flex:0 0 auto;max-width:44%}
   /* live secondary text is --grey, never --faint */
   .inv-say{margin-top:7px;font-size:0.72rem;color:var(--grey)}
+  /* m29: the bar once an invoice is set — folded to one line, the way
+     .pick-chosen holds a pick, with the same .pick-change button. Full, the
+     bar took every invoice-mode edit past the fold on an 844px iPhone. */
+  .inv-set{display:flex;align-items:center;gap:10px}
+  .inv-set-main{flex:1;min-width:0}
+  .inv-set-k{font-family:var(--font-cond);font-size:11px;font-weight:700;letter-spacing:.1em;
+             text-transform:uppercase;color:var(--grey)}
+  .inv-set-v{font-size:0.95rem;font-weight:700;color:var(--ink);overflow-wrap:anywhere}
   /* the reference a row was filed under, beside its source */
   .hist-row .hinv{margin-left:6px;font-family:var(--font-cond);font-size:11px;font-weight:600;
                   letter-spacing:.06em;color:var(--ink)}
@@ -121,7 +129,15 @@
          Set once and it holds until changed — one invoice means typing it
          once, three means changing it twice. -->
     <div class="inv-bar" id="invBar">
-      <div class="inv-mode">
+      <!-- m29: a set invoice, folded to one line. Change opens the full bar. -->
+      <div class="inv-set" id="invSet" style="display:none">
+        <div class="inv-set-main">
+          <div class="inv-set-k">Filing against invoice</div>
+          <div class="inv-set-v" id="invSetV"></div>
+        </div>
+        <button class="pick-change" id="invChange" onclick="unfoldInv()">Change</button>
+      </div>
+      <div class="inv-mode" id="invModeRow">
         <button class="inv-btn on" id="invSetupBtn" onclick="setInvMode('manual')">Setting up</button>
         <button class="inv-btn" id="invInvoiceBtn" onclick="setInvMode('invoice')">Working an invoice</button>
       </div>
@@ -272,6 +288,11 @@ var relinking=false;          // the relink chooser is open on an edit with no p
 var invMode='manual';         // 'manual' | 'invoice'
 var invRef='';                // the invoice number, as typed
 var invDate='';               // the invoice's OWN date, yyyy-mm-dd
+/* m29: the bar shows one line instead of its controls. Set by closeEdit()
+   and nowhere else, so it folds between items and never while the modal is
+   open: a bar that shrank as you finished typing would slide the picker up
+   under your next tap, and a tap on a list row is a pick. */
+var invFolded=false;
 function today(){var d=new Date();return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);}
 /* What a history row written right now is filed under. Captured at save time
    and carried through, never re-read later — the mode can change while a
@@ -292,11 +313,19 @@ function invChanged(){
   invDate=document.getElementById('invDate').value||'';
   syncInvBar();
 }
+function unfoldInv(){invFolded=false;syncInvBar();}
 function syncInvBar(){
   var inv=invMode==='invoice';
+  // only a whole invoice folds: one missing a number or a date keeps its
+  // fields on screen, so the save gate's focus() never lands on a hidden box
+  var folded=inv&&invFolded&&!!invRef&&!!invDate;
+  document.getElementById('invSet').style.display=folded?'':'none';
+  document.getElementById('invSetV').textContent=invRef+', dated '+invDate;
+  document.getElementById('invModeRow').style.display=folded?'none':'';
+  document.getElementById('invSay').style.display=folded?'none':'';
   document.getElementById('invSetupBtn').className='inv-btn'+(inv?'':' on');
   document.getElementById('invInvoiceBtn').className='inv-btn'+(inv?' on':'');
-  document.getElementById('invFields').style.display=inv?'':'none';
+  document.getElementById('invFields').style.display=(inv&&!folded)?'':'none';
   document.getElementById('invRef').value=invRef;
   document.getElementById('invDate').value=invDate;
   document.getElementById('invSay').textContent=inv
@@ -606,6 +635,10 @@ function closeEdit(){
   document.getElementById('pickFilter').value='';
   clearFields();
   showChooser();
+  // m29: closing is the boundary. A whole invoice folds here, so the next
+  // item opens with room for Save; Cancel folds it as surely as a save does.
+  invFolded=(invMode==='invoice'&&!!invRef&&!!invDate);
+  syncInvBar();
 }
 function ucPreview(){
   var q=num(document.getElementById('fQty').value),p=num(document.getElementById('fPrice').value),u=document.getElementById('fUnit').value.trim()||'unit';
