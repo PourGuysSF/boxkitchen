@@ -17,4 +17,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Check 11 (the 16px input rule, issue #135) resolves the cascade in a
+      # real browser, because a rule LOSING the cascade is invisible to any
+      # amount of reading. Everything else in the guard is static text.
+      - uses: browser-actions/setup-chrome@v1
+        id: chrome
+        with:
+          chrome-version: stable
       - run: python3 scripts/check_styling.py
+        env:
+          CHROME: ${{ steps.chrome.outputs.chrome-path }}

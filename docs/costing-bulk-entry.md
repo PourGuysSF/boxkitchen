@@ -1441,7 +1441,7 @@ built** — and this time one of those claims covered a live iOS bug. What was f
   `#pickFilter` 16px. **This is the fourth #135-class regression this project has produced, and
   every one was a new input that did not get the qualified selector.** The durable fix is a
   check in `check_styling.py` that fails any input rendering under 16px — that would have caught
-  this without a review round. Worth doing as its own small piece; not done here.
+  this without a review round. **Now done** — see "The 16px input rule, built" below.
 - **M1 (major, fixed). The invoice date was gated by nothing.** See "Invoice mode requires a
   number *and* a date" above for the reproduction.
 - **M2 (major, fixed — documentation). "+76px in every modal state" was measured in one mode
@@ -1510,6 +1510,64 @@ One thing these assertions needed: the invoice fields must be measured **with th
 Measured anywhere `#editModal` is not `.show`, every box is 0px high and a tap-target assertion
 passes or fails on nothing. The first placement of these checks sat one step after a save had
 closed the modal and reported 0.
+
+### The 16px input rule, built
+
+B1's durable fix, added after round 10: **check 11 in `scripts/check_styling.py`.** It renders
+the ten pages in headless Chrome and fails any `input`/`textarea`/`select` whose *computed*
+font-size is under 16px. Every other check in that guard is static text, and every one of them
+passed B1 — the page declared `font-size:16px` and meant it. Only resolving the cascade shows a
+rule losing it.
+
+**What it found.** Not the one field B1 named: **75 inputs on nine of the ten pages** are under
+16px — 69 at 15.2px, 4 at **13.12px** (`#viewAs` / `#viewStation` on prep and line, the smallest
+on the site) and 2 at 14.4px. On the costing page that is `#search` and all five Add/Edit form
+fields: **every field a price is typed into zooms**, not only the invoice reference. #135 is not
+a slice-3 bug that got fixed; it is the site's default, and roughly 69 of the 75 share one cause
+— the `0.95rem` on `.modal textarea,.modal select,.modal input[type="tel"],
+.modal input[type="text"]`. One edit to that rule plus a `?v=` bump on all ten pages would clear
+them, and that is a pass of its own: a visible change to every form on the site, to be looked at
+rather than slipped into a slice.
+
+They are recorded in `FS_REGISTER` with the size each one measured. The register is checked both
+ways — an entry must still exist and must still measure exactly what is recorded — so fixing one
+and leaving it listed fails, and so does making one worse. A register that can drift is a
+register that quietly grows.
+
+**Two limits, both real.** It sees only inputs that exist in the markup, so fields built at
+runtime (`.count-input`, `.task-input`, `.who-select`) are invisible to it; all four #135
+regressions so far were markup-declared. And `check_styling.py` now needs Chrome, so
+`styling-guard.yml` installs it the way `costing-guard.yml` already did.
+
+**The bug this check nearly shipped with.** The first version neutralised the site-password
+bounce by matching the comment above it — `// Site-password gate` — which **only two of the nine
+inner pages carry.** The other seven redirected to `index.html`, Chrome dumped *index's* DOM,
+and index's collector answered with index's one password field. Seven pages reported "0 under
+16px" for a page that was never loaded, and the guard said clean. It is now matched on the
+redirect itself, and the collector **stamps which page it really ran on**, which is what caught
+it. Proved: breaking the gate regex fails all nine pages by name instead of passing.
+
+**Eight injections, each the exact fault, all eight proved to bite:**
+
+| fault reintroduced | result |
+|---|---|
+| `.inv-input` unqualified again (B1 itself) | `#invRef` … 15.2px |
+| a brand-new modal input declaring 16px, unqualified (the fifth regression) | `#fNote` … 15.2px |
+| the gate neutralisation broken | all nine pages named, not a silent pass |
+| a registered input fixed but left on the register | "take it off `FS_REGISTER`" |
+| a registered input made smaller | "that is a new #135" |
+| a registered input renamed | "`FS_REGISTER` lists #staffName, which this page no longer has" |
+| an under-16px input with no `id` | one message, with "give it an id" appended — not two |
+| `FS_REGISTER` naming a page that no longer exists | named, rather than lingering silently |
+| a page with no `</body>` | "check 11 cannot measure this page" |
+| no Chrome on the machine | exits 1 saying the 16px rule could not run — never a silent skip |
+
+(Ten rows, eight of them injected faults; the last two are the tool's own refusal paths, checked
+the same way.)
+
+Runtime: ten Chromes launched at once, ~2s wall clock. Nothing clicks or types, and
+`--host-resolver-rules=MAP * ~NOTFOUND` blocks every hostname, so the guard cannot reach the
+live database or wait on webfonts.
 
 ### A correction to "How to verify without touching live data"
 
