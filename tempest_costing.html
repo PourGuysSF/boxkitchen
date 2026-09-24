@@ -41,10 +41,16 @@
      component with one caller.
      Sticky, because "which paper am I filing against" must be answerable
      without scrolling a modal that is already 856px with the relink
-     chooser open (m29). The negative margins pull it over .modal's 22px
-     padding so it spans the full width and nothing shows through beside
-     it as the content scrolls under. */
-  .inv-bar{position:sticky;top:0;z-index:2;margin:-22px -22px 14px;padding:12px 22px 10px;
+     chooser open (m29). The side margins pull it over .modal's 22px padding
+     so it spans the full width and nothing shows through beside it as the
+     content scrolls under.
+     The top padding is REMOVED rather than pulled over the same way: sticky
+     sticks at the scroller's padding edge, so a -22px top margin held the bar
+     22px down — over the top 8px of the title in every state, with a 22px
+     strip above it for scrolled content to show through. Scoped to this
+     modal; the price-history one keeps its padding. */
+  #editModal .modal{padding-top:0}
+  .inv-bar{position:sticky;top:0;z-index:2;margin:0 -22px 14px;padding:12px 22px 10px;
            background:var(--paper);border-bottom:1px solid var(--hair)}
   /* the segmented toggle, same shape as .filter-btn / .mode-btn elsewhere.
      State is an INK FILL, never a hue. */

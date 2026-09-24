@@ -1463,6 +1463,25 @@ RUNNER = r"""
       ok('s3-1: it is inside the modal, so it scrolls with nothing else',
          $('editTitle').compareDocumentPosition(bar)&Node.DOCUMENT_POSITION_PRECEDING);
       SETUP_BAR=bar.getBoundingClientRect().height;
+      /* Sticky sticks at the scroller's PADDING edge, so the old -22px top
+         margin over .modal's padding held the bar 22px down: over the top
+         8px of the title in every state, with a strip above it for scrolled
+         content to show through. */
+      var mr=$('editModal').querySelector('.modal').getBoundingClientRect(),
+          br=bar.getBoundingClientRect(),hr=$('editTitle').getBoundingClientRect();
+      ok('css: the bar sits flush with the top of the modal',
+         br.top-mr.top<=1.5, (br.top-mr.top)+'px down');
+      ok('css: and covers none of the title',
+         hr.top>=br.bottom-0.5, 'title top '+hr.top+', bar bottom '+br.bottom);
+    });
+    step(function(){ $('editModal').querySelector('.modal').scrollTop=100; });
+    step(function(){
+      var m=$('editModal').querySelector('.modal'),
+          mr=m.getBoundingClientRect(),br=$('invBar').getBoundingClientRect();
+      ok('css: (the modal really scrolled)', m.scrollTop>0, m.scrollTop);
+      ok('css: scrolled, the bar is still flush, so nothing shows above it',
+         br.top-mr.top<=1.5, (br.top-mr.top)+'px down');
+      m.scrollTop=0;
     });
 
     /* (2) SETTING UP IS THE DEFAULT, and it invents no invoice. */
@@ -1718,6 +1737,11 @@ RUNNER = r"""
       ok('#140: a manual row shows no reference and invents none',
          t1.indexOf('SR-88214')<0&&!(rows[1]&&rows[1].querySelector('.hinv')), t1);
       ok('#140: and the manual row still reads as manual', /manual/.test(t1), t1);
+      /* the edit modal lost its top padding to seat the bar; this one has no
+         bar and must keep it */
+      ok('css: the price-history modal keeps its top padding',
+         getComputedStyle($('histModal').querySelector('.modal')).paddingTop==='22px',
+         getComputedStyle($('histModal').querySelector('.modal')).paddingTop);
       H.histRows=[];
     });
 
