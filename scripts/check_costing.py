@@ -1558,6 +1558,35 @@ RUNNER = r"""
          hist().length===0, JSON.stringify(dates()));
       ok('s3-6: and it says which field is missing', /invoice date/i.test(toast()), toast());
     });
+    /* That gate reads the invDate VARIABLE, and the date field refreshed it on
+       `change` alone while the number field beside it refreshes on every
+       keystroke. A box emptied before `change` fired would then still save under
+       the date the variable was last told about - the box and the value
+       disagreeing, which is the shape the gate exists to close. Both events are
+       wired now, so this drives `input` on its own and nothing else. */
+    step(function(){
+      set('invRef','SR-88214');
+      $('invDate').value='2026-08-04';
+      $('invDate').dispatchEvent(new Event('change',{bubbles:true}));
+    });
+    step(function(){
+      $('invDate').value='';
+      $('invDate').dispatchEvent(new Event('input',{bubbles:true}));
+    });
+    step(function(){
+      ok('s3-6: an emptied box is noticed on input alone, not only on change',
+         /invoice date/i.test($('invSay').textContent), $('invSay').textContent);
+      ok('s3-6: and the bar stops speaking the date it was last told',
+         $('invSay').textContent.indexOf('2026-08-04')<0, $('invSay').textContent);
+      H.reqs.length=0; $('saveBtn').click();
+    });
+    step(function(){});
+    step(function(){
+      ok('s3-6: so the save is refused on input alone too',
+         H.reqs.length===0, JSON.stringify(H.reqs.map(function(r){return r.m+' '+r.u;})));
+      ok('s3-6: and no row was written under the emptied box stale date',
+         hist().length===0, JSON.stringify(dates()));
+    });
     step(function(){
       set('invRef','SR-88214');
       $('invDate').value='2026-08-04'; $('invDate').dispatchEvent(new Event('change',{bubbles:true}));

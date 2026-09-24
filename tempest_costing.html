@@ -127,7 +127,13 @@
       </div>
       <div class="inv-fields" id="invFields" style="display:none">
         <input class="inv-input" id="invRef" type="text" placeholder="Invoice #" autocomplete="off" oninput="invChanged()">
-        <input class="inv-input inv-date" id="invDate" type="date" onchange="invChanged()">
+        <!-- both events, deliberately. The save gate reads the VARIABLE, so a box
+             emptied without `change` having fired yet would still save under the old
+             date - the same "the box and the value disagree" shape the gate exists to
+             close. `input` is what the number field beside it already uses; `change` is
+             what iOS's date wheel fires when it is dismissed. Either one refreshes, and
+             invChanged() is idempotent, so both firing costs nothing. -->
+        <input class="inv-input inv-date" id="invDate" type="date" oninput="invChanged()" onchange="invChanged()">
       </div>
       <div class="inv-say" id="invSay"></div>
     </div>

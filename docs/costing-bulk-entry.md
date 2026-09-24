@@ -1456,6 +1456,17 @@ built** — and this time one of those claims covered a live iOS bug. What was f
   `kitchen.css` gives `input[type="text"]` an 8px bottom margin the date never got. Both are now
   an explicit `box-sizing:border-box; height:48px; margin:0` — measured 167×48 and 137×48.
 
+**M1's other half, closed after the round.** The gate M1 added reads the `invDate` *variable*,
+and the date field refreshed it on `change` alone while `#invRef` beside it refreshes on every
+keystroke. A box emptied before `change` had fired would still save under the date the variable
+was last told about — the box and the value disagreeing, which is the shape the gate exists to
+close. iOS's date wheel fires `change` when it is dismissed, so the window is narrow and this
+was never reproduced on a phone; the **asymmetry** is the point, and it is the same asymmetry
+M1 was. `#invDate` is wired to both events now, and `invChanged()` is idempotent, so both
+firing costs nothing. Four `s3-6:` assertions drive `input` on its own and are proved to bite:
+with the `oninput` removed the save goes through and writes a history row dated `2026-08-04`
+while the box is visibly empty — M1 exactly, through the other door.
+
 Recorded, not fixed:
 
 - m63. **Correcting a typo in the invoice date between a failed save and the re-save writes the
