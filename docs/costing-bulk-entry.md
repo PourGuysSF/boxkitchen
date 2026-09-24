@@ -1,7 +1,15 @@
 # Costing — make the ledger fillable
 
-Status: **Slice 3 built** on `costing-slice3-provenance` — the invoice bar, real provenance on
-every history row, and #140 closed. See "Slice 3 as built" and m54–m58. **Slice 2 built** on `costing-slice2-undo` (PR #145), reviewed seven times.
+Status: **Slice 3 built** on `costing-slice3-provenance` (PR #146) — the invoice bar, real
+provenance on every history row, and #140 closed. **Round 10 fixed one blocker and three
+majors**: the invoice number field was rendering at 15.2px and zooming iOS (#135 again, the
+fourth time, B1), the invoice date was gated by nothing so an emptied date box silently wrote
+today under an invoice number (M1), the toggle was a 38px tap target (M3), and the "+76px in
+every state" height claim had been measured in one mode only (M2). It failed the round for the
+**fifth time running on the document claiming more than the code delivered** — and this time
+one of those claims covered the live iOS bug. The provenance logic itself was attacked hard,
+held on every path, and is untouched. See "Slice 3 as built", m54–m58, and round 10's section
+for B1–M3, m63–m65 and the corrected counts. **Slice 2 built** on `costing-slice2-undo` (PR #145), reviewed seven times.
 **Round 5's blocker is fixed** — the price-history recovery this document used to claim twice
 now exists (m24) — and round 6 also gated a wiped price (m26) and stopped a save on the
 relink chooser from silently keeping the old link (m31). **Round 7 found no blocker and no
@@ -494,15 +502,24 @@ files a delivery and a shared component with one caller is not a component.
 | **A sticky header carrying the mode and the current invoice** | `.inv-bar` is the first child of the edit modal, `position:sticky; top:0; z-index:2`, with negative margins pulling it over `.modal`'s 22px padding so the content scrolls *under* it rather than beside it. A segmented toggle — **Setting up** / **Working an invoice** — then the number and date fields in invoice mode, then a line saying in words what the next save will record. | five `s3-1:` assertions |
 | **Set once, holds until changed** | `invMode`, `invRef` and `invDate` are page-level and **not** touched by `closeEdit()`. One invoice is typed once; three means changing it twice. | four `s3-4:` assertions |
 | **`effective_date` from the invoice, not today** | `provNow()` returns `{source,ref,date}` — `manual`/`null`/today when setting up, `invoice`/the number/**the invoice's own date** when working one. Captured at save time, never re-read later. | `s3-3:`, `s3-5:` |
-| **`logPrice` passes the real ref and source** | Its fifth argument is now a `prov` object rather than a bare `invoiceRef`, and the POST body carries `source`, `invoice_ref` **and** `effective_date`. Every one of the five call sites passes a real one. | `s3-2:`, `s3-3:` |
+| **`logPrice` passes the real ref and source** | Its fifth argument is now a `prov` object rather than a bare `invoiceRef`, and the POST body carries `source`, `invoice_ref` **and** `effective_date`. There are **three** call sites (`:715`, `:741`, `:742`) and each passes a real `prov` — the earlier "five" was a miscount, not a missed site. | `s3-2:`, `s3-3:` |
 | **`invoice_ref` in the price-history modal (#140)** | `openHist()` emits `.hinv` beside `.hsrc` when the row has a reference. The data has been written since before slice 1 and invisible the whole time. | five `#140:` assertions |
 
-**Invoice mode requires a number.** Saving in invoice mode with an empty reference sends
-nothing and says which field is missing. `source:'invoice'` with `invoice_ref:null` claims a
-price came off paper and gives no way to find the paper — worse than "setting up", which says
+**Invoice mode requires a number *and* a date.** Saving in invoice mode with either one empty
+sends nothing and says which field is missing. `source:'invoice'` with `invoice_ref:null` claims
+a price came off paper and gives no way to find the paper — worse than "setting up", which says
 plainly that it did not. Switching to invoice mode also fills the date with today rather than
-leaving it empty, because an empty date would silently fall back to today, which is the exact
-bug this mode exists to fix.
+leaving it empty.
+
+Round 10 corrected this: **as built, only the number was gated.** `provNow()` was asymmetric —
+`ref: invRef||null` behind the save-blocking gate, `date: invDate||today()` behind nothing — so
+`setInvMode()` filled the date once and *clearing it afterwards brought the fallback back*.
+Reproduced: mode invoice, ref `INV-CLEAR`, date box emptied → a row written `source:'invoice'`,
+`invoice_ref:'INV-CLEAR'`, `effective_date` today, with the date box visibly empty and the toast
+reading "✓ … saved". That is the bug this mode exists to fix, inside the mode that exists to fix
+it. The date is now gated the same way the number is, and the bar's spoken line no longer
+speaks a date the save would refuse. `provNow()`'s own fallbacks are untouched: the gate is at
+the save boundary, where the ref's already is.
 
 ### The decision this slice had to make
 
@@ -520,24 +537,42 @@ The corollary is that a debt owed under invoice A is **not** discharged by a wri
 numbers under invoice B: the two rows say different things about where the price came from, so
 both are written. Measured — fail at $60 under `INV-A`, switch to `INV-B`, re-save unchanged →
 **two rows, one `INV-A`/`2026-08-01`, one `INV-B`/`2026-09-02`** — and a further unchanged save
-writes none. Six `s3-5:` assertions, four of them proved to bite.
+writes none. **Eleven `s3-5:` assertions, nine of them proved to bite** — the two that are not
+are the sequence's setup step and its precondition, named below. The earlier "six … four" was
+a miscount of both halves.
 
 ### m29: what this adds, measured
 
 Modal *content* height at a pinned 358px width (`scrollHeight`, so viewport-independent and
 safe from trap 3), before and after:
 
-| state | slice 2 | slice 3 | Δ |
-|---|---|---|---|
-| main-list edit | 640px | **716px** | +76 |
-| ＋ Add chooser | 802px | **878px** | +76 |
-| relink chooser open | 856px | **932px** | +76 |
+**The first version of this table measured one mode and reported it as "every state".** The
+bar is two different heights: the invoice number and date fields (`.inv-fields`) only exist in
+invoice mode. Both branches, re-measured at a pinned 358px after round 10's fixes (the slice-2
+column re-measured here too, with the bar `display:none`, rather than carried over):
 
-The bar is 84px tall and consumes 8px of the modal's existing top padding, so it costs +76 in
-every state. 88vh of an 844px iPhone is 743px, so the worst state is now 189px over rather
-than 113px. **m29 is not fixed here and is deliberately worse by a measured amount** — but the
-thing that grew is the one element that is *pinned*, so the header this slice adds is the only
-part of the modal that cannot fall below the fold.
+| state | slice 2 | setting up | working an invoice |
+|---|---|---|---|
+| main-list edit | 640px | **722px** (+82) | **778px** (+138) |
+| ＋ Add chooser | 802px | **884px** (+82) | **940px** (+138) |
+| relink chooser open | 856px | **938px** (+82) | **994px** (+138) |
+
+The bar itself is **90px** setting up and **146px** working an invoice. (Round 10's 44px toggle
+added 6px to both against the review's 84/144 and +76/+136.)
+
+Against 743px — 88vh of an 844px iPhone — the split matters:
+
+- **Setting up:** the everyday main-list edit still fits (722 of 743). The two chooser states
+  were already over the fold under slice 2 and are further over now.
+- **Working an invoice:** **every state is over, including the simplest edit** (778). 640 → 778
+  crosses the fold: the state that fitted under slice 2 no longer does.
+
+So **m29 is deferrable for the setting-up bootstrap and is not deferrable for invoice work.**
+For the bootstrap the argument holds — those states were already over, and the thing that grew
+is the one element that is *pinned*, so the bar cannot itself fall below the fold. For invoice
+work it does not: the simplest edit is over, and it compounds with the keyboard up on a field
+that has just taken focus. **m29 is not fixed here and is deliberately worse by a measured
+amount**, as its own layout pass.
 
 ### What was proved, and what was not
 
@@ -563,14 +598,25 @@ part of the modal that cannot fall below the fold.
 | invoice mode does not fill an empty date | **1** |
 | the bar's spoken line never renders | **2** |
 | the reference renders even when null | **1** |
-| the source is dropped from the row | **2** |
+| the source is dropped from the POST body | **2** |
 | the bar moved below the title | **2** |
 
-**Of the 44 new assertions, 41 are proved to bite and 3 are not.** The three, named:
-`s3-3: and today is not what was written` (a date sanity control — it can only fail if the
-suite is run on 2026-08-04), `s3-5: the invoice-A save failed its history write` and
-`s3-5: the re-save really is of the same price` (the setup step and the precondition of the
-debt sequence). Not "every".
+**Corrected in round 10. Of the 44 new assertions, 39 are proved to bite and 5 are not.**
+The earlier "41 and 3" needed 20 injections to be true; the table above lists **19**, and one
+entry — then written "the source is dropped from the row" — was ambiguous between two distinct
+faults that prove different pairs. It was the POST body's `source` that was dropped, which
+proves the `s3-2:`/`s3-3:` pair; dropping the *rendered* source from `openHist()`, which is
+what would prove the two `#140:` source assertions, was never injected. So the honest union
+is 39 proved, and the five unproved, named:
+
+- `s3-3: and today is not what was written` — a date sanity control; it can only fail if the
+  suite is run on 2026-08-04.
+- `s3-5: the invoice-A save failed its history write` and `s3-5: the re-save really is of the
+  same price` — the setup step and the precondition of the debt sequence.
+- `#140: the source is still shown beside it` and `#140: and the manual row still reads as
+  manual` — the two the ambiguous entry was read as covering, and does not.
+
+Not "every", and not 41.
 
 Two notes on the injections. The `invMode` default fault produces **130** failures across
 almost every scenario, because the whole suite saves in setting-up mode; only 8 of those are
@@ -1365,14 +1411,105 @@ fixed m46; it is worth knowing the shape is easy to reproduce by accident.
   what the *last* one did. The price-history modal now does (#140), but that is two taps away
   and per-row. Recorded — a per-row provenance line is the reader m36 and m21 both wanted.
 - m57. **The invoice date is a native `<input type="date">`, unmeasured on a phone.** It is
-  the first one on the site. iOS renders it as a wheel picker and it is 16px, so #135 does not
-  apply, but its rendered width inside a 358px modal beside the number field was measured only
-  in headless Chrome, which draws a different control. Check it on a real phone before the
-  first real invoice run.
+  the first one on the site. iOS renders it as a wheel picker, and its rendered width inside a
+  358px modal beside the number field was measured only in headless Chrome, which draws a
+  different control. Check it on a real phone before the first real invoice run.
+  **Corrected in round 10:** this entry used to say "it is 16px, so #135 does not apply". True
+  of the date input, **false of the number field beside it** — which computed to 15.2px and
+  did zoom (B1 below). The field that got measured was the one that happened to be safe. Both
+  are now asserted at ≥16px.
 - m58. **Switching from invoice mode back to Setting up keeps the number in the box.** It is
   hidden, not cleared, and switching back restores it — which is right for "I misread the
   mode" and wrong for "I have finished that invoice". Nothing distinguishes the two. Cosmetic,
   and clearing it would lose work in the commoner case.
+
+### Added by round 10's review (PR #146, slice 3, pre-merge)
+
+Round 10 found one blocker and three majors, and failed the round for the fifth time running
+on the same thing: **the document and the commit described a slice slightly better than the one
+built** — and this time one of those claims covered a live iOS bug. What was fixed here:
+
+- **B1 (blocker, fixed). The invoice number field rendered at 15.2px, not the 16px it
+  declared.** `.inv-input` was written unqualified, so `kitchen.css`'s
+  `.modal textarea,.modal select,.modal input[type="tel"],.modal input[type="text"]`
+  (`0.95rem`) out-specified it — **(0,2,1) beats (0,1,0) whatever the source order**. Below
+  16px iOS zooms the page on focus: **#135, newly introduced, in this slice's primary
+  control.** The codebase already knew — `.pick-filter` is written
+  `.modal input[type="text"].pick-filter,.pick-filter` with a comment four lines above saying
+  an unqualified one "silently renders at 15.2px" — and slice 3 walked into the documented trap
+  anyway. Fixed with the same one-liner. Measured: `#invRef` 16px, `#invDate` 16px,
+  `#pickFilter` 16px. **This is the fourth #135-class regression this project has produced, and
+  every one was a new input that did not get the qualified selector.** The durable fix is a
+  check in `check_styling.py` that fails any input rendering under 16px — that would have caught
+  this without a review round. Worth doing as its own small piece; not done here.
+- **M1 (major, fixed). The invoice date was gated by nothing.** See "Invoice mode requires a
+  number *and* a date" above for the reproduction.
+- **M2 (major, fixed — documentation). "+76px in every modal state" was measured in one mode
+  only.** Corrected in "m29: what this adds, measured" above, which now states both modes and
+  says plainly which states cross the fold in which.
+- **M3 (major, fixed). The mode toggle was a 38px tap target.** `#invSetupBtn` 155×38 and
+  `#invInvoiceBtn` 156×38, from `.inv-btn{min-height:38px}`, against the Risks table's ≥44px —
+  the same reason slice 1 raised `.pick-change` from 40px. This is the control that decides what
+  every subsequent price claims about its origin. Now 155×44 and 156×44, measured. The mismatch
+  noted alongside it was a one-liner too: `#invRef` was 44px tall and `#invDate` 52px, side by
+  side, because `.inv-input` set `min-height` (which cannot shrink the native date control) and
+  `kitchen.css` gives `input[type="text"]` an 8px bottom margin the date never got. Both are now
+  an explicit `box-sizing:border-box; height:48px; margin:0` — measured 167×48 and 137×48.
+
+Recorded, not fixed:
+
+- m63. **Correcting a typo in the invoice date between a failed save and the re-save writes the
+  mistyped date permanently.** `sameProv` compares the date, so a debt owed under
+  `INV-A`/`2026-08-0**5**` is not discharged by a re-save under `INV-A`/`2026-08-0**4**`: both
+  rows are written, and the typo is preserved as "a state the item was in". **This is the real
+  cost of the owed-invoice decision, and the document never named it.** The decision is still
+  right — the alternative is stamping an owed price with whatever is in the bar later, which is
+  the fabricated-row class m24 and m40 exist to keep out of this table — but the cost is that
+  provenance is append-only and a typo in it is not correctable from this screen.
+- m64. **The bar's spoken line is the smallest text in the modal.** `.inv-say` computes to
+  **11.52px** (`0.72rem`), and it is what M1's mitigation now relies on: "Enter the invoice date
+  before saving" is said in the smallest type on screen. The toast on a blocked save is the
+  louder channel and carries the same words, but the line that is meant to stop the mistake
+  before it happens is the quiet one.
+- m65. **A long reference wraps the spoken line and grows the pinned bar.** Measured: a
+  28-character reference wraps `.inv-say` to two lines and takes the bar from **146px to
+  158px**, in the mode where every modal state is already over the fold (m29). Real Sysco and
+  Restaurant Depot numbers are shorter than that, so this is a ceiling, not a daily cost.
+- **`effective_date` in setting-up mode changed, and the document presented both sides as
+  "today".** It did not previously send `effective_date` at all in setting-up mode, so the
+  column took its server-side default — UTC — and a row saved late in a Texas evening recorded
+  **tomorrow's** date. It now sends an explicit local `today()`. That is an improvement, and a
+  real behaviour change to rows that carry no invoice: "today" before and "today" after are not
+  the same day between 7pm and midnight. m55 still holds for the rest — an owed row and the
+  save's own row both carry today in setting-up mode, and nothing says which price came first.
+
+#### What was proved, and what was not
+
+**333 assertions, 13 scenarios, clean.** Up from 324, so **+9** — no new scenario; the
+assertions live in `provenance`. Faults reintroduced, **six injections**, each the exact fault:
+
+| fault reintroduced | failures |
+|---|---|
+| `.inv-input` unqualified again (the exact B1 shape) | **1** (`#invRef` :: 15.2px) |
+| `.inv-input` set to `font-size:0.95rem` | **2** (both fields :: 15.2px) |
+| the invoice-date gate removed | **3** |
+| the spoken line speaks `today()` for an empty date again | **1** |
+| `.inv-btn` back to `min-height:38px` | **2** (:: 38) |
+| the fields back to `min-height:44px` (44 vs 52) | **1** |
+
+**All 9 of the new assertions are proved to bite. None are unproved.** Counted from the
+injections, not from the assertion list.
+
+Two notes. The unqualified-selector injection fails **only** the number field, because the
+date input is `type="date"` and `kitchen.css`'s rule matches `input[type="text"]` — which is
+exactly why the original bug was invisible: the field that was measured was the safe one. And
+removing the date gate produced its failures with the toast reading **"✓ Sea salt saved"** and
+a history row stamped `invoice`/`SR-88214`/today — M1 reproduced verbatim by its own guard.
+
+One thing these assertions needed: the invoice fields must be measured **with the modal open**.
+Measured anywhere `#editModal` is not `.show`, every box is 0px high and a tap-target assertion
+passes or fails on nothing. The first placement of these checks sat one step after a save had
+closed the modal and reported 0.
 
 ### A correction to "How to verify without touching live data"
 

@@ -1500,12 +1500,63 @@ RUNNER = r"""
        claims the price came off paper and gives no way to find the paper */
     step(function(){ invRef=''; syncInvBar(); H.reqs.length=0; openEdit(502); });
     step(function(){ set('fPrice','77'); });
+    /* The invoice fields are on screen here: the modal is open on 502 in
+       invoice mode. Measured anywhere the modal is closed, every box is 0. */
+    step(function(){
+      /* B1 (#135): kitchen.css's .modal input[type="text"] is 0.95rem = 15.2px
+         and out-specifies an unqualified .inv-input, (0,2,1) beating (0,1,0)
+         whatever the source order. At 15.2px iOS zooms the page the moment this
+         field takes focus - in the primary control of this slice. The styling
+         guard cannot see this; it is arithmetic on a computed style. */
+      ok('css: the invoice number field computes to >= 16px, or iOS zooms (#135)',
+         parseFloat(getComputedStyle($('invRef')).fontSize)>=16,
+         getComputedStyle($('invRef')).fontSize);
+      ok('css: and so does the invoice date field',
+         parseFloat(getComputedStyle($('invDate')).fontSize)>=16,
+         getComputedStyle($('invDate')).fontSize);
+      /* M3: the control that decides what every subsequent price claims about
+         its origin. The Risks table wants >= 44px; this was 38. */
+      ok('css: the Setting up button is a 44px tap target',
+         $('invSetupBtn').getBoundingClientRect().height>=44,
+         $('invSetupBtn').getBoundingClientRect().height);
+      ok('css: and so is Working an invoice',
+         $('invInvoiceBtn').getBoundingClientRect().height>=44,
+         $('invInvoiceBtn').getBoundingClientRect().height);
+      /* mismatched controls side by side: these were 44 and 52. */
+      ok('css: the number and date fields are the same height',
+         Math.abs($('invRef').getBoundingClientRect().height-
+                  $('invDate').getBoundingClientRect().height)<1,
+         $('invRef').getBoundingClientRect().height+' vs '+
+         $('invDate').getBoundingClientRect().height);
+    });
     step(function(){ $('saveBtn').click(); });
     step(function(){});
     step(function(){
       ok('s3-3: invoice mode with no number saves NOTHING',
          H.reqs.length===0, JSON.stringify(H.reqs.map(function(r){return r.m+' '+r.u;})));
       ok('s3-3: and it says which field is missing', /invoice number/i.test(toast()), toast());
+    });
+    /* M1: the DATE was gated by nothing. provNow() falls back to today() when it
+       is empty, so a number with an emptied date box wrote a row stamped
+       'invoice'/the ref/TODAY, with the box visibly empty and the toast reading
+       "saved" - "an empty date silently falling back to today" is the exact bug
+       this mode exists to fix. Gated now, the way the number is. */
+    step(function(){
+      set('invRef','SR-88214');
+      $('invDate').value=''; $('invDate').dispatchEvent(new Event('change',{bubbles:true}));
+    });
+    step(function(){
+      ok('s3-6: an emptied invoice date is not spoken as today',
+         $('invSay').textContent.indexOf(TODAY)<0, $('invSay').textContent);
+      H.reqs.length=0; $('saveBtn').click();
+    });
+    step(function(){});
+    step(function(){
+      ok('s3-6: invoice mode with no date saves NOTHING',
+         H.reqs.length===0, JSON.stringify(H.reqs.map(function(r){return r.m+' '+r.u;})));
+      ok('s3-6: and no row was stamped with today under an invoice number',
+         hist().length===0, JSON.stringify(dates()));
+      ok('s3-6: and it says which field is missing', /invoice date/i.test(toast()), toast());
     });
     step(function(){
       set('invRef','SR-88214');

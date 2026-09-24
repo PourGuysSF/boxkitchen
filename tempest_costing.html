@@ -49,13 +49,26 @@
   /* the segmented toggle, same shape as .filter-btn / .mode-btn elsewhere.
      State is an INK FILL, never a hue. */
   .inv-mode{display:flex;gap:0;border:1px solid var(--edge);border-radius:6px;overflow:hidden}
-  .inv-btn{flex:1;min-height:38px;padding:8px 10px;background:transparent;border:none;
+  /* 44px, not 38: this is the control that decides what every subsequent price
+     claims about its origin. Slice 1 raised .pick-change from 40 for the same
+     reason (Risks table: tap targets >= 44px). */
+  .inv-btn{flex:1;min-height:44px;padding:8px 10px;background:transparent;border:none;
            color:var(--ink);font-family:var(--font-cond);font-size:0.8rem;font-weight:600;
            letter-spacing:.06em;text-transform:uppercase;cursor:pointer}
   .inv-btn+.inv-btn{border-left:1px solid var(--edge)}
   .inv-btn.on{background:var(--ink);color:#fff}
   .inv-fields{display:flex;gap:8px;margin-top:8px}
-  .inv-input{flex:1;min-width:0;min-height:44px;padding:9px 12px;background:var(--paper);
+  /* qualified to out-specify kitchen.css's .modal input[type="text"], which is
+     0.95rem = 15.2px; an unqualified .inv-input loses on specificity — (0,2,1)
+     beats (0,1,0) whatever the source order — and iOS then zooms the page on
+     focus (#135). Same one-liner .pick-filter carries for the same reason. */
+  /* an explicit box-sizing height rather than min-height, so the text field and
+     the native date field are the same height side by side (they were 44 and 52
+     — kitchen.css also gives input[type="text"] an 8px bottom margin the date
+     never got, so both are neutralised here). */
+  .modal input[type="text"].inv-input,.inv-input{flex:1;min-width:0;
+             box-sizing:border-box;height:48px;margin:0;
+             padding:9px 12px;background:var(--paper);
              border:1px solid var(--edge);border-radius:6px;color:var(--ink);
              font-family:var(--font);font-size:16px;outline:none;-webkit-appearance:none;appearance:none}
   .inv-input::placeholder{color:var(--grey)}
@@ -281,7 +294,11 @@ function syncInvBar(){
   document.getElementById('invRef').value=invRef;
   document.getElementById('invDate').value=invDate;
   document.getElementById('invSay').textContent=inv
-    ? (invRef?('Filing against invoice '+invRef+', dated '+(invDate||today())):'Enter the invoice number before saving.')
+    // with the date now gated, the bar must not claim a date the save would
+    // refuse: name the missing field instead of speaking today()'s.
+    ? (!invRef?'Enter the invoice number before saving.'
+       :(!invDate?'Enter the invoice date before saving.'
+         :('Filing against invoice '+invRef+', dated '+invDate)))
     : 'Setting up — no invoice, recorded as today ('+today()+').';
 }
 
@@ -634,6 +651,12 @@ function saveItem(){
   // worse than "setting up", which says plainly that it did not.
   if(invMode==='invoice'&&!invRef){showToast('Invoice number is required — or switch to Setting up',true);
     document.getElementById('invRef').focus();return;}
+  // The date is gated the same way, and for the same reason. setInvMode() fills
+  // it once; clearing it afterwards brought back the today() fallback, which
+  // wrote a row dated today under an invoice number with the date box visibly
+  // empty and the toast reading "saved" — the exact bug this mode exists to fix.
+  if(invMode==='invoice'&&!invDate){showToast('Invoice date is required — or switch to Setting up',true);
+    document.getElementById('invDate').focus();return;}
   var prov=provNow();      // captured NOW: the mode can change while this is in flight
   var packQty=qtyRaw!==''?num(qtyRaw):null,packPrice=priceRaw!==''?num(priceRaw):null;
   var nowIso=new Date().toISOString();
