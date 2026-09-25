@@ -1,10 +1,13 @@
 # Costing — make the ledger fillable
 
-Status: **The m29 layout pass is built** on `costing-m29-invoice-bar`, between slices 3 and 4
-— a set invoice folds the bar to one line, which brings the everyday invoice-mode edit back
-inside an 844px iPhone (778 → 699px), and the bar no longer covers the top of the modal title,
-which it had done in every state since slice 3. See "The m29 layout pass, as built". Not yet
-reviewed. **Slices 4–6 are still planned.**
+Status: **m66 is fixed** on `costing-m66-invoice-space` — a space typed in an invoice number
+was deleted as it was typed, so "SR 88214" was filed as "SR88214". Not yet reviewed. See
+"Added by the review of PR #147". **The m29 layout pass shipped** — merged to `main` as
+`44c6295` (PR #147, squashed), reviewed once before merge and passed. A set invoice folds the
+bar to one line, which brings the everyday invoice-mode edit back inside an 844px iPhone
+(778 → 699px), and the bar no longer covers the top of the modal title, which it had done in
+every state since slice 3. See "The m29 layout pass, as built". **Slices 4–6 are still
+planned.**
 
 **Slice 3 shipped** — merged to `main` as `54d8ec2` (PR #146, squashed) — the invoice bar, real
 provenance on every history row, and #140 closed. **Round 10 fixed one blocker and three
@@ -1735,6 +1738,45 @@ Two more things the next reviewer should know:
   every field the payload omits (`active`, `location`, `order_item_id`). Real PostgREST with
   `return=representation` returns the whole row, so the page is fine — but the suite cannot
   catch a page bug of that shape, because its own fixture has it.
+
+### Added by the review of PR #147 (the m29 pass, pre-merge)
+
+The review passed the PR as safe to merge. It found one real bug beside it, present since
+slice 3, and two accessibility gaps in the new control. #147 merged as `44c6295` with the bug
+left for its own fix, which follows.
+
+- m66. **A space typed in an invoice number was deleted as it was typed. Fixed** on
+  `costing-m66-invoice-space`. `invChanged()` trims the number, and `syncInvBar()` wrote the
+  trimmed value back into the box on every keystroke. A space is the last character at the
+  moment it is typed, so it was trimmed away at once: "SR 88214" typed straight through was
+  filed as `invoice_ref` "SR88214" — not the number on the paper, which is the one thing
+  provenance exists to point at. A pasted number kept its spaces, which is why every test that
+  sets the box in one go with `set()` passed. Each rewrite also moved the caret to the end.
+  #147 did not cause it, but it put the mangled number on the folded line in bold. The box is
+  now written only when its trimmed value differs from `invRef`, so typing never rewrites it;
+  the filed number is still trimmed at its edges, and inner spaces are kept as typed.
+  **9 assertions**, typing one key at a time. Run against the unfixed page, 8 fail, with
+  "SR88214" filed and the caret at 7. Three injected faults — the original rewrite, the filed
+  number left untrimmed, the guard comparing the untrimmed box — prove all 8; the ninth,
+  `m66: (the next item opened folded)`, is a precondition. 362 → **371**, clean. No stored
+  row needs correcting: `ingredient_costs` and `ingredient_price_history` were both empty,
+  read-only, on 2026-09-25. The date box keeps its unconditional write — a no-op for a
+  complete date; whether it disturbs a half-typed date on desktop Chrome was not checked.
+- m67. **Two buttons in the edit modal are both named "Change"** — `#invChange` on the
+  invoice bar and `#pickChange` on the linked item. Sighted users tell them apart by position;
+  voice control ("tap Change") and a screen reader cannot. An `aria-label` on each ("Change
+  invoice", "Change item") would do it. Open.
+- m68. **Tapping the bar's Change drops keyboard focus.** The button hides itself as the bar
+  unfolds, so focus falls back to the document, and a keyboard or screen-reader user starts
+  again from the top of the page rather than at the invoice number. Moving focus to `#invRef`
+  on unfold would fix it — and would also raise the keyboard on a phone, which is the kind of
+  auto-focus slice 1 declined for Pack qty. Decide it deliberately. Open.
+- Also reported, by the review's automated pass and **not verified here**: the "is the invoice
+  whole?" check is written twice (`closeEdit()` and `syncInvBar()`); `css: the price-history
+  modal keeps its top padding` hard-codes kitchen.css's `22px`, so changing that padding would
+  fail it for no real reason; `.inv-set` copies `.pick-chosen`'s rules rather than sharing them
+  (deliberate — the bar's rules are page-only, per slice 3); `syncInvBar()` runs on every
+  keystroke (no measurable cost); and the bar's side margins assume `.modal`'s 22px padding.
 
 ---
 ---
