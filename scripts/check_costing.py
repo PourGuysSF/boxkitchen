@@ -1837,6 +1837,52 @@ RUNNER = r"""
          invMode==='manual'&&invRef==='INV-C'&&invDate==='2026-09-02', invMode+' '+invRef+' '+invDate);
       ok('m29: setting up never folds', !visible($('invSet'))&&visible($('invModeRow')));
     });
+
+    /* (8) m66: A SPACE TYPED IN AN INVOICE NUMBER STAYS. invChanged() trims,
+       and syncInvBar() wrote the trimmed value back into the box on every
+       keystroke - so a space was eaten the moment it was typed, while it was
+       still the last character: "SR 88214" typed straight through was filed
+       as "SR88214", which is not the number on the paper. Typed here one key
+       at a time, the way a person does; set() in one go is a paste, and a
+       pasted space always survived. */
+    function typeInto(id,s){var e=$(id);for(var i=0;i<s.length;i++){e.value+=s[i];
+      e.dispatchEvent(new Event('input',{bubbles:true}));}}
+    step(function(){ setInvMode('invoice'); $('invRef').value=''; invChanged(); });
+    step(function(){ typeInto('invRef','SR 88214'); });
+    step(function(){
+      ok('m66: a space typed mid-number stays in the box',
+         $('invRef').value==='SR 88214', JSON.stringify($('invRef').value));
+      ok('m66: and in the number that will be filed', invRef==='SR 88214', JSON.stringify(invRef));
+      ok('m66: and the bar says it as typed',
+         $('invSay').textContent.indexOf('SR 88214')>-1, $('invSay').textContent);
+    });
+    /* a key at the START of the number: the box keeps what was typed and the
+       caret stays where the key put it. Rewriting the box moved the caret to
+       the end. Only the edges of the FILED number are trimmed. */
+    step(function(){
+      var e=$('invRef'); e.value=' '+e.value; e.setSelectionRange(1,1);
+      e.dispatchEvent(new Event('input',{bubbles:true}));
+    });
+    step(function(){
+      var e=$('invRef');
+      ok('m66: a leading space typed is left in the box', e.value===' SR 88214', JSON.stringify(e.value));
+      ok('m66: the caret stays where the key put it', e.selectionStart===1, 'caret at '+e.selectionStart);
+      ok('m66: but the number filed is trimmed at its edges', invRef==='SR 88214', JSON.stringify(invRef));
+    });
+    step(function(){ openEdit(502); });
+    step(function(){ set('fPrice','67'); H.reqs.length=0; $('saveBtn').click(); });
+    step(function(){});
+    step(function(){
+      var b=lastHist();
+      ok('m66: it is filed with its space, as on the paper',
+         b&&b.invoice_ref==='SR 88214', b&&JSON.stringify(b.invoice_ref));
+    });
+    step(function(){ openEdit(502); });
+    step(function(){
+      ok('m66: (the next item opened folded)', visible($('invSet')));
+      ok('m66: and the folded line shows the number with its space',
+         $('invSetV').textContent.indexOf('SR 88214,')===0, $('invSetV').textContent);
+    });
   }
 
   if(document.readyState==='complete')setTimeout(run,0);
