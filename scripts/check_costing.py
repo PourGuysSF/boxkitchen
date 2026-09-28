@@ -1932,7 +1932,7 @@ RUNNER = r"""
       ok('m71: a double space typed files as one', invRef==='SR 88214', JSON.stringify(invRef));
       ok('m71: the box is not rewritten while typing', $('invRef').value==='SR  88214',
          JSON.stringify($('invRef').value));
-      $('invRef').dispatchEvent(new Event('change',{bubbles:true}));
+      $('invRef').dispatchEvent(new Event('blur'));
     });
     step(function(){
       ok('m71: leaving the box shows the number as it files', $('invRef').value==='SR 88214',
@@ -1941,6 +1941,14 @@ RUNNER = r"""
     });
     step(function(){
       ok('m71: pasted odd spaces file as one plain space', invRef==='SR 88214', JSON.stringify(invRef));
+      /* Enter fires `change` mid-number in desktop Chrome (measured with real
+         keys): "SR ", Enter, "88214". Tidying on `change` filed "SR88214". */
+      $('invRef').value=''; invChanged(); typeInto('invRef','SR ');
+      $('invRef').dispatchEvent(new Event('change',{bubbles:true}));
+      typeInto('invRef','88214');
+    });
+    step(function(){
+      ok('m71: Enter partway through keeps the space', invRef==='SR 88214', JSON.stringify(invRef));
       set('invDate','2026-08-04');
       openEdit(502);
     });
@@ -1950,12 +1958,12 @@ RUNNER = r"""
       var b=lastHist();
       ok('m71: and is filed that way', b&&b.invoice_ref==='SR 88214', b&&JSON.stringify(b.invoice_ref));
       /* m70: an invoice number is not prose - no autocorrect, no ". " for a
-         double space, no capitalising, on an iPhone */
+         double space, and capitals by default, as printed, on an iPhone */
       var r=$('invRef');
       ok('m70: iOS autocorrect is off on the invoice number', r.getAttribute('autocorrect')==='off',
          r.getAttribute('autocorrect'));
-      ok('m70: so is auto-capitalising', r.getAttribute('autocapitalize')==='off',
-         r.getAttribute('autocapitalize'));
+      ok('m70: the keyboard offers capitals, as the number is printed',
+         r.getAttribute('autocapitalize')==='characters', r.getAttribute('autocapitalize'));
       ok('m70: and spellcheck', r.spellcheck===false, String(r.spellcheck));
     });
   }

@@ -1800,21 +1800,32 @@ on `costing-m69-invoice-entry`.
 - m70. **The iPhone keyboard could rewrite an invoice number.** Before m66 a typed space was
   eaten at once, so iOS's shortcuts never had one to act on. Now a double space could become
   ". " and a word could be autocorrected or capitalised. `#invRef` now carries
-  `autocorrect="off" autocapitalize="off" spellcheck="false"`. **Not tested on an iPhone**;
-  whether `autocorrect="off"` also stops the ". " shortcut is not established.
+  `autocorrect="off" autocapitalize="characters" spellcheck="false"` — capitals by default,
+  as the number is printed. **Not tested on an iPhone**; whether `autocorrect="off"` also
+  stops the ". " shortcut is not established, and `tidyRef()` does not undo a ". ".
 - m71. **Runs of space filed as distinct refs.** "SR 88214", "SR  88214" and a non-breaking
   space pasted from a PDF would file one paper invoice as three refs. `tidyRef()` squeezes
   any run of whitespace to one plain space and trims the edges; the box is still never
-  rewritten while typing (m66), and is tidied on `change`, when you leave it, so it shows what
-  files.
-- **12 assertions**, 371 → **383**, clean. **8 injected faults, each caught**: the
-  unconditional date write, a date never written, trim-only, no tidy on leaving, the ref guard
-  comparing the trimmed box, and each of the three attributes dropped. They prove 11 of the
-  12; `m69: (the page knows the date is not whole)` is a precondition.
+  rewritten while typing (m66), and is tidied on **blur**, when you leave it, so it shows
+  what files. Not on `change`: the first build used `change`, and its review found that
+  desktop Chrome fires `change` on Enter — measured with real keys, "SR ", Enter, "88214"
+  filed "SR88214", m66 again. Fixed before merge.
+- **13 assertions**, 371 → **384**, clean. **9 injected faults, each caught**: the
+  unconditional date write, a date never written, trim-only, no tidy on leaving, tidying on
+  `change`, the ref guard comparing the trimmed box, and each of the three attributes dropped.
+  They prove 12 of the 13; `m69: (the page knows the date is not whole)` is a precondition.
   `check_styling.py`: clean.
 - Also reported and **not acted on**: the ref guard never fires while the user types, because
   `invRef` is only ever derived from the box. It is kept — the harness and any future code
   that sets `invRef` directly rely on it reaching the box.
+- The review of #149 also raised, **open**: `tidyRef()`'s `\s` does not match zero-width
+  characters or a soft hyphen a PDF can carry, so a pasted ref can still differ invisibly;
+  refs are not case-folded, so "sr 88214" and "SR 88214" file apart (`characters` makes
+  capitals the phone's default, nothing more); tapping "Working an invoice" while a date is
+  half-edited puts today() in the box (visible, and the slice 3 rule that invoice mode never
+  holds an empty date); `syncInvBar()` still writes both boxes, guarded, rather than leaving
+  them to `setInvMode()`; and the m69 write spy is not removed if its step throws. Rows filed
+  with runs of space between #148's merge and this change are not backfilled.
 
 ---
 ---

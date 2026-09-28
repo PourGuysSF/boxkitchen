@@ -150,8 +150,10 @@
       <div class="inv-fields" id="invFields" style="display:none">
         <!-- m70: an invoice number is not prose. With typed spaces now kept (m66),
              iOS would autocorrect a word in it or turn a double space into ". ",
-             and the number filed would not be the one on the paper. -->
-        <input class="inv-input" id="invRef" type="text" placeholder="Invoice #" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" oninput="invChanged()" onchange="invTidy()">
+             and the number filed would not be the one on the paper. Capitals by
+             default, as it is printed. Tidied on blur, never `change`: Enter fires
+             `change` mid-number, and tidying "SR " there filed "SR88214". -->
+        <input class="inv-input" id="invRef" type="text" placeholder="Invoice #" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" oninput="invChanged()" onblur="invTidy()">
         <!-- both events, deliberately. The save gate reads the VARIABLE, so a box
              emptied without `change` having fired yet would still save under the old
              date - the same "the box and the value disagree" shape the gate exists to
@@ -295,7 +297,7 @@ var relinking=false;          // the relink chooser is open on an edit with no p
    These are page-level and are NOT reset by closeEdit(): set the invoice once
    and it holds until you change it. */
 var invMode='manual';         // 'manual' | 'invoice'
-var invRef='';                // the invoice number, as typed
+var invRef='';                // the invoice number, as typed but tidyRef()'d
 var invDate='';               // the invoice's OWN date, yyyy-mm-dd
 /* m29: the bar shows one line instead of its controls. Set by closeEdit()
    and nowhere else, so it folds between items and never while the modal is
@@ -327,7 +329,7 @@ function invChanged(){
   syncInvBar();
 }
 // on leaving the box, never while typing in it: show the number as it files
-function invTidy(){invChanged();document.getElementById('invRef').value=invRef;}
+function invTidy(){var r=document.getElementById('invRef');if(r.value!==invRef)r.value=invRef;}
 function unfoldInv(){invFolded=false;syncInvBar();}
 function syncInvBar(){
   var inv=invMode==='invoice';
