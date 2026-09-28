@@ -1,9 +1,12 @@
 # Costing — make the ledger fillable
 
-Status: **m67 and m68 are fixed** on `costing-m67-m68-change-buttons`, not yet reviewed —
-the two "Change" buttons are named apart for screen readers and voice control, and tapping
-the invoice bar's Change puts focus on "Working an invoice" instead of dropping it. See
-"Added by the review of PR #147". check_costing.py 384 → **388**, clean.
+Status: **m67, m68, m72 and m73 are fixed** on `costing-m67-m68-change-buttons` (PR #152),
+reviewed once, with the review's findings fixed in the same PR — the two "Change" buttons
+are named apart for screen readers and voice control; tapping the invoice bar's Change puts
+focus on "Working an invoice" instead of dropping it; that focus ring can now be seen; and
+the mode toggle says which mode is on. See "Added by the review of PR #147" and "Added by
+the review of PR #152". check_costing.py 384 → **392**, clean. **m74 is open** (picking
+an item drops focus) and needs a decision.
 
 **m69–m71 shipped** — merged to `main` as `9358606` (PR #149, squashed), reviewed
 once before merge (the review found an Enter-key regression, fixed before merge), and
@@ -1852,6 +1855,42 @@ in PR #149, merged as `9358606`.
   holds an empty date); `syncInvBar()` still writes both boxes, guarded, rather than leaving
   them to `setInvMode()`; and the m69 write spy is not removed if its step throws. Rows filed
   with runs of space between #148's merge and this change are not backfilled.
+
+### Added by the review of PR #152 (m67 and m68, pre-merge)
+
+The review held #152 back: m68 landed focus somewhere the user could not see it. Fixed in
+the same PR.
+
+- m72. **The ring on the mode buttons was clipped.** `.inv-mode` has `overflow:hidden`
+  (for its rounded ends), and kitchen.css draws `button:focus-visible`'s 2px ring 2px
+  *outside* the button, so the toggle cut it to a sliver down one edge — and on the
+  ink-filled "Working an invoice", an ink ring would not have shown anyway. Seen in a
+  screenshot from headless Chrome after a keyboard Enter on Change. Page-only fix:
+  `.inv-btn:focus-visible{outline-offset:-4px}`, and `#fff` on `.inv-btn.on`, so the ring
+  sits inside the button, white on ink and ink on paper. Re-screenshotted: a clear white
+  frame. **Open, site-wide:** the shared segmented toggle (`.filter-toggle`,
+  `.mode-toggle`, `.shift-toggle`, `.guide-toggle`, kitchen.css line 117) has the same
+  `overflow:hidden`, so the same ring is clipped on six pages. That fix belongs in
+  kitchen.css with a `?v=` bump on all ten pages, as its own change.
+- m73. **The toggle's state was a fill and nothing else.** A screen reader landing on the
+  button heard "Working an invoice, button", not whether it was on. Both buttons now carry
+  `aria-pressed`, set in the markup and kept in step by `syncInvBar()`.
+- m74. **Picking an item drops keyboard focus** — the m68 shape on the item side. Choosing a
+  row (or Custom) hides the list holding the focused row, and `pickItem()` moves focus
+  nowhere, by slice 1's decision not to auto-focus Pack qty. Where it should go — Pack qty
+  (raises a phone keyboard) or the item's Change (does not) — is a decision, as m68 was.
+  **Open.**
+- **8 assertions** in all, 384 → **392**, clean. **7 injected faults, each caught**: no
+  focus move, focus sent to `#invRef`, each label dropped, the ring put back outside, the
+  ring left ink on the ink fill, and `aria-pressed` not kept in step. They prove 6 of the
+  8; the other two are preconditions (the button is on screen; the landed focus is
+  `:focus-visible`). The review's point that the precondition was asserted after the check
+  depending on it is fixed — it now comes first.
+- Also reported, **not acted on**: focus handling is patched per path rather than by one
+  rule for "a focused control was hidden" (true — m74 is the next instance); the unfolded
+  bar is not announced by an `aria-live` region; and iOS VoiceOver may not follow a
+  programmatic `.focus()` onto a button. **Not checked on a real device** with VoiceOver or
+  Voice Control.
 
 ---
 ---

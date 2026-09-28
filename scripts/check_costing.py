@@ -1792,9 +1792,22 @@ RUNNER = r"""
       /* m68: the Change just pressed is hidden, so focus must go somewhere
          on purpose - the mode button, never a text box (no phone keyboard) */
       var a=document.activeElement;
+      ok('m68: (the invoice mode button is on screen)', visible($('invInvoiceBtn')));
       ok('m68: focus lands on the invoice mode button, not the page',
          a===$('invInvoiceBtn'), a&&(a.id||a.tagName));
-      ok('m68: (and that button is on screen)', visible($('invInvoiceBtn')));
+      /* m72: and the ring can be seen there. .inv-mode clips anything drawn
+         outside the button, and the button is ink-filled, so the ring must be
+         inset and not ink. */
+      var fs=getComputedStyle($('invInvoiceBtn'));
+      ok('m72: (the landed focus shows its ring)', a.matches(':focus-visible'));
+      ok('m72: the ring is drawn inside the button, where the toggle cannot clip it',
+         parseFloat(fs.outlineOffset)<=-(parseFloat(fs.outlineWidth)), fs.outlineOffset+' / '+fs.outlineWidth);
+      ok('m72: and stands out against the ink fill',
+         fs.outlineStyle!=='none'&&fs.outlineColor!==fs.backgroundColor, fs.outlineColor+' on '+fs.backgroundColor);
+      /* m73: the state the fill shows is spoken too */
+      ok('m73: a screen reader hears that invoice mode is on',
+         $('invInvoiceBtn').getAttribute('aria-pressed')==='true'&&$('invSetupBtn').getAttribute('aria-pressed')==='false',
+         $('invInvoiceBtn').getAttribute('aria-pressed')+' / '+$('invSetupBtn').getAttribute('aria-pressed'));
       /* m67: the two Change buttons are told apart by name */
       ok('m67: the invoice Change is named for the invoice',
          $('invChange').getAttribute('aria-label')==='Change invoice', $('invChange').getAttribute('aria-label'));
