@@ -148,7 +148,10 @@
         <button class="inv-btn" id="invInvoiceBtn" onclick="setInvMode('invoice')">Working an invoice</button>
       </div>
       <div class="inv-fields" id="invFields" style="display:none">
-        <input class="inv-input" id="invRef" type="text" placeholder="Invoice #" autocomplete="off" oninput="invChanged()">
+        <!-- m70: an invoice number is not prose. With typed spaces now kept (m66),
+             iOS would autocorrect a word in it or turn a double space into ". ",
+             and the number filed would not be the one on the paper. -->
+        <input class="inv-input" id="invRef" type="text" placeholder="Invoice #" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" oninput="invChanged()" onchange="invTidy()">
         <!-- both events, deliberately. The save gate reads the VARIABLE, so a box
              emptied without `change` having fired yet would still save under the old
              date - the same "the box and the value disagree" shape the gate exists to
@@ -314,11 +317,17 @@ function setInvMode(m){
   if(invMode==='invoice'&&!invDate)invDate=today();
   syncInvBar();
 }
+/* m71: one space wherever the box has any run of them - a double tap, a tab,
+   a non-breaking space pasted from a PDF - so one paper invoice is never filed
+   as two refs that differ only in their spacing. */
+function tidyRef(s){return s.replace(/\s+/g,' ').trim();}
 function invChanged(){
-  invRef=document.getElementById('invRef').value.trim();
+  invRef=tidyRef(document.getElementById('invRef').value);
   invDate=document.getElementById('invDate').value||'';
   syncInvBar();
 }
+// on leaving the box, never while typing in it: show the number as it files
+function invTidy(){invChanged();document.getElementById('invRef').value=invRef;}
 function unfoldInv(){invFolded=false;syncInvBar();}
 function syncInvBar(){
   var inv=invMode==='invoice';
@@ -337,8 +346,12 @@ function syncInvBar(){
   // typed, while it was still the last character — "SR 88214" typed straight
   // through was filed as "SR88214" — and moved the caret to the end.
   var refBox=document.getElementById('invRef');
-  if(refBox.value.trim()!==invRef)refBox.value=invRef;
-  document.getElementById('invDate').value=invDate;
+  if(tidyRef(refBox.value)!==invRef)refBox.value=invRef;
+  // m69: the date box likewise. A date with one part cleared or being
+  // retyped reports value '' - write that back and Chrome clears the other
+  // two parts, so overtyping the month of a set date wiped the whole date.
+  var dateBox=document.getElementById('invDate');
+  if(dateBox.value!==invDate)dateBox.value=invDate;
   document.getElementById('invSay').textContent=inv
     // with the date now gated, the bar must not claim a date the save would
     // refuse: name the missing field instead of speaking today()'s.

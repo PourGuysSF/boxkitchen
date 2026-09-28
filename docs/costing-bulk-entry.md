@@ -1,8 +1,11 @@
 # Costing — make the ledger fillable
 
-Status: **m66 is fixed** on `costing-m66-invoice-space` — a space typed in an invoice number
-was deleted as it was typed, so "SR 88214" was filed as "SR88214". Not yet reviewed. See
-"Added by the review of PR #147". **The m29 layout pass shipped** — merged to `main` as
+Status: **m69–m71 are fixed** on `costing-m69-invoice-entry`, not yet reviewed —
+overtyping part of a set invoice date on desktop Chrome wiped the whole date; the iPhone
+keyboard could autocorrect an invoice number; and runs of space filed one invoice under
+refs that differ only in spacing. See "Added by the review of PR #148". **m66 shipped** —
+merged to `main` as `536fd47` (PR #148, squashed), reviewed once before merge and passed: a
+space typed in an invoice number is kept. m67 and m68 are still open. **The m29 layout pass shipped** — merged to `main` as
 `44c6295` (PR #147, squashed), reviewed once before merge and passed. A set invoice folds the
 bar to one line, which brings the everyday invoice-mode edit back inside an 844px iPhone
 (778 → 699px), and the bar no longer covers the top of the modal title, which it had done in
@@ -1777,6 +1780,41 @@ left for its own fix, which follows.
   fail it for no real reason; `.inv-set` copies `.pick-chosen`'s rules rather than sharing them
   (deliberate — the bar's rules are page-only, per slice 3); `syncInvBar()` runs on every
   keystroke (no measurable cost); and the bar's side margins assume `.modal`'s 22px padding.
+
+### Added by the review of PR #148 (m66, pre-merge)
+
+The review passed #148 as safe to merge; it merged as `536fd47`. It confirmed the one thing
+#148 had said it did not check, and found two things m66 newly exposed. All three are fixed
+on `costing-m69-invoice-entry`.
+
+- m69. **Overtyping part of a set invoice date wiped the whole date** (desktop Chrome;
+  present since slice 3). A date input with one part cleared or mid-retype reports value
+  `''`. `invChanged()` read that, and `syncInvBar()` wrote `''` straight back — and writing a
+  date box clears all three parts. So retyping the month of 2026-08-04 left an empty box, and
+  so did typing in the invoice number while a date was half-entered. The box is now written
+  only when it disagrees with `invDate`, the m66 shape. **Proved with real key events**: a
+  throwaway probe drove headless Chrome over CDP against the harness page (XHR stubbed).
+  Before the fix, typing `0` into the month emptied the box and `09` left it empty; after it,
+  2026-08-04 → 2026-09-04, and a date typed from empty still lands. `check_costing.py` cannot
+  send real keys, so its assertions count writes to the box while it is being typed in.
+- m70. **The iPhone keyboard could rewrite an invoice number.** Before m66 a typed space was
+  eaten at once, so iOS's shortcuts never had one to act on. Now a double space could become
+  ". " and a word could be autocorrected or capitalised. `#invRef` now carries
+  `autocorrect="off" autocapitalize="off" spellcheck="false"`. **Not tested on an iPhone**;
+  whether `autocorrect="off"` also stops the ". " shortcut is not established.
+- m71. **Runs of space filed as distinct refs.** "SR 88214", "SR  88214" and a non-breaking
+  space pasted from a PDF would file one paper invoice as three refs. `tidyRef()` squeezes
+  any run of whitespace to one plain space and trims the edges; the box is still never
+  rewritten while typing (m66), and is tidied on `change`, when you leave it, so it shows what
+  files.
+- **12 assertions**, 371 → **383**, clean. **8 injected faults, each caught**: the
+  unconditional date write, a date never written, trim-only, no tidy on leaving, the ref guard
+  comparing the trimmed box, and each of the three attributes dropped. They prove 11 of the
+  12; `m69: (the page knows the date is not whole)` is a precondition.
+  `check_styling.py`: clean.
+- Also reported and **not acted on**: the ref guard never fires while the user types, because
+  `invRef` is only ever derived from the box. It is kept — the harness and any future code
+  that sets `invRef` directly rely on it reaching the box.
 
 ---
 ---
