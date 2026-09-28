@@ -332,7 +332,12 @@ function syncInvBar(){
   document.getElementById('invSetupBtn').className='inv-btn'+(inv?'':' on');
   document.getElementById('invInvoiceBtn').className='inv-btn'+(inv?' on':'');
   document.getElementById('invFields').style.display=(inv&&!folded)?'':'none';
-  document.getElementById('invRef').value=invRef;
+  // m66: the box is written only when it says something else. Writing the
+  // trimmed number back on every keystroke ate a space the moment it was
+  // typed, while it was still the last character — "SR 88214" typed straight
+  // through was filed as "SR88214" — and moved the caret to the end.
+  var refBox=document.getElementById('invRef');
+  if(refBox.value.trim()!==invRef)refBox.value=invRef;
   document.getElementById('invDate').value=invDate;
   document.getElementById('invSay').textContent=inv
     // with the date now gated, the bar must not claim a date the save would
