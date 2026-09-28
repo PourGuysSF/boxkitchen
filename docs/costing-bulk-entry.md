@@ -1,9 +1,11 @@
 # Costing — make the ledger fillable
 
-Status: **m69–m71 are fixed** on `costing-m69-invoice-entry`, not yet reviewed —
-overtyping part of a set invoice date on desktop Chrome wiped the whole date; the iPhone
-keyboard could autocorrect an invoice number; and runs of space filed one invoice under
-refs that differ only in spacing. See "Added by the review of PR #148". **m66 shipped** —
+Status: **m69–m71 shipped** — merged to `main` as `9358606` (PR #149, squashed), reviewed
+once before merge (the review found an Enter-key regression, fixed before merge), and
+tested by hand on the live site on a Mac and an iPhone on 2026-09-28. Overtyping part of a
+set invoice date no longer wipes it; the iPhone keyboard no longer autocorrects an invoice
+number; runs of space file as one. iOS's double-space ". " shortcut is **not** blocked, and
+is left that way by decision. See "Added by the review of PR #148". **m66 shipped** —
 merged to `main` as `536fd47` (PR #148, squashed), reviewed once before merge and passed: a
 space typed in an invoice number is kept. m67 and m68 are still open. **The m29 layout pass shipped** — merged to `main` as
 `44c6295` (PR #147, squashed), reviewed once before merge and passed. A set invoice folds the
@@ -1784,8 +1786,8 @@ left for its own fix, which follows.
 ### Added by the review of PR #148 (m66, pre-merge)
 
 The review passed #148 as safe to merge; it merged as `536fd47`. It confirmed the one thing
-#148 had said it did not check, and found two things m66 newly exposed. All three are fixed
-on `costing-m69-invoice-entry`.
+#148 had said it did not check, and found two things m66 newly exposed. All three shipped
+in PR #149, merged as `9358606`.
 
 - m69. **Overtyping part of a set invoice date wiped the whole date** (desktop Chrome;
   present since slice 3). A date input with one part cleared or mid-retype reports value
@@ -1801,8 +1803,14 @@ on `costing-m69-invoice-entry`.
   eaten at once, so iOS's shortcuts never had one to act on. Now a double space could become
   ". " and a word could be autocorrected or capitalised. `#invRef` now carries
   `autocorrect="off" autocapitalize="characters" spellcheck="false"` — capitals by default,
-  as the number is printed. **Not tested on an iPhone**; whether `autocorrect="off"` also
-  stops the ". " shortcut is not established, and `tidyRef()` does not undo a ". ".
+  as the number is printed. **Tested on an iPhone** (the live site, Chrome for iOS, which
+  uses the system keyboard like every iOS browser): capitals by default and no autocorrect,
+  confirmed. **`autocorrect="off"` does not stop the ". " shortcut** — a double space typed
+  after "SR" gave "SR. 88214", and the bar was ready to file it. `tidyRef()` does not undo
+  it. **Left by decision** (Stephen, 2026-09-28): nobody needs to double-tap space in an
+  invoice number, and a single space files correctly. If it is ever revisited: turn ". "
+  into " " in `tidyRef()` (wrong only for a ref that truly holds ". "), or turn the shortcut
+  off per device, Settings → General → Keyboard → "." Shortcut.
 - m71. **Runs of space filed as distinct refs.** "SR 88214", "SR  88214" and a non-breaking
   space pasted from a PDF would file one paper invoice as three refs. `tidyRef()` squeezes
   any run of whitespace to one plain space and trims the edges; the box is still never
@@ -1815,6 +1823,11 @@ on `costing-m69-invoice-entry`.
   `change`, the ref guard comparing the trimmed box, and each of the three attributes dropped.
   They prove 12 of the 13; `m69: (the page knows the date is not whole)` is a precondition.
   `check_styling.py`: clean.
+- **Tested by hand on the live site**, 2026-09-28, after merge, with Cancel and never Save —
+  the page still showed 0 items, so the test ran from ＋ Add. Mac, Chrome: retyping
+  only the month of a set date kept its day and year (m69); S, R, space, Enter, 88214 kept
+  the space (m71). iPhone: as under m70. The Enter test needs the space typed *before*
+  Enter — without it "SR88214" is the right result, and it first read as a failure.
 - Also reported and **not acted on**: the ref guard never fires while the user types, because
   `invRef` is only ever derived from the box. It is kept — the harness and any future code
   that sets `invRef` directly rely on it reaching the box.
