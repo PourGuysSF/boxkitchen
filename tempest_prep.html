@@ -30,6 +30,15 @@
   .modal input,.modal select{margin-bottom:10px}
   .modal-err{margin-top:12px;margin-bottom:0}
   .modal-btns{margin-top:6px}
+
+  /* Specials / Events / Notes — blank rows the manager writes each day.
+     The text box is 16px so iOS doesn't zoom on focus (#135); the modal
+     field is qualified so it beats the shared .modal input[type="text"]. */
+  .section-title.special{color:var(--ink)}
+  .task-name.spec-text{white-space:normal}
+  .task-name.spec-blank{color:var(--grey);font-style:italic}
+  .spec-ghost{visibility:hidden}
+  .task-name-input.spec-input,.modal input[type="text"].sec-special{font-size:16px}
 </style>
 <script src="vendor/sortablejs-1.15.7.min.js"></script>
 </head>
@@ -104,6 +113,8 @@
 <div class="modal-bg" id="sectionsModal">
   <div class="modal">
     <h3>Section Names</h3>
+    <div class="nb-label">Specials section (top of the list)</div>
+    <input type="text" class="sec-special" id="secSpecial" placeholder="Specials / Events / Notes">
     <div class="nb-label">Prep list section</div>
     <input type="text" id="secDaily" placeholder="Prep List">
     <div class="nb-label">Cleaning section</div>
@@ -128,6 +139,9 @@ var currentDate=new Date();
 var realToday=new Date();
 var prevPct=null,celebrateArmed=false; // A8: completion celebration state
 var sectionLabels={}; // A5b: editable section header labels (category -> label)
+// Specials: 5 permanent blank rows per shift (category 'special'); the day's
+// text lives on prep_logs.special_text, so they start blank every day.
+var SPECIAL_MIN=3,specialShown={}; // rows revealed by "+ Add row", per date+shift
 // A6: prep stations (kitchen = Salad/Grill/Sauté; Line PM also has Kits)
 var STATION_META={salad:{label:'Salad',cls:'st-salad'},grill:{label:'Grill',cls:'st-grill'},saute:{label:'Sauté',cls:'st-saute'},kits:{label:'Kits',cls:'st-kits'}};
 function stationOrder(){return ['salad','grill','saute'];}
@@ -250,19 +264,33 @@ function assignStation(sk,name){
 
 function getF(){
   var dayAbbr=getDayAbbr(currentDate);
-  var c=[],d=[],w=[];
+  var c=[],d=[],w=[],s=[];
   for(var i=0;i<items.length;i++){
     var it=items[i];if(it.shift!==shift)continue;
     if(it.category==='cleaning'&&(!it.day_specific||it.day_specific===dayAbbr))c.push(it);
     else if(it.category==='daily')d.push(it);
     else if(it.category==='weekly'&&(!it.day_specific||it.day_specific===dayAbbr))w.push(it);
+    else if(it.category==='special')s.push(it);
   }
-  return{c:c.filter(matchWho),d:d.filter(matchWho).filter(matchStation),w:w.filter(matchWho)};
+  var sp=specialRows(s);
+  return{c:c.filter(matchWho),d:d.filter(matchWho).filter(matchStation),w:w.filter(matchWho),s:sp.rows.filter(matchWho),sFilled:sp.filled.filter(matchWho),sAll:s};
+}
+
+// Specials: cooks see only rows with text. The manager sees at least 3, plus
+// any filled row and any revealed with "+ Add row", up to all 5.
+function specText(it){var l=logs[it.id];return (l&&l.special_text)?String(l.special_text).trim():'';}
+function specKey(){return fmtDate(currentDate)+'|'+shift;}
+function specialRows(s){
+  var filled=s.filter(function(it){return specText(it)!=='';});
+  if(!mgr)return{rows:filled,filled:filled,all:s};
+  var n=Math.min(s.length,Math.max(SPECIAL_MIN,specialShown[specKey()]||0));
+  for(var i=0;i<s.length;i++)if(specText(s[i])!=='')n=Math.max(n,i+1);
+  return{rows:s.slice(0,n),filled:filled,all:s};
 }
 
 function render(){
   buildViewAs();buildStationFilter();
-  var f=getF(),all=f.c.concat(f.d).concat(f.w),dn=0;
+  var f=getF(),all=f.sFilled.concat(f.c).concat(f.d).concat(f.w),dn=0; // blank specials never count
   for(var i=0;i<all.length;i++){var l=logs[all[i].id];if(l&&l.completed)dn++;}
   var pct=all.length?Math.round(dn/all.length*100):0;
   document.getElementById('progressFill').style.width=pct+'%';
@@ -289,6 +317,7 @@ function render(){
 
   var h='<div class="'+cls+'">'+sb;
   var dayAbbr=getDayAbbr(currentDate);
+  if(f.s.length>0||(mgr&&f.sAll.length>0))h+=bSpecial(esc(sectionLabels.special||'Specials / Events / Notes'),f.s,f.sFilled,f.sAll.length);
   h+=bSec('cleaning',esc(sectionLabels.cleaning||'Daily Cleaning / Projects'),f.c);
   h+=bDaily(esc(sectionLabels.daily||'Prep List'),f.d);
   if(f.w.length>0)h+=bSec('weekly',dayAbbr+' — '+esc(sectionLabels.weekly||'Weekly Prep'),f.w);
@@ -303,6 +332,18 @@ function bSec(ty,ti,li){
   if(li.length===0&&viewAs)h+='<div class="empty-filter">Nothing assigned to '+esc(viewAs)+' in this section.</div>';
   for(var i=0;i<li.length;i++)h+=bTask(li[i]);
   h+='<button class="add-btn" onclick="openAdd(\''+ty+'\')">+ Add task</button></div></div>';
+  return h;
+}
+
+// Specials section. No data-cat on the body, so initSortables() leaves it
+// alone — these rows have a fixed order and are never dragged.
+function bSpecial(ti,li,filled,total){
+  var dn=0;for(var i=0;i<filled.length;i++){var l=logs[filled[i].id];if(l&&l.completed)dn++;}
+  var h='<div class="section open"><div class="section-header" onclick="togSec(this)"><span class="section-title special">'+ti+'</span><div class="section-right"><span class="section-count">'+dn+'/'+filled.length+'</span><span class="chevron">▼</span></div></div><div class="section-body">';
+  if(li.length===0&&viewAs)h+='<div class="empty-filter">Nothing assigned to '+esc(viewAs)+' in this section.</div>';
+  for(var i=0;i<li.length;i++)h+=bTask(li[i]);
+  if(!viewAs&&li.length<total)h+='<button class="add-btn" onclick="addSpecialRow()">+ Add row</button>';
+  h+='</div></div>';
   return h;
 }
 
@@ -337,14 +378,17 @@ function bTask(it){
   var hasNote=n&&n.trim().length>0;
   var showNote=hasNote||no;
   var shiftStaff=getStaffForShift();
+  var sp=it.category==='special',stx=sp?specText(it):''; // specials: text is per-day, on the log
   var h='<div class="task '+(dn?'done':'')+'" data-id="'+it.id+'">';
-  h+='<div class="mgr-controls"><div class="drag-handle" aria-label="Drag to reorder"><svg width="10" height="16" viewBox="0 0 10 16" fill="currentColor"><circle cx="2" cy="2" r="1.4"/><circle cx="8" cy="2" r="1.4"/><circle cx="2" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="2" cy="14" r="1.4"/><circle cx="8" cy="14" r="1.4"/></svg></div></div>';
+  h+='<div class="mgr-controls"><div class="drag-handle'+(sp?' spec-ghost':'')+'" aria-label="Drag to reorder"><svg width="10" height="16" viewBox="0 0 10 16" fill="currentColor"><circle cx="2" cy="2" r="1.4"/><circle cx="8" cy="2" r="1.4"/><circle cx="2" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="2" cy="14" r="1.4"/><circle cx="8" cy="14" r="1.4"/></svg></div></div>';
   h+='<div class="checkbox '+(dn?'checked':'')+'" onclick="togDone('+it.id+')">✓</div>';
-  h+='<div class="task-info"><div class="task-name" onclick="editN('+it.id+',this)">'+esc(it.name);
+  if(sp)h+='<div class="task-info"><div class="task-name spec-text'+(stx?'':' spec-blank')+'" onclick="editSpecial('+it.id+',this)">'+(stx?esc(stx):'Tap to write a special, event or note…');
+  else h+='<div class="task-info"><div class="task-name" onclick="editN('+it.id+',this)">'+esc(it.name);
   if(it.day_specific&&it.category==='weekly')h+='<span class="task-day">'+it.day_specific+'</span>';
   if(hasNote)h+='<span class="note-badge">NOTE</span>';
   if(it.station==='kits'){var md=(l.mode)||'kit';h+='<span class="mode-pill mode-'+md+'" onclick="event.stopPropagation();toggleMode('+it.id+')">'+(md==='make'?'MAKE':'KIT')+'</span>';}
-  h+='</div><input class="task-name-input" id="ni'+it.id+'" value="'+esc(it.name)+'" onblur="saveN('+it.id+',this)" onkeydown="if(event.key===\'Enter\')this.blur()"></div>';
+  if(sp)h+='</div><input class="task-name-input spec-input" id="ni'+it.id+'" value="'+esc(stx)+'" placeholder="Special, event or note for the crew" onblur="saveSpecial('+it.id+',this)" onkeydown="if(event.key===\'Enter\')this.blur()"></div>';
+  else h+='</div><input class="task-name-input" id="ni'+it.id+'" value="'+esc(it.name)+'" onblur="saveN('+it.id+',this)" onkeydown="if(event.key===\'Enter\')this.blur()"></div>';
   h+='<div class="task-fields">';
   h+='<select class="who-select '+(w?'assigned':'')+'" onchange="uLog('+it.id+',\'assigned_to\',this.value)">';
   h+='<option value="">Who</option>';
@@ -355,7 +399,9 @@ function bTask(it){
   h+='</select>';
   h+='<input class="task-input qty" placeholder="Qty" value="'+esc(q)+'" onchange="uLog('+it.id+',\'quantity\',this.value)">';
   h+='<button class="note-btn '+(hasNote?'has-note':'')+'" onclick="togNote('+it.id+')">📝</button>';
-  h+='<button class="delete-btn" onclick="delItem('+it.id+')">✕</button>';
+  // specials are permanent rows — a hidden spacer keeps the columns lined up
+  if(sp)h+='<span class="delete-btn spec-ghost" aria-hidden="true"></span>';
+  else h+='<button class="delete-btn" onclick="delItem('+it.id+')">✕</button>';
   h+='</div></div>';
   h+='<div class="note-row '+(showNote?'show':'')+'" id="nr'+it.id+'"><input class="note-input" placeholder="Add a note..." value="'+esc(n)+'" onchange="uLog('+it.id+',\'notes\',this.value)"></div>';
   return h;
@@ -391,6 +437,7 @@ function submitPin(){
 function togDone(id){
   var dateStr=fmtDate(currentDate);
   var l=logs[id],v=!(l&&l.completed);
+  for(var i=0;i<items.length;i++)if(items[i].id===id&&items[i].category==='special'&&!specText(items[i])){toastErr('Write the special first');return;}
   if(v)celebrateArmed=true; // A8: only a check-ON can trigger a celebration
   if(l&&l.id){
     api('PATCH','prep_logs','id=eq.'+l.id,{completed:v},function(r){if(r&&r.length){logs[id]=r[0];toast();}else{toastErr('Could not save — try again');}render();});
@@ -431,6 +478,26 @@ function togNote(id){openNotes[id]=!openNotes[id];var r=document.getElementById(
 
 function editN(id,el){if(!mgr)return;var inp=document.getElementById('ni'+id);el.style.display='none';inp.style.display='block';inp.focus();}
 function saveN(id,inp){var v=inp.value.trim();if(!v)return;inp.style.display='none';inp.previousElementSibling.style.display='block';api('PATCH','prep_items','id=eq.'+id,{name:v},function(r){if(r&&r.length){for(var i=0;i<items.length;i++)if(items[i].id===id)items[i].name=v;toast();render();}});}
+
+// ── SPECIALS: manager writes the day's text; erasing it clears the whole row ──
+function editSpecial(id,el){if(!mgr)return;var inp=document.getElementById('ni'+id);el.style.display='none';inp.style.display='block';inp.focus();}
+function saveSpecial(id,inp){
+  var v=inp.value.trim(),l=logs[id],cur=(l&&l.special_text)?String(l.special_text).trim():'';
+  // unchanged: just close the box. A render() here would rebuild the list under
+  // the manager's next tap and swallow it.
+  if(v===cur){inp.value=cur;inp.style.display='none';inp.previousElementSibling.style.display='';return;}
+  var d=v?{special_text:v}:{special_text:'',completed:false,assigned_to:'',quantity:'',notes:''};
+  function done(r){if(r&&r.length){logs[id]=r[0];toast();}else{toastErr('Could not save — try again');}render();}
+  if(l&&l.id)api('PATCH','prep_logs','id=eq.'+l.id,d,done);
+  else{if(!v){render();return;}api('POST','prep_logs',null,{prep_item_id:id,date:fmtDate(currentDate),completed:false,assigned_to:'',quantity:'',notes:'',special_text:v},done);}
+}
+// Reveal the next blank row (up to all 5) and open it for typing.
+function addSpecialRow(){
+  var s=[];for(var i=0;i<items.length;i++)if(items[i].shift===shift&&items[i].category==='special')s.push(items[i]);
+  var n=specialRows(s).rows.length;if(n>=s.length)return;
+  specialShown[specKey()]=n+1;render();
+  var row=document.querySelector('.task[data-id="'+s[n].id+'"] .task-name');if(row)editSpecial(s[n].id,row);
+}
 
 function delItem(id){
   if(!confirm('Delete this task?'))return;
@@ -629,6 +696,7 @@ function saveNewItem(){
 
 // ── A5b: SECTION NAMES (editable headers, manager mode) ──
 function openSectionsModal(){
+  document.getElementById('secSpecial').value=sectionLabels.special||'Specials / Events / Notes';
   document.getElementById('secDaily').value=sectionLabels.daily||'Prep List';
   document.getElementById('secCleaning').value=sectionLabels.cleaning||'Daily Cleaning / Projects';
   document.getElementById('secWeekly').value=sectionLabels.weekly||'Weekly Prep';
@@ -636,8 +704,8 @@ function openSectionsModal(){
 }
 function closeSectionsModal(){document.getElementById('sectionsModal').classList.remove('show');}
 function saveSections(){
-  var vals={daily:document.getElementById('secDaily').value.trim(),cleaning:document.getElementById('secCleaning').value.trim(),weekly:document.getElementById('secWeekly').value.trim()};
-  var cats=['daily','cleaning','weekly'],pending=0,anyFail=false;
+  var vals={special:document.getElementById('secSpecial').value.trim(),daily:document.getElementById('secDaily').value.trim(),cleaning:document.getElementById('secCleaning').value.trim(),weekly:document.getElementById('secWeekly').value.trim()};
+  var cats=['special','daily','cleaning','weekly'],pending=0,anyFail=false;
   function finish(){closeSectionsModal();if(anyFail)toastErr('Some names could not be saved');else toast();render();}
   cats.forEach(function(cat){
     var v=vals[cat];
