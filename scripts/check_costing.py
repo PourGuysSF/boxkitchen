@@ -1883,6 +1883,89 @@ RUNNER = r"""
       ok('m66: and the folded line shows the number with its space',
          $('invSetV').textContent.indexOf('SR 88214,')===0, $('invSetV').textContent);
     });
+
+    /* (9) m69: TYPING IN EITHER BOX NEVER WRITES THE DATE BOX. A date with
+       one part cleared or being retyped reports value '' - and writing ''
+       back makes Chrome clear the other two parts, so overtyping the month
+       of a set date wiped the whole date. Segment editing cannot be driven
+       from here (it needs real key events), so this counts what caused it:
+       writes to the box's value while the user is typing. */
+    function spyWrites(id){
+      var e=$(id), d=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value'), n={c:0};
+      Object.defineProperty(e,'value',{configurable:true,
+        get:function(){return d.get.call(e);}, set:function(v){n.c++;d.set.call(e,v);}});
+      return n;
+    }
+    function unspy(id){delete $(id).value;}
+    var dateW;
+    step(function(){ unfoldInv(); set('invDate','2026-08-04'); });
+    step(function(){
+      dateW=spyWrites('invDate');
+      /* what Chrome reports mid-edit: a part cleared, so no whole date */
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call($('invDate'),'');
+      $('invDate').dispatchEvent(new Event('input',{bubbles:true}));
+    });
+    step(function(){
+      ok('m69: a half-edited date is not written back while it is edited', dateW.c===0,
+         dateW.c+' write(s)');
+      ok('m69: (the page knows the date is not whole)', invDate==='', JSON.stringify(invDate));
+      typeInto('invRef','X');
+    });
+    step(function(){
+      ok('m69: typing the invoice number leaves a half-typed date alone', dateW.c===0,
+         dateW.c+' write(s)');
+      unspy('invDate');
+      $('invRef').value='SR 88214'; invChanged();
+      invDate=''; setInvMode('invoice');
+    });
+    step(function(){
+      ok('m69: a date the page sets still reaches the box', $('invDate').value===today(),
+         JSON.stringify($('invDate').value));
+    });
+
+    /* (10) m71: RUNS OF SPACE FILE AS ONE. A double tap, a tab, or a
+       non-breaking space pasted from a PDF would otherwise file one paper
+       invoice under refs that differ only in spacing. The box is left alone
+       while typing (m66) and tidied when you leave it. */
+    step(function(){ $('invRef').value=''; invChanged(); typeInto('invRef','SR  88214'); });
+    step(function(){
+      ok('m71: a double space typed files as one', invRef==='SR 88214', JSON.stringify(invRef));
+      ok('m71: the box is not rewritten while typing', $('invRef').value==='SR  88214',
+         JSON.stringify($('invRef').value));
+      $('invRef').dispatchEvent(new Event('blur'));
+    });
+    step(function(){
+      ok('m71: leaving the box shows the number as it files', $('invRef').value==='SR 88214',
+         JSON.stringify($('invRef').value));
+      set('invRef',' SR \t88214 ');
+    });
+    step(function(){
+      ok('m71: pasted odd spaces file as one plain space', invRef==='SR 88214', JSON.stringify(invRef));
+      /* Enter fires `change` mid-number in desktop Chrome (measured with real
+         keys): "SR ", Enter, "88214". Tidying on `change` filed "SR88214". */
+      $('invRef').value=''; invChanged(); typeInto('invRef','SR ');
+      $('invRef').dispatchEvent(new Event('change',{bubbles:true}));
+      typeInto('invRef','88214');
+    });
+    step(function(){
+      ok('m71: Enter partway through keeps the space', invRef==='SR 88214', JSON.stringify(invRef));
+      set('invDate','2026-08-04');
+      openEdit(502);
+    });
+    step(function(){ set('fPrice','68'); H.reqs.length=0; $('saveBtn').click(); });
+    step(function(){});
+    step(function(){
+      var b=lastHist();
+      ok('m71: and is filed that way', b&&b.invoice_ref==='SR 88214', b&&JSON.stringify(b.invoice_ref));
+      /* m70: an invoice number is not prose - no autocorrect, no ". " for a
+         double space, and capitals by default, as printed, on an iPhone */
+      var r=$('invRef');
+      ok('m70: iOS autocorrect is off on the invoice number', r.getAttribute('autocorrect')==='off',
+         r.getAttribute('autocorrect'));
+      ok('m70: the keyboard offers capitals, as the number is printed',
+         r.getAttribute('autocapitalize')==='characters', r.getAttribute('autocapitalize'));
+      ok('m70: and spellcheck', r.spellcheck===false, String(r.spellcheck));
+    });
   }
 
   if(document.readyState==='complete')setTimeout(run,0);
