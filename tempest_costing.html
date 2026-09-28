@@ -141,7 +141,10 @@
           <div class="inv-set-k">Filing against invoice</div>
           <div class="inv-set-v" id="invSetV"></div>
         </div>
-        <button class="pick-change" id="invChange" onclick="unfoldInv()">Change</button>
+        <!-- m67: two buttons in this modal read "Change"; the labels tell them apart
+             for a screen reader or "tap Change invoice" in voice control, and still
+             begin with the word on screen -->
+        <button class="pick-change" id="invChange" aria-label="Change invoice" onclick="unfoldInv()">Change</button>
       </div>
       <div class="inv-mode" id="invModeRow">
         <button class="inv-btn on" id="invSetupBtn" onclick="setInvMode('manual')">Setting up</button>
@@ -180,7 +183,7 @@
           <div class="pick-chosen-v" id="pickChosenV"></div>
           <div class="pick-chosen-n" id="pickChosenN"></div>
         </div>
-        <button class="pick-change" id="pickChange" onclick="changePick()">Change</button>
+        <button class="pick-change" id="pickChange" aria-label="Change item" onclick="changePick()">Change</button>
       </div>
       <div class="hint" id="pickHint">Tap the item you are pricing, or “Custom” for something not on the order guide.</div>
     </div>
@@ -330,7 +333,10 @@ function invChanged(){
 }
 // on leaving the box, never while typing in it: show the number as it files
 function invTidy(){var r=document.getElementById('invRef');if(r.value!==invRef)r.value=invRef;}
-function unfoldInv(){invFolded=false;syncInvBar();}
+/* m68: Change hides itself as the bar opens, which dropped focus back to the
+   page. It goes to the mode button instead - one Tab from the number, and not
+   a text box, so no phone keyboard springs up over the modal. */
+function unfoldInv(){invFolded=false;syncInvBar();document.getElementById('invInvoiceBtn').focus();}
 function syncInvBar(){
   var inv=invMode==='invoice';
   // only a whole invoice folds: one missing a number or a date keeps its

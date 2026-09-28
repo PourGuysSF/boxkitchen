@@ -1,13 +1,18 @@
 # Costing — make the ledger fillable
 
-Status: **m69–m71 shipped** — merged to `main` as `9358606` (PR #149, squashed), reviewed
+Status: **m67 and m68 are fixed** on `costing-m67-m68-change-buttons`, not yet reviewed —
+the two "Change" buttons are named apart for screen readers and voice control, and tapping
+the invoice bar's Change puts focus on "Working an invoice" instead of dropping it. See
+"Added by the review of PR #147". check_costing.py 384 → **388**, clean.
+
+**m69–m71 shipped** — merged to `main` as `9358606` (PR #149, squashed), reviewed
 once before merge (the review found an Enter-key regression, fixed before merge), and
 tested by hand on the live site on a Mac and an iPhone on 2026-09-28. Overtyping part of a
 set invoice date no longer wipes it; the iPhone keyboard no longer autocorrects an invoice
 number; runs of space file as one. iOS's double-space ". " shortcut is **not** blocked, and
 is left that way by decision. See "Added by the review of PR #148". **m66 shipped** —
 merged to `main` as `536fd47` (PR #148, squashed), reviewed once before merge and passed: a
-space typed in an invoice number is kept. m67 and m68 are still open. **The m29 layout pass shipped** — merged to `main` as
+space typed in an invoice number is kept. **The m29 layout pass shipped** — merged to `main` as
 `44c6295` (PR #147, squashed), reviewed once before merge and passed. A set invoice folds the
 bar to one line, which brings the everyday invoice-mode edit back inside an 844px iPhone
 (778 → 699px), and the bar no longer covers the top of the modal title, which it had done in
@@ -1770,12 +1775,20 @@ left for its own fix, which follows.
 - m67. **Two buttons in the edit modal are both named "Change"** — `#invChange` on the
   invoice bar and `#pickChange` on the linked item. Sighted users tell them apart by position;
   voice control ("tap Change") and a screen reader cannot. An `aria-label` on each ("Change
-  invoice", "Change item") would do it. Open.
+  invoice", "Change item") would do it. **Fixed** on `costing-m67-m68-change-buttons`, with
+  exactly those labels — each begins with the visible word, so "tap Change" still finds them
+  and "tap Change invoice" finds one. 2 assertions, each proved by dropping its label.
 - m68. **Tapping the bar's Change drops keyboard focus.** The button hides itself as the bar
   unfolds, so focus falls back to the document, and a keyboard or screen-reader user starts
   again from the top of the page rather than at the invoice number. Moving focus to `#invRef`
   on unfold would fix it — and would also raise the keyboard on a phone, which is the kind of
-  auto-focus slice 1 declined for Pack qty. Decide it deliberately. Open.
+  auto-focus slice 1 declined for Pack qty. Decide it deliberately. **Decided and fixed** on
+  `costing-m67-m68-change-buttons`: Stephen chose (2026-09-28) to send focus to the
+  "Working an invoice" button, not `#invRef` — nothing springs up on a phone, and the number
+  is one Tab away. Checked with real events in headless Chrome: a click on Change leaves
+  focus on `#invInvoiceBtn`, and one Tab reaches `#invRef`. 2 assertions (one a
+  precondition); dropping the focus call fails with focus on `BODY`, and focusing `#invRef`
+  instead fails too, so the decision is guarded, not just the fix.
 - Also reported, by the review's automated pass and **not verified here**: the "is the invoice
   whole?" check is written twice (`closeEdit()` and `syncInvBar()`); `css: the price-history
   modal keeps its top padding` hard-codes kitchen.css's `22px`, so changing that padding would

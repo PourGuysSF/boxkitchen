@@ -1789,6 +1789,17 @@ RUNNER = r"""
       ok('m29: open, the bar is taller than folded - the fold is what bought the room',
          FOLDED_BAR!=null&&$('invBar').getBoundingClientRect().height>FOLDED_BAR,
          $('invBar').getBoundingClientRect().height+' vs '+FOLDED_BAR);
+      /* m68: the Change just pressed is hidden, so focus must go somewhere
+         on purpose - the mode button, never a text box (no phone keyboard) */
+      var a=document.activeElement;
+      ok('m68: focus lands on the invoice mode button, not the page',
+         a===$('invInvoiceBtn'), a&&(a.id||a.tagName));
+      ok('m68: (and that button is on screen)', visible($('invInvoiceBtn')));
+      /* m67: the two Change buttons are told apart by name */
+      ok('m67: the invoice Change is named for the invoice',
+         $('invChange').getAttribute('aria-label')==='Change invoice', $('invChange').getAttribute('aria-label'));
+      ok('m67: the item Change is named for the item',
+         $('pickChange').getAttribute('aria-label')==='Change item', $('pickChange').getAttribute('aria-label'));
     });
     /* a whole invoice typed into an OPEN modal does not fold under your finger */
     step(function(){ set('invRef','INV-C'); });
