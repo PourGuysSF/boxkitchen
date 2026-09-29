@@ -63,6 +63,11 @@
            letter-spacing:.06em;text-transform:uppercase;cursor:pointer}
   .inv-btn+.inv-btn{border-left:1px solid var(--edge)}
   .inv-btn.on{background:var(--ink);color:#fff}
+  /* m72: .inv-mode's overflow:hidden clipped the shared 2px ring drawn 2px
+     OUTSIDE the button, leaving a sliver - and m68 now lands focus here. So
+     the ring goes inside, and turns white on the ink-filled one. */
+  .inv-btn:focus-visible{outline-offset:-4px}
+  .inv-btn.on:focus-visible{outline-color:#fff}
   .inv-fields{display:flex;gap:8px;margin-top:8px}
   /* qualified to out-specify kitchen.css's .modal input[type="text"], which is
      0.95rem = 15.2px; an unqualified .inv-input loses on specificity — (0,2,1)
@@ -141,11 +146,14 @@
           <div class="inv-set-k">Filing against invoice</div>
           <div class="inv-set-v" id="invSetV"></div>
         </div>
-        <button class="pick-change" id="invChange" onclick="unfoldInv()">Change</button>
+        <!-- m67: two buttons in this modal read "Change"; the labels tell them apart
+             for a screen reader or "tap Change invoice" in voice control, and still
+             begin with the word on screen -->
+        <button class="pick-change" id="invChange" aria-label="Change invoice" onclick="unfoldInv()">Change</button>
       </div>
       <div class="inv-mode" id="invModeRow">
-        <button class="inv-btn on" id="invSetupBtn" onclick="setInvMode('manual')">Setting up</button>
-        <button class="inv-btn" id="invInvoiceBtn" onclick="setInvMode('invoice')">Working an invoice</button>
+        <button class="inv-btn on" id="invSetupBtn" aria-pressed="true" onclick="setInvMode('manual')">Setting up</button>
+        <button class="inv-btn" id="invInvoiceBtn" aria-pressed="false" onclick="setInvMode('invoice')">Working an invoice</button>
       </div>
       <div class="inv-fields" id="invFields" style="display:none">
         <!-- m70: an invoice number is not prose. With typed spaces now kept (m66),
@@ -180,7 +188,7 @@
           <div class="pick-chosen-v" id="pickChosenV"></div>
           <div class="pick-chosen-n" id="pickChosenN"></div>
         </div>
-        <button class="pick-change" id="pickChange" onclick="changePick()">Change</button>
+        <button class="pick-change" id="pickChange" aria-label="Change item" onclick="changePick()">Change</button>
       </div>
       <div class="hint" id="pickHint">Tap the item you are pricing, or “Custom” for something not on the order guide.</div>
     </div>
@@ -330,7 +338,10 @@ function invChanged(){
 }
 // on leaving the box, never while typing in it: show the number as it files
 function invTidy(){var r=document.getElementById('invRef');if(r.value!==invRef)r.value=invRef;}
-function unfoldInv(){invFolded=false;syncInvBar();}
+/* m68: Change hides itself as the bar opens, which dropped focus back to the
+   page. It goes to the mode button instead - one Tab from the number, and not
+   a text box, so no phone keyboard springs up over the modal. */
+function unfoldInv(){invFolded=false;syncInvBar();document.getElementById('invInvoiceBtn').focus();}
 function syncInvBar(){
   var inv=invMode==='invoice';
   // only a whole invoice folds: one missing a number or a date keeps its
@@ -342,6 +353,9 @@ function syncInvBar(){
   document.getElementById('invSay').style.display=folded?'none':'';
   document.getElementById('invSetupBtn').className='inv-btn'+(inv?'':' on');
   document.getElementById('invInvoiceBtn').className='inv-btn'+(inv?' on':'');
+  // m73: the fill says which mode is on; aria-pressed says it to a screen reader
+  document.getElementById('invSetupBtn').setAttribute('aria-pressed',String(!inv));
+  document.getElementById('invInvoiceBtn').setAttribute('aria-pressed',String(inv));
   document.getElementById('invFields').style.display=(inv&&!folded)?'':'none';
   // m66: the box is written only when it says something else. Writing the
   // trimmed number back on every keystroke ate a space the moment it was
