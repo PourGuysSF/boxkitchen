@@ -3,7 +3,8 @@
 Status: **m74 is fixed** on `costing-m74-pick-focus`, not yet reviewed — picking an item
 puts focus on the item's Change instead of losing it. **m75 is open**: the picker's rows
 cannot be reached from a keyboard at all. See "Added by the review of PR #152".
-check_costing.py 392 → **394**, clean. **Slice 4 is next** (Stephen, 2026-09-29).
+Its review added m76 (the item's Change now reads out which item it holds) and a re-link
+test. check_costing.py 392 → **396**, clean. **Slice 4 is next** (Stephen, 2026-09-29).
 
 **m67, m68, m72 and m73 shipped** — merged to `main` as `3216edf` (PR #152, squashed),
 reviewed once, with the review's findings fixed in the same PR — the two "Change" buttons
@@ -1892,7 +1893,9 @@ the same PR.
   filter, type "slab", click Slab bacon: focus on `BODY` before, `#pickChange` after, 169
   picked either way. 2 assertions, each started from focus in the filter (the first try at
   the new-pick one passed without the fix, on focus left over from an earlier step). 3
-  injected faults, each caught: no focus on either path, and focus sent to Pack qty.
+  injected faults, each caught: no focus on either path, and focus sent to Pack qty. The
+  review of #153 added a third assertion for the **re-link** path (edit a row, Change, pick
+  another item), proved by a fault that skipped focus when `editId` is set.
 - m75. **The picker's rows cannot be reached from a keyboard.** Each row is a
   `<div class="pick-row" onclick=…>` with no `tabindex` or role, so Tab goes from the filter
   straight past the list to the fields below — found by driving it with real Tab keys for
@@ -1900,6 +1903,23 @@ the same PR.
   announce the rows as things to press. The fix — real buttons, or `role="button"`,
   `tabindex="0"` and Enter/Space handling — reaches into slice 1's picker and its tests,
   and keeps the `.pick-row` class the JS and CSS rely on. **Open**, as its own change.
+- m76. **Landing on the item's Change did not say which item.** From the review of #153:
+  after m74 a screen reader heard only "Change item, button" — not which of two Slab bacons
+  was picked, the confusion B1 exists to prevent. `#pickChange` now carries
+  `aria-describedby="pickChosenV pickChosenN"`. Chrome's accessibility tree, read over CDP
+  after a real click: name "Change item", role button, description "ASIA INTL Slab bacon".
+  1 assertion, proved by dropping the attribute.
+- Also from the review of #153, **not acted on**: `closeEdit()` never returns focus to what
+  opened the modal, so every close drops focus to the page (older and wider than m74); focus
+  moves in this modal mix immediate and 60/120ms-deferred calls; after a needs-price tap,
+  Enter on the focused Change starts a re-link — harmless, as the re-link still needs a
+  tapped row or a confirm, but it is the cost of m74's choice; and `pickExisting()` still
+  calls `pickLanded()` when `openEdit()` finds no row and returns early (a no-op).
+- **`check_styling.py` has a cleanup race.** Twice now — on GitHub for #149 and locally
+  for #153 — it measured every page and then crashed deleting its temp directory
+  ("Directory not empty") while Chrome was still writing its profile. Re-running passes. It
+  crashes before its verdict, so it can only fail loudly, never pass wrongly. **Open**:
+  wait for Chrome to exit, or clean up with `ignore_errors`.
 - **8 assertions** in all, 384 → **392**, clean. **7 injected faults, each caught**: no
   focus move, focus sent to `#invRef`, each label dropped, the ring put back outside, the
   ring left ink on the ink fill, and `aria-pressed` not kept in step. They prove 6 of the

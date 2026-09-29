@@ -188,7 +188,9 @@
           <div class="pick-chosen-v" id="pickChosenV"></div>
           <div class="pick-chosen-n" id="pickChosenN"></div>
         </div>
-        <button class="pick-change" id="pickChange" aria-label="Change item" onclick="changePick()">Change</button>
+        <!-- m76: m74 lands focus here after a pick, so the button also reads out
+             WHICH item was picked - the vendor tells the two Slab bacons apart -->
+        <button class="pick-change" id="pickChange" aria-label="Change item" aria-describedby="pickChosenV pickChosenN" onclick="changePick()">Change</button>
       </div>
       <div class="hint" id="pickHint">Tap the item you are pricing, or “Custom” for something not on the order guide.</div>
     </div>

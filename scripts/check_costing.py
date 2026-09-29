@@ -603,9 +603,13 @@ RUNNER = r"""
       ok('S2-1: Change on an edit keeps the qty', $('fQty').value==='2', $('fQty').value);
       ok('S2-1: Change on an edit keeps the unit', $('fUnit').value==='lb', $('fUnit').value);
       ok('S2-1: Change on an edit keeps the price', $('fPrice').value==='10', $('fPrice').value);
+      $('pickFilter').focus();   // m74: as after typing in the filter
       rowFor('Birite','Slab bacon').click();
     });
     step(function(){
+      ok('m74: a re-link pick lands focus on the item\'s Change too',
+         document.activeElement===$('pickChange'),
+         document.activeElement&&(document.activeElement.id||document.activeElement.tagName));
       ok('S2-1: re-linking takes the tapped id', pickId===88, String(pickId));
       ok('S2-1: re-linking renames to the new item', $('fName').value==='Slab bacon',
          $('fName').value);
@@ -1372,6 +1376,11 @@ RUNNER = r"""
       ok('m74: a pick lands focus on the item\'s Change, not the page',
          document.activeElement===$('pickChange'),
          document.activeElement&&(document.activeElement.id||document.activeElement.tagName));
+      /* m76: and landing there says which item was picked, vendor first */
+      var ds=($('pickChange').getAttribute('aria-describedby')||'').split(/\s+/);
+      ok('m76: the item Change is described by the vendor and the name it holds',
+         ds.join(' ')==='pickChosenV pickChosenN'&&$('pickChosenV').textContent==='Asia Intl'
+         &&$('pickChosenN').textContent==='Slab bacon', ds.join(' '));
       ok('ok: unit is never auto-filled', $('fUnit').value==='');
       ok('ok: the order unit CS is never borrowed', $('fUnit').value!=='CS');
       ok('ok: name is filled from the tapped row', $('fName').value==='Slab bacon');
