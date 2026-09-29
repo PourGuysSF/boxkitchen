@@ -1,12 +1,16 @@
 # Costing — make the ledger fillable
 
-Status: **m67, m68, m72 and m73 are fixed** on `costing-m67-m68-change-buttons` (PR #152),
+Status: **m74 is fixed** on `costing-m74-pick-focus`, not yet reviewed — picking an item
+puts focus on the item's Change instead of losing it. **m75 is open**: the picker's rows
+cannot be reached from a keyboard at all. See "Added by the review of PR #152".
+check_costing.py 392 → **394**, clean. **Slice 4 is next** (Stephen, 2026-09-29).
+
+**m67, m68, m72 and m73 shipped** — merged to `main` as `3216edf` (PR #152, squashed),
 reviewed once, with the review's findings fixed in the same PR — the two "Change" buttons
 are named apart for screen readers and voice control; tapping the invoice bar's Change puts
 focus on "Working an invoice" instead of dropping it; that focus ring can now be seen; and
 the mode toggle says which mode is on. See "Added by the review of PR #147" and "Added by
-the review of PR #152". check_costing.py 384 → **392**, clean. **m74 is open** (picking
-an item drops focus) and needs a decision.
+the review of PR #152".
 
 **m69–m71 shipped** — merged to `main` as `9358606` (PR #149, squashed), reviewed
 once before merge (the review found an Enter-key regression, fixed before merge), and
@@ -1879,7 +1883,23 @@ the same PR.
   row (or Custom) hides the list holding the focused row, and `pickItem()` moves focus
   nowhere, by slice 1's decision not to auto-focus Pack qty. Where it should go — Pack qty
   (raises a phone keyboard) or the item's Change (does not) — is a decision, as m68 was.
-  **Open.**
+  **Decided and fixed** on `costing-m74-pick-focus`: Stephen chose (2026-09-29) the item's
+  Change, as for m68. Corrected on the way in: Custom was never affected (it already
+  focuses Item name), and the rows are not focusable (m75), so what is really hidden from
+  under focus is the **filter box** you typed in. `pickLanded()` now focuses `#pickChange`
+  after a new pick (`pickItem()`) and after a needs-price tap (`pickExisting()`); opening a
+  row from the main list is unchanged. Real mouse events in headless Chrome — click the
+  filter, type "slab", click Slab bacon: focus on `BODY` before, `#pickChange` after, 169
+  picked either way. 2 assertions, each started from focus in the filter (the first try at
+  the new-pick one passed without the fix, on focus left over from an earlier step). 3
+  injected faults, each caught: no focus on either path, and focus sent to Pack qty.
+- m75. **The picker's rows cannot be reached from a keyboard.** Each row is a
+  `<div class="pick-row" onclick=…>` with no `tabindex` or role, so Tab goes from the filter
+  straight past the list to the fields below — found by driving it with real Tab keys for
+  m74. A keyboard-only user cannot pick an item at all, and a screen reader does not
+  announce the rows as things to press. The fix — real buttons, or `role="button"`,
+  `tabindex="0"` and Enter/Space handling — reaches into slice 1's picker and its tests,
+  and keeps the `.pick-row` class the JS and CSS rely on. **Open**, as its own change.
 - **8 assertions** in all, 384 → **392**, clean. **7 injected faults, each caught**: no
   focus move, focus sent to `#invRef`, each label dropped, the ring put back outside, the
   ring left ink on the ink fill, and `aria-pressed` not kept in step. They prove 6 of the

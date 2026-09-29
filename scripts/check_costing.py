@@ -1323,7 +1323,7 @@ RUNNER = r"""
     /* B1: an unpriced linked row opens its edit - and must still say WHICH
        item that is. Both Slab bacons unpriced would otherwise open the same
        modal reading only "Slab bacon". */
-    step(function(){ rowFor('Birite','Distilled white vinegar').click(); });
+    step(function(){ $('pickFilter').focus(); rowFor('Birite','Distilled white vinegar').click(); });
     step(function(){
       ok('B1: needs-price tap keeps the chosen line', $('pickWrap').style.display!=='none',
          'pickWrap display='+$('pickWrap').style.display);
@@ -1335,6 +1335,10 @@ RUNNER = r"""
       ok('B1: needs-price tap opens that ledger row', editId===501, String(editId));
       ok('css: the chosen line is really on screen', visible($('pickChosen')));
       ok('css: the chosen vendor is really on screen', visible($('pickChosenV')));
+      /* m74: the tapped row is gone, so focus goes to the item's Change */
+      ok('m74: a needs-price tap lands focus on the item\'s Change',
+         document.activeElement===$('pickChange'),
+         document.activeElement&&(document.activeElement.id||document.activeElement.tagName));
     });
     step(function(){ closeEdit(); });
 
@@ -1358,10 +1362,16 @@ RUNNER = r"""
     });
 
     /* the id we POST is the id of the row that was tapped - Asia Intl 169 */
-    step(function(){ H.reqs.length=0; rowFor('Asia Intl','Slab bacon').click(); });
+    /* m74: focus in the filter first, as after typing in it - the list and
+       the filter both hide on the pick, and focus must not go with them */
+    step(function(){ H.reqs.length=0; $('pickFilter').focus(); rowFor('Asia Intl','Slab bacon').click(); });
     step(function(){
       ok('css: the chosen line after a new pick is on screen', visible($('pickChosen')));
       ok('ok: tapping picks that row', pickId===169);
+      /* m74: not the page, and not Pack qty - a button raises no phone keyboard */
+      ok('m74: a pick lands focus on the item\'s Change, not the page',
+         document.activeElement===$('pickChange'),
+         document.activeElement&&(document.activeElement.id||document.activeElement.tagName));
       ok('ok: unit is never auto-filled', $('fUnit').value==='');
       ok('ok: the order unit CS is never borrowed', $('fUnit').value!=='CS');
       ok('ok: name is filled from the tapped row', $('fName').value==='Slab bacon');

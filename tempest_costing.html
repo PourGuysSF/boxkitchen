@@ -608,7 +608,13 @@ function pickItem(id){
   /* No auto-focus to Pack qty: that is a speed affordance, and slice 1 adds
      none. */
   showChosen(o.vendor,o.name);
+  pickLanded();
 }
+/* m74: the list - and the filter box that held focus while you typed - is
+   hidden as the chosen line replaces it, so focus fell back to the page. It
+   goes to the item's Change instead, as m68 does for the invoice bar: a
+   button, so no phone keyboard springs up, and the fields are Tabs on. */
+function pickLanded(){document.getElementById('pickChange').focus();}
 function pickCustom(){
   var relink=(editId!=null);
   modalMoved();
@@ -623,7 +629,7 @@ function pickCustom(){
 /* An order-guide item that already has a row with no price: edit that row —
    but carrying which row you tapped. Both Slab bacons unpriced would otherwise
    open an identical modal reading only "Slab bacon". */
-function pickExisting(icId,orderItemId){openEdit(icId,orderById[orderItemId]||null);}
+function pickExisting(icId,orderItemId){openEdit(icId,orderById[orderItemId]||null);pickLanded();}
 function showChosen(vendor,name){
   relinking=false;
   document.getElementById('pickChosenV').textContent=vendor;
