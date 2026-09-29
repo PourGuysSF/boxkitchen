@@ -1,10 +1,15 @@
 # Costing — make the ledger fillable
 
-Status: **m74 is fixed** on `costing-m74-pick-focus`, not yet reviewed — picking an item
-puts focus on the item's Change instead of losing it. **m75 is open**: the picker's rows
-cannot be reached from a keyboard at all. See "Added by the review of PR #152".
-Its review added m76 (the item's Change now reads out which item it holds) and a re-link
-test. check_costing.py 392 → **396**, clean. **Slice 4 is next** (Stephen, 2026-09-29).
+Status: **Slice 4 is built** on `costing-slice4-write-path`, not yet reviewed — the write
+path cannot double-fire. A 15s limit on every request; a lost or unreadable answer is looked
+up in the table, never reported "failed"; a retry looks before it writes; every control in
+the modal but Cancel is locked while a write is out; a slow reload cannot undo a save. See
+"Slice 4 as built". check_costing.py 396 → **466**, clean.
+
+**m74 and m76 shipped** — merged to `main` as `ef9c172` (PR #153, squashed), reviewed once,
+with the review's findings fixed in the same PR: picking an item puts focus on the item's
+Change, which reads out the item it holds. **m75 is open**: the picker's rows cannot be
+reached from a keyboard at all. See "Added by the review of PR #152".
 
 **m67, m68, m72 and m73 shipped** — merged to `main` as `3216edf` (PR #152, squashed),
 reviewed once, with the review's findings fixed in the same PR — the two "Change" buttons
@@ -779,6 +784,82 @@ Two notes. "A folded save files as setting up" also fails **7 slice-3 assertions
 `s3-5:`): those sequences close the modal between saves, so they now run through the folded bar
 and guard it too. And the original-margin injection fails with the title's top at 129.8px
 against the bar's bottom at 137.8 — the 8px, reproduced by its own guard.
+
+## Slice 4 as built
+
+"The write path cannot double-fire." Built on `costing-slice4-write-path`. Three decisions,
+Stephen, 2026-09-29: a **15-second** limit; **Cancel stays live** while a write is out; and
+**a retry for missing price-history rows is its own later step**, not this slice.
+
+### What it does
+
+- **`api()` gives up after 15s** (`API_TIMEOUT`). There was no limit, so a dead connection
+  hung Save forever. It calls back exactly once, with status `0` for no answer at all
+  (network error or timeout). Proved in real Chrome, not only the stub: with the limit cut
+  to 500ms for the probe, a request to a local server that accepts and never answers came
+  back `r=null status=0 after 502ms`.
+- **Three answers, not two.** `answerOf()` sorts every write's answer into `ok` (here is the
+  row), `no` (the server answered and wrote nothing — "failed, try again" is true), and
+  `unknown` (no answer, an unreadable one, or a 409). An `unknown` may have landed, so it is
+  never reported failed: the page **looks it up** (`lookUp()`) and reports what the table
+  holds. If the table cannot be asked either, it says *"Could not confirm X saved — check the
+  connection, then tap Save again"*.
+- **An add whose answer was unknown is remembered in `unsure`**, and the next save of the
+  same item (or Custom name) **looks before it writes** — the plan's "before any retry,
+  re-GET and reconcile". A lost add retried is one row, not two. If the earlier try is found
+  with different numbers than the retry, it is kept and logged under its own numbers, and
+  the page says so; nothing is overwritten silently.
+- **A 409 on an add** means the guide item is already held — perhaps by our own earlier
+  try, perhaps by another device. Looked up and shown either way; only a row with our
+  numbers is claimed as ours or given our history row.
+- **Locking (m19).** While a write is out, Save, Retire/Restore, Price history, Change and
+  the picker list are disabled (`modalBusy()`, `syncSaveBtn()`), and the functions behind
+  them refuse too, so no path gets round it. Locked controls read as `--faint`. Cancel stays
+  live; reopening a row whose write is still out shows it locked, Save reading "Saving…".
+  **This reverses slice 1's "the picker, Cancel and Change stay live"** — the B-new mispick
+  test now corrects a mispick by Cancel and ＋ Add, and asserts Change is locked.
+- **Keys widened.** A Custom add is keyed by its name (m17); a re-link also holds the guide
+  item it moves *to* (m30); Retire/Restore holds its row, so Save-then-Retire cannot send two
+  PATCHes (m19), and a Restore holds its guide item, so two retired rows cannot both be
+  restored at once (m52). Retire/Restore gets the same look-up-on-`unknown` handling.
+- **A slow reload cannot undo a save (m15, m44).** Every row this page sees land is stamped
+  (`landRow()`, `rowSeq`), and a ledger load keeps any row written after it was sent
+  (`keepNewer()`). `landRow()` also replaces by id, so a row a reload already holds is never
+  pushed twice.
+- **Price history, within the no-duplicates promise only.** A history POST whose answer is
+  lost is looked up by its values; found, it is not owed and nothing is shown. A debt owed on
+  an `unknown` answer is marked, and paying it looks first. There is still **no automatic
+  retry** of a missing row — that is the later step.
+
+### Proved
+
+- `check_costing.py` **466 assertions, 14 scenarios, clean** (396 → 466). A new `slice4`
+  scenario (66) plus 4 in existing ones. The stub gained per-write fates — `lost` (the table
+  takes it, the answer never comes), `hang` (nothing answers until the harness fires the
+  page's own timeout), `drop` (lost before the table), `reject` (400), `conflict` (409) — a
+  stateful price-history table for lookups, and `failHistory` now means the server said no
+  (500), which is what it always stood for.
+- **14 injected faults**, 13 caught: no limit, no timeout handler, a lost answer reported
+  failed, a 409 reported failed, a retry that does not look first, controls or the list left
+  live, Retire not refused, a re-link or a restore not holding its guide item, a stale reload
+  replacing the list, a lost history answer not looked up, and `landRow()` pushing twice. The
+  fourteenth found a distinction no test could reach (which provenance to log when a found
+  row has the same numbers as the retry); the branch was removed rather than tested.
+- `check_styling.py`: clean.
+
+### Not done, and not measured
+
+- **The 15s limit on a real phone, on real bad wifi.** Only a silent local server in
+  headless Chrome.
+- **A write that lands after its look-up said it had not.** A server slow past 15s can take
+  a write after the page has looked and said "failed". A guide item is then protected by the
+  partial unique index (the retry gets a 409 and finds it); a Custom add is protected only
+  because its retry looks first again. Narrowed, not closed.
+- **Toast length.** *"Could not confirm … check the connection, then tap Save again"* is
+  the longest toast yet. Not measured; by m16's 195px width at 390px, about four lines. It lasts 1.6s
+  (m27), which is short for something that asks you to act.
+- **Automatic history retry** (m24, m33, m49) — decided later. m35 (two confirms stacked on
+  one save) is untouched.
 
 ## Minors list
 
