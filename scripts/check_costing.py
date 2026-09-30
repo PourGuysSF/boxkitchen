@@ -158,8 +158,10 @@ HARNESS = r"""
        order. 'lost' - the table takes it, the answer never comes (onerror);
        'hang' - the table takes it and nothing answers until timeoutAll();
        'drop' - lost before the table (onerror, nothing written);
-       'reject' - the server says no (400); 'conflict' - 409, nothing written.
-       nextHistWrite does the same for price-history POSTs ('lost', 'hang'). */
+       'reject' - the server says no (400); 'conflict' - 409, nothing written;
+       'gateway' - the table takes it and a gateway answers 502.
+       nextHistWrite does the same for price-history POSTs ('lost', 'hang',
+       'drop'), plus 'late' - no answer, and the row lands only on landLate(). */
     nextWrite:[],nextHistWrite:[],
     /* Slice 4: the price-history table, stateful. A lookup (a GET naming an
        effective_date) reads it; openHist's GET still reads histRows. */
@@ -189,13 +191,33 @@ HARNESS = r"""
       /* M1: the ledger arrives in the SECOND request. A picker that calls
          itself loaded on the first one offers priced items as new. */
       if(SCEN==='ledgerfail')return {err:true};
-      var ledger={status:200,text:snap()};
+      /* slice 4: filtered like PostgREST, so a lookup's query is tested, not
+         just the page's own matching - name=eq. is case-sensitive there */
+      var rows=JSON.parse(snap()),qs=u.split('?')[1]||'';
+      qs.split('&').forEach(function(kv){
+        var m=kv.match(/^(id|order_item_id|name|active)=(eq|is)\.(.*)$/);if(!m)return;
+        var f=m[1],v=decodeURIComponent(m[3]);
+        rows=rows.filter(function(r){
+          if(m[2]==='is')return v==='null'?r[f]==null:String(r[f])===v;
+          if(f==='name')return r.name===v;
+          if(f==='active')return String(!!r.active)===v;
+          return String(r[f])===v;});
+      });
+      var ledger={status:200,text:JSON.stringify(rows)};
       if(SCEN==='ledgerslow')return {defer:true,res:ledger};
       return planned(window.__h.nextLedger,ledger,ledger);
     }
     if(m==='GET'&&u.indexOf('/ingredient_price_history')>-1){
-      if(u.indexOf('effective_date=eq.')>-1)
-        return planned(window.__h.nextLedger,{status:200,text:JSON.stringify(window.__h.histServer)},null);
+      /* slice 4 lookups order by id; openHist orders by effective_date. They
+         are answered like PostgREST: filtered, ordered and limited. */
+      if(u.indexOf('order=id.')>-1){
+        var icq=Number((u.match(/ingredient_cost_id=eq\.(\d+)/)||[])[1]);
+        var gt=u.match(/id=gt\.(\d+)/),lim=u.match(/limit=(\d+)/);
+        var hs=window.__h.histServer.filter(function(h){return h.ingredient_cost_id===icq&&(!gt||h.id>Number(gt[1]));});
+        hs.sort(function(x,y){return u.indexOf('order=id.desc')>-1?y.id-x.id:x.id-y.id;});
+        if(lim)hs=hs.slice(0,Number(lim[1]));
+        return planned(window.__h.nextLedger,{status:200,text:JSON.stringify(hs)},null);
+      }
       return {status:200,text:JSON.stringify(window.__h.histRows)};
     }
     if(m==='POST'&&u.indexOf('/ingredient_costs')>-1){
@@ -208,6 +230,7 @@ HARNESS = r"""
       if(!window.__h.failWrites)server.push(row);
       if(fate==='lost')return {err:true};
       if(fate==='hang')return {hang:true};
+      if(fate==='gateway')return {status:502,text:'<html>Bad gateway</html>'};
       /* B2: hold the write open so the harness can cancel, or open another
          item, before the callback runs. */
       if(SCEN==='inflight')return {defer:true,res:added};
@@ -228,13 +251,18 @@ HARNESS = r"""
       return patched;
     }
     if(m==='POST'&&u.indexOf('/ingredient_price_history')>-1){
-      /* failHistory is the SERVER saying no (500): nothing written, and an
-         answer that says so. A lost answer is nextHistWrite's 'lost'. */
-      if(window.__h.failHistory){var hr={status:500,text:'{"message":"failed"}'};
+      /* failHistory is the SERVER saying no (400): nothing written, and an
+         answer that says so. A 5xx is 'unknown' to the page (a gateway error
+         can follow a commit); a lost answer is nextHistWrite's 'lost'. */
+      if(window.__h.failHistory){var hr={status:400,text:'{"message":"failed"}'};
         if(window.__h.deferHistory)return {defer:true,res:hr};return hr;}
-      var hrow=JSON.parse(JSON.stringify(body));hrow.id=window.__h.histServer.length+1;
-      window.__h.histServer.push(hrow);
       var hfate=window.__h.nextHistWrite.shift();
+      if(hfate==='drop')return {err:true};
+      var hrow=JSON.parse(JSON.stringify(body));hrow.id=window.__h.histServer.length+1;
+      /* 'late': no answer, and the row lands only when landLate() says - after
+         the page has timed out and looked */
+      if(hfate==='late'){lateRows.push(hrow);return {hang:true};}
+      window.__h.histServer.push(hrow);
       if(hfate==='lost')return {err:true};
       if(hfate==='hang')return {hang:true};
       var logged={status:201,text:JSON.stringify([hrow])};
@@ -264,7 +292,9 @@ HARNESS = r"""
     setTimeout(function(){deliver(r);},0);
   };
   window.XMLHttpRequest=Fake;
-  var hung=[];
+  var hung=[],lateRows=[];
+  window.__h.landLate=function(){while(lateRows.length){var h=lateRows.shift();
+    h.id=window.__h.histServer.length+1;window.__h.histServer.push(h);}};
   /* slice 4: fire the page's timeout on everything left hanging */
   window.__h.timeoutAll=function(){var d=hung.slice();hung.length=0;
     for(var i=0;i<d.length;i++)if(d[i].ontimeout)d[i].ontimeout();};
@@ -2315,6 +2345,156 @@ RUNNER = r"""
       ok('m44: and its link', findItem(501)&&findItem(501).order_item_id===12, JSON.stringify(findItem(501)&&findItem(501).order_item_id));
       ok('m15: the other rows still load', !!findItem(502)&&!!findItem(600));
     });
+
+    /* ---- from the review of #154 ---- */
+    function histFor(id){return held().filter(function(h){return h.ingredient_cost_id===id;});}
+
+    /* R1: $11, $12, $11 on one day, the last one lost BEFORE the table. An
+       identical row further back is not proof - only the newest can be. */
+    step(function(){ closeEdit(); openEdit(502); });
+    step(function(){ set('fPrice','21'); $('saveBtn').click(); });
+    wait();
+    step(function(){ openEdit(502); });
+    step(function(){ set('fPrice','22'); $('saveBtn').click(); });
+    wait();
+    step(function(){ openEdit(502); });
+    step(function(){ set('fPrice','21'); H.nextHistWrite.push('drop'); $('saveBtn').click(); });
+    wait(6);
+    step(function(){
+      var h=histFor(502);
+      ok('R1: an older identical row is not taken as the lost one', !!historyOwed[502],
+         JSON.stringify(historyOwed[502]));
+      ok('R1: and it says it could not confirm', /^⚠ .+ saved, but its price history could not be confirmed$/.test(toast()), toast());
+      ok('R1: (the trail still ends on 22)', h.length&&Number(h[h.length-1].pack_price)===22);
+    });
+    step(function(){ openEdit(502); });
+    step(function(){ $('saveBtn').click(); });
+    wait(6);
+    step(function(){
+      var h=histFor(502);
+      ok('R1: the next save pays it, and the trail ends on 21', Number(h[h.length-1].pack_price)===21&&!historyOwed[502],
+         JSON.stringify(h.map(function(x){return x.pack_price;})));
+    });
+
+    /* R6: the history write times out, the look finds nothing, and THEN it
+       lands. Paying the debt looks at rows since, finds it, and writes none. */
+    step(function(){ openEdit(502); });
+    step(function(){ set('fPrice','23'); H.nextHistWrite.push('late'); $('saveBtn').click(); });
+    wait(2);
+    step(function(){ H.timeoutAll(); });
+    wait(4);
+    step(function(){
+      ok('R6: owed, and marked unsure', historyOwed[502]&&historyOwed[502][0].unsure===true, JSON.stringify(historyOwed[502]));
+      H.landLate();
+    });
+    step(function(){ openEdit(502); });
+    step(function(){ H.reqs.length=0; $('saveBtn').click(); });
+    wait(6);
+    step(function(){
+      ok('R6: paying looks first, finds the late row, writes none', hist().length===0&&histFor(502).filter(function(h){return Number(h.pack_price)===23;}).length===1,
+         'new='+hist().length+' at23='+histFor(502).filter(function(h){return Number(h.pack_price)===23;}).length);
+      ok('R6: and the debt clears', !historyOwed[502], JSON.stringify(historyOwed[502]));
+    });
+
+    /* R2: a Custom retry typed with other capitals still finds the first try */
+    step(function(){ closeEdit(); openAdd(); });
+    step(function(){ pickCustom(); });
+    step(function(){ set('fName','maldon flakes'); set('fQty','1'); set('fUnit','lb'); set('fPrice','4');
+      H.nextWrite.push('lost'); H.nextLedger.push('err'); $('saveBtn').click(); });
+    wait();
+    step(function(){ set('fName','Maldon Flakes'); H.reqs.length=0; $('saveBtn').click(); });
+    wait();
+    step(function(){
+      var n=H.serverRows().filter(function(r){return (r.name||'').toLowerCase()==='maldon flakes';}).length;
+      ok('R2: other capitals do not make a second row', posts().length===0&&n===1, 'posts='+posts().length+' rows='+n);
+    });
+
+    /* R3: a gateway 502 AFTER the table took the add is looked up, not failed */
+    step(function(){ openAdd(); });
+    step(function(){ pickCustom(); });
+    step(function(){ set('fName','Fennel seed'); set('fQty','1'); set('fUnit','lb'); set('fPrice','5');
+      H.reqs.length=0; H.nextWrite.push('gateway'); $('saveBtn').click(); });
+    wait();
+    step(function(){
+      ok('R3: a 502 is looked up', gets('ingredient_costs').length===1, 'lookups='+gets('ingredient_costs').length);
+      ok('R3: and the landed add says added', toast()==='✓ Fennel seed added', toast());
+      ok('R3: one row', rowsNamed('Fennel seed').length===1);
+    });
+
+    /* R4: a reload brings in the first try's row; the retry still finds it as
+       ours rather than skipping a row the page now knows */
+    step(function(){ openAdd(); });
+    step(function(){ pickCustom(); });
+    step(function(){ set('fName','Celery salt'); set('fQty','1'); set('fUnit','lb'); set('fPrice','6');
+      H.nextWrite.push('lost'); H.nextLedger.push('err'); $('saveBtn').click(); });
+    wait();
+    step(function(){ init(); });
+    wait();
+    step(function(){ ok('R4: (the reload brought the row in)', items.some(function(r){return r.name==='Celery salt';}));
+      H.reqs.length=0; $('saveBtn').click(); });
+    wait();
+    step(function(){
+      ok('R4: the retry writes no second row', posts().length===0&&rowsNamed('Celery salt').length===1,
+         'posts='+posts().length+' rows='+rowsNamed('Celery salt').length);
+      ok('R4: and says added', toast()==='✓ Celery salt added', toast());
+    });
+
+    /* R5: Cancel, reopen the same row mid-write: when the write lands the
+       reopened modal shows what landed, so Save cannot write the old price
+       back; and a Retire that lands flips the button to Restore */
+    step(function(){ closeEdit(); openEdit(502); });
+    step(function(){ set('fPrice','31'); H.nextWrite.push('hang'); $('saveBtn').click(); });
+    step(function(){ closeEdit(); openEdit(502); });
+    step(function(){
+      ok('R5: (reopened mid-write: locked, showing the old price)', $('saveBtn').disabled&&$('fPrice').value!=='31', $('fPrice').value);
+      H.timeoutAll();
+    });
+    wait();
+    step(function(){
+      ok('R5: when it lands the reopened modal shows the new price', shown()&&$('fPrice').value==='31', $('fPrice').value);
+      ok('R5: and unlocks', !$('saveBtn').disabled);
+    });
+    step(function(){ H.nextWrite.push('hang'); H.confirmReturn=true; toggleActive(); });
+    step(function(){ closeEdit(); openEdit(502); });
+    step(function(){
+      ok('R5: (reopened mid-retire, it still reads Retire)', $('retireBtn').textContent==='Retire');
+      /* R7: a locked Retire/Restore reads as locked, whatever kitchen.css
+         says about .link-btn.retire / .restore */
+      var cs=getComputedStyle($('retireBtn'));
+      ok('R7: a locked Retire reads as locked (dashed edge)', cs.borderTopStyle==='dashed', cs.borderTopStyle);
+      H.timeoutAll();
+    });
+    wait();
+    step(function(){
+      ok('R5: when the retire lands the button reads Restore', $('retireBtn').textContent==='Restore', $('retireBtn').textContent);
+      ok('R5: (and the row is retired)', findItem(502)&&findItem(502).active===false);
+      H.nextWrite.push('hang'); toggleActive();
+    });
+    step(function(){
+      var cs=getComputedStyle($('retireBtn'));
+      ok('R7: a locked RESTORE reads as locked too - the rule wins the cascade',
+         $('retireBtn').disabled&&cs.borderTopStyle==='dashed'&&cs.color===getComputedStyle(document.documentElement).getPropertyValue('--faint').trim()
+           ||($('retireBtn').disabled&&cs.borderTopStyle==='dashed'&&cs.color==='rgb(169, 167, 160)'),
+         cs.borderTopStyle+' '+cs.color);
+      H.timeoutAll();
+    });
+    wait();
+
+    /* R8: Price history stays shut until the history row a save owes is in */
+    step(function(){ closeEdit(); openEdit(502); });
+    step(function(){ set('fPrice','32'); H.nextHistWrite.push('hang'); $('saveBtn').click(); });
+    wait(2);
+    step(function(){ openEdit(502); });
+    step(function(){
+      ok('R8: Price history is locked while the history row is out', $('histBtn').disabled===true);
+      openHist();
+    });
+    step(function(){
+      ok('R8: and does not open', !$('histModal').classList.contains('show'));
+      H.timeoutAll();
+    });
+    wait(4);
+    step(function(){ ok('R8: it unlocks when the history row settles', $('histBtn').disabled===false); });
   }
 
   if(document.readyState==='complete')setTimeout(run,0);

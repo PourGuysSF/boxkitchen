@@ -1,10 +1,11 @@
 # Costing — make the ledger fillable
 
-Status: **Slice 4 is built** on `costing-slice4-write-path`, not yet reviewed — the write
-path cannot double-fire. A 15s limit on every request; a lost or unreadable answer is looked
+Status: **Slice 4 is built** on `costing-slice4-write-path` (PR #154), reviewed once, with
+the review's eight real findings fixed in the same PR — the write path cannot double-fire. A 15s limit on every request; a lost or unreadable answer is looked
 up in the table, never reported "failed"; a retry looks before it writes; every control in
 the modal but Cancel is locked while a write is out; a slow reload cannot undo a save. See
-"Slice 4 as built". check_costing.py 396 → **466**, clean.
+"Slice 4 as built" and "Added by the review of PR #154". check_costing.py 396 → **491**,
+clean.
 
 **m74 and m76 shipped** — merged to `main` as `ef9c172` (PR #153, squashed), reviewed once,
 with the review's findings fixed in the same PR: picking an item puts focus on the item's
@@ -860,6 +861,45 @@ Stephen, 2026-09-29: a **15-second** limit; **Cancel stays live** while a write 
   (m27), which is short for something that asks you to act.
 - **Automatic history retry** (m24, m33, m49) — decided later. m35 (two confirms stacked on
   one save) is untouched.
+
+### Added by the review of PR #154 (slice 4, pre-merge)
+
+The review found ten things; eight were real defects in the new code and are fixed here, each
+with a test that fails when its fault is put back (8 injected faults, 8 caught; the slice's own
+13 re-run and still caught).
+
+- **R1. An older identical history row was taken as proof.** The lookup matched any row with
+  the same values on the same day, so $11, $12, $11 with the last one lost took the first $11
+  as "landed" and the trail ended on $12 under a ledger of $11. Only the **newest** row can
+  prove a write landed now (`order=id.desc&limit=1`).
+- **R2. A Custom retry in other capitals wrote a second row.** The lookup used `name=eq.`,
+  which is case-sensitive in PostgREST, while the page's keys are lower-case. It now asks for
+  all active Custom rows and matches the name itself. The stub now filters `id`,
+  `order_item_id`, `name` and `active` as PostgREST does, so a lookup's *query* is tested,
+  not only the page's matching.
+- **R3. A 5xx was taken as "not written".** A gateway 502/504 can follow a commit. 5xx is now
+  `unknown` and looked up.
+- **R4. A reload hid the first try from its retry.** `stranger()` skipped rows already in
+  `items[]`, so a retry after `init()` wrote again. Now `theRow()`: ours is ours even if known.
+- **R5. A row reopened mid-write unlocked showing the old values.** Save would have written
+  the old price back, and a landed Retire left the button reading "Retire" — a tap then
+  restored the row with no confirm. `reshowRow()` re-shows it from the landed row when
+  nothing was typed, and always corrects the Retire/Restore label.
+- **R6. A history write that timed out and then landed was paid again.** A look that found no
+  trace recorded the debt as definitely unwritten. It is now `unsure`, carries `afterId` (the
+  newest id seen), and paying it asks only for rows written since.
+- **R7. A locked Restore still looked live.** `.link-btn:disabled` (0,2,0) lost to
+  kitchen.css's `.link-btn.retire.restore` (0,3,0) — CLAUDE.md's "rule losing the cascade".
+  Now `#editActions .link-btn:disabled` / `#pickChange:disabled`, and the locked edge is a
+  dashed `--edge` rather than `--hair`, which the palette reserves for separators.
+- **R8. Price history unlocked while its row was still being written.** `histOut` counts
+  history writes out per row; the button and `openHist()` wait for them.
+- **Also from the review:** the reconcile path is one `reconcile()` and one `after()` tail
+  rather than two copies. **Not acted on:** an idempotency key per write (a client-made id in
+  a unique column) would make any retry harmless and replace the matching altogether — it
+  needs a schema change, which Stephen would run, and this slice ruled one out. Recorded as
+  the durable fix if matching keeps producing edge cases. `toggleActive()` still carries its
+  own copy of the lock-and-look pattern.
 
 ## Minors list
 

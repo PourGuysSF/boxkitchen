@@ -70,7 +70,11 @@
   .inv-btn.on:focus-visible{outline-color:#fff}
   /* Slice 4 (m19): while a write is in flight the modal's other controls are
      locked. Locked reads as --faint text, per the palette's one use for it. */
-  .link-btn:disabled,.pick-change:disabled{color:var(--faint);border-color:var(--hair);cursor:default}
+  /* Ids, not bare classes: kitchen.css's .link-btn.retire.restore is (0,3,0)
+     and a bare :disabled rule lost to it, leaving a locked Restore looking
+     live. The edge stays --edge and turns dashed - locked is said by border
+     and --faint text, never by hue, and --hair is never a control's edge. */
+  #editActions .link-btn:disabled,#pickChange:disabled{color:var(--faint);border-color:var(--edge);border-style:dashed;cursor:default}
   .pick-list.is-saving{pointer-events:none}
   .pick-list.is-saving .pick-v,.pick-list.is-saving .pick-n{color:var(--faint)}
   .inv-fields{display:flex;gap:8px;margin-top:8px}
@@ -293,6 +297,7 @@ var unsure={};                // savingKey -> {price,qty,unit,prov}
    after it was sent. */
 var writeSeq=0;               // bumped by every write this page sees land
 var rowSeq={};                // ledger id -> writeSeq when this page last wrote it
+var histOut={};               // ledger id -> price-history writes still out for it
 /* m24: a ledger id whose price-history row FAILED to write, so one is owed.
    The next save of that row writes it whether or not the price changed —
    without this, re-saving the same price writes nothing (priceChanged
@@ -413,11 +418,12 @@ function api(m,t,q,d,cb){var x=new XMLHttpRequest(),fired=false;function fire(r,
      'no'      - the server answered and wrote nothing: safe to try again
      'unknown' - no answer, or one we could not read, or a conflict (409:
                  something already holds this item - perhaps our own earlier
-                 try). It may have landed. Look before saying anything.
+                 try), or a 5xx: a gateway 502/504 can come AFTER the row was
+                 committed. It may have landed. Look before saying anything.
    "Failed - try again" on an 'unknown' is how a retry made a duplicate. */
 function answerOf(r,status){
   if(Array.isArray(r)&&r.length)return 'ok';
-  if(status===409)return 'unknown';
+  if(status===409||status>=500)return 'unknown';
   if(status>=400||Array.isArray(r))return 'no';
   return 'unknown';
 }
@@ -576,9 +582,24 @@ function modalBusy(){return !!savingGen[modalGen]||(editId!=null&&!!savingKey['i
    live (Stephen, 2026-09-29): the write finishes in the background and still
    reports. The functions behind these refuse too, so no path gets round it. */
 function syncSaveBtn(){var busy=modalBusy(),b=document.getElementById('saveBtn');b.disabled=busy;b.textContent=busy?'Saving…':'Save';
-  document.getElementById('retireBtn').disabled=busy;document.getElementById('histBtn').disabled=busy;
+  document.getElementById('retireBtn').disabled=busy;
+  // m19: and Price history stays shut until the history row a save owes is in
+  document.getElementById('histBtn').disabled=busy||(editId!=null&&!!histOut[editId]);
   document.getElementById('pickChange').disabled=busy;
   var pl=document.getElementById('pickList');pl.classList.toggle('is-saving',busy);pl.setAttribute('aria-busy',String(busy));}
+/* Slice 4: a row reopened after Cancel while its write was out has been
+   showing the row as it was, locked. When the write lands it unlocks - so it
+   must show the row as it now is, or Save would write the old numbers back
+   and Retire/Restore would read the wrong way round. Anything typed into it
+   while it waited is kept; only the Retire/Restore label is corrected then. */
+function reshowRow(id){
+  if(editId!==id)return;
+  var it=findItem(id);if(!it)return;
+  if(!editDirty()){openEdit(id);return;}
+  var rb=document.getElementById('retireBtn');
+  rb.textContent=it.active?'Retire':'Restore';rb.className='link-btn retire'+(it.active?'':' restore');
+  document.getElementById('editSub').textContent=it.active?'Update pack size or price.':'This item is retired.';
+}
 function hold(keys){for(var i=0;i<keys.length;i++)savingKey[keys[i]]=true;}
 function free(keys){for(var i=0;i<keys.length;i++)delete savingKey[keys[i]];}
 
@@ -952,10 +973,14 @@ function saveItem(){
         if(!sameVals(owed[k],packPrice,packQty,unit,prov))
           logPrice(savingId,owed[k].price,owed[k].qty,owed[k].unit,owed[k].prov,label,true);
       if(priceChanged||owed.length)logPrice(savingId,packPrice,packQty,unit,prov,label,owed.length>0);}
-    // Only close what is still this save. If the user has moved on, the
-    // data and the list update silently and what they are typing stays.
-    if(gen===modalGen)closeEdit();else refreshPicker();
-    render();showToast(label+' '+verb,false);
+    after(label+' '+verb,false);
+  }
+  // Only close what is still this save. If the user has moved on, the data and
+  // the list update silently and what they are typing stays - and a reopened
+  // row catches up with what just landed on it.
+  function after(msg,isErr){
+    if(gen===modalGen)closeEdit();else{refreshPicker();if(savingId!=null)reshowRow(savingId);}
+    render();showToast(msg,isErr);
   }
 
   if(savingId!=null){
@@ -976,65 +1001,59 @@ function saveItem(){
 
   // ---- an add: the only write a retry can duplicate ----
   var mine={price:packPrice,qty:packQty,unit:unit,prov:prov,payload:payload};
+  // A Custom add is looked up among ALL active Custom rows, not by name=eq.:
+  // that is case-sensitive, and a retry typed "Sea Salt" after "sea salt"
+  // would find nothing and write a second row. The page matches the name.
   var q='location=eq.'+encodeURIComponent(LOCATION)+'&active=eq.true&'+
-        (orderItemId!=null?'order_item_id=eq.'+orderItemId:'order_item_id=is.null&name=eq.'+encodeURIComponent(name));
-  // An active row for this item that this page does not know: one that is
-  // ours (this try's numbers, or an earlier try's) first. A Custom add has no
-  // guide item to hold, so for it ONLY ours counts - a different row that
-  // shares its name is someone else's item, and answering it with another
-  // POST would loop into the duplicates this exists to stop.
-  function stranger(rows){
+        (orderItemId!=null?'order_item_id=eq.'+orderItemId:'order_item_id=is.null');
+  // The row for this add, if the table holds one: ours first (this try's
+  // numbers, or an earlier try's) - even if a reload has since put it in
+  // items[], or a retry after that reload would write it again. Failing that,
+  // for a guide item only, a row someone else saved. A Custom row of the same
+  // name with other numbers is someone else's item, not an answer.
+  function theRow(rows){
     var first=unsure[key0],other=null;
     for(var i=0;i<rows.length;i++){var x=rows[i];
-      if(!x.active||findItem(x.id)||(x.location!=null&&x.location!==LOCATION))continue;
+      if(!x.active||(x.location!=null&&x.location!==LOCATION))continue;
       if(orderItemId!=null?Number(x.order_item_id)!==orderItemId
                           :(x.order_item_id!=null||(x.name||'').toLowerCase()!==name.toLowerCase()))continue;
       if(sameLedger(x,payload)||(first&&sameLedger(x,first.payload)))return x;
-      if(orderItemId!=null&&!other)other=x;}
+      if(orderItemId!=null&&!other&&!findItem(x.id))other=x;}
     return other;
   }
-  // A row is there. Whose is it?
-  function found(row){
-    var first=unsure[key0];
-    if(sameLedger(row,payload)){delete unsure[key0];
-      // ours - this try's, or an earlier try's with the same numbers; either
-      // way these are the numbers being saved now, under what is set now
-      return done(row,'added',mine);}
-    if(first&&sameLedger(row,first.payload)){delete unsure[key0];
-      // an earlier try landed with other numbers: it is the row, and it owes its history
-      release();landRow(row);if(first.price!=null)logPrice(row.id,first.price,first.qty,first.unit,first.prov,label);
-      if(gen===modalGen)closeEdit();else refreshPicker();
-      render();showToast(label+' had already saved, with its first numbers. Open it to change them.',true);return;
-    }
-    // another save already costs this guide item: show it, write nothing
-    release();landRow(row);refreshPicker();render();
-    showToast(label+' is already costed — it saved from another try or device',true);
+  // Look, and settle on what is there; `none` runs if nothing is.
+  function reconcile(none){
+    lookUp('ingredient_costs',q,function(rows){
+      if(rows==null)return unconfirmed();
+      var row=theRow(rows);
+      if(!row)return none();
+      var first=unsure[key0];delete unsure[key0];
+      // ours - this try's, or an earlier try's with the same numbers
+      if(sameLedger(row,payload))return done(row,'added',mine);
+      release();landRow(row);
+      // an earlier try landed with other numbers: it is the row, and owes its history
+      if(first&&sameLedger(row,first.payload)){
+        if(first.price!=null)logPrice(row.id,first.price,first.qty,first.unit,first.prov,label);
+        return after(label+' had already saved, with its first numbers. Open it to change them.',true);
+      }
+      // another save already costs this guide item: show it, write nothing
+      refreshPicker();render();
+      showToast(label+' is already costed — it saved from another try or device',true);
+    });
   }
   function post(){
     api('POST','ingredient_costs',null,payload,function(r,status){
       var a=answerOf(r,status);
       if(a==='ok'){delete unsure[key0];return done(r[0],'added',mine);}
       if(a==='no')return failed();
-      // It may have landed. Look - and until a look says otherwise, the next
-      // save of this item looks before it writes.
+      // It may have landed. Look - and until a look finds it, the next save of
+      // this item looks before it writes.
       if(!unsure[key0])unsure[key0]=mine;
-      lookUp('ingredient_costs',q,function(rows){
-        if(rows==null)return unconfirmed();
-        var row=stranger(rows);
-        if(row)return found(row);
-        failed();
-      });
+      reconcile(failed);
     });
   }
   // "Before any retry, re-GET and reconcile rather than blindly POSTing."
-  if(unsure[key0]){
-    lookUp('ingredient_costs',q,function(rows){
-      if(rows==null)return unconfirmed();
-      var row=stranger(rows);
-      if(row)return found(row);
-      post();
-    });
-  }else post();
+  if(unsure[key0])reconcile(post);else post();
 }
 /* Append a price-history row. The ledger write has already succeeded and is
    the source of truth, so a failure here is NEVER rolled back — the price the
@@ -1073,40 +1092,62 @@ function owedIndex(icId,price,qty,unit,prov){
 function logPrice(icId,price,qty,unit,prov,label,paying){
   prov=prov||{source:'manual',ref:null,date:today()};
   if(paying)historyPaying[icId]=(historyPaying[icId]||0)+1;
+  histOut[icId]=(histOut[icId]||0)+1;syncSaveBtn();
   var body={ingredient_cost_id:icId,pack_price:(price==null?null:price),pack_qty:qty,pack_unit:unit,source:prov.source,invoice_ref:prov.ref,effective_date:prov.date};
-  var hq='ingredient_cost_id=eq.'+icId+'&effective_date=eq.'+encodeURIComponent(prov.date);
   function isThis(x){return Number(x.ingredient_cost_id)===icId&&nOrNull(x.pack_price)===nOrNull(price)&&
     nOrNull(x.pack_qty)===nOrNull(qty)&&(x.pack_unit||'')===(unit||'')&&(x.source||'manual')===(prov.source||'manual')&&
     (x.invoice_ref||null)===(prov.ref||null)&&(x.effective_date||'')===(prov.date||'');}
-  function any(rows){for(var j=0;j<rows.length;j++)if(isThis(rows[j]))return true;return false;}
-  // a: 'ok' it is in the table; 'no' it is not; 'unknown' it may be
-  function settle(a){
+  /* how: 'ok' it is in the table; 'no' the server said it is not; 'unknown'
+     it may be, or may land yet. afterId: the newest history id this row's
+     look saw, so a later look can ask only for rows written SINCE. */
+  function settle(how,afterId){
     if(paying&&!(historyPaying[icId]=(historyPaying[icId]||1)-1))delete historyPaying[icId];
+    if(!(histOut[icId]=(histOut[icId]||1)-1))delete histOut[icId];
+    syncSaveBtn();
     var i=owedIndex(icId,price,qty,unit,prov);
     // Cleared only when THIS row is really on the wire — a debt that clears on
     // a failure, or on somebody else's price, is worse than no debt at all.
-    if(a==='ok'){
+    if(how==='ok'){
       if(i>-1){historyOwed[icId].splice(i,1);if(!historyOwed[icId].length)delete historyOwed[icId];}
       return;
     }
-    // Slice 4: a debt owed on an unknown answer is marked, and paying it looks
-    // first - the row may be there already, and a second copy is m39's row.
-    if(i<0)(historyOwed[icId]||(historyOwed[icId]=[])).push({price:price,qty:qty,unit:unit,prov:prov,unsure:a==='unknown'});
-    else if(a==='unknown')historyOwed[icId][i].unsure=true;
-    showToast((label||'That item')+' saved, but its price history didn’t record',true);
+    // Slice 4: a debt owed on an unknown answer - including one a look found
+    // no trace of, since a timed-out POST can still land after the look - is
+    // marked, and paying it looks first, for rows written since.
+    var unsureNow=how==='unknown';
+    if(i<0)(historyOwed[icId]||(historyOwed[icId]=[])).push({price:price,qty:qty,unit:unit,prov:prov,unsure:unsureNow,afterId:afterId});
+    else{historyOwed[icId][i].unsure=unsureNow;historyOwed[icId][i].afterId=afterId;}
+    showToast((label||'That item')+(unsureNow?' saved, but its price history could not be confirmed'
+                                           :' saved, but its price history didn’t record'),true);
+  }
+  /* Slice 4: did an unanswered write land? Only the NEWEST row can say so. An
+     identical row further back is an earlier save of the same price on the
+     same day ($11, $12, $11) - taking it as proof would drop the last $11. */
+  function lookNewest(){
+    lookUp('ingredient_price_history','ingredient_cost_id=eq.'+icId+'&order=id.desc&limit=1',function(rows){
+      if(rows==null)return settle('unknown',null);
+      if(rows.length&&isThis(rows[0]))return settle('ok');
+      settle('unknown',rows.length?rows[0].id:0);
+    });
   }
   function send(){
     api('POST','ingredient_price_history',null,body,function(r,status){
       var a=answerOf(r,status);
-      if(a!=='unknown')return settle(a);
-      // no answer: it may have landed - look before calling it owed
-      lookUp('ingredient_price_history',hq,function(rows){settle(rows==null?'unknown':(any(rows)?'ok':'no'));});
+      if(a==='unknown')return lookNewest();
+      settle(a);
     });
   }
-  var owedAt=owedIndex(icId,price,qty,unit,prov);
-  if(paying&&owedAt>-1&&historyOwed[icId][owedAt].unsure)
-    lookUp('ingredient_price_history',hq,function(rows){if(rows==null)return settle('unknown');if(any(rows))return settle('ok');send();});
-  else send();
+  var at=owedIndex(icId,price,qty,unit,prov),debt=at>-1?historyOwed[icId][at]:null;
+  if(paying&&debt&&debt.unsure){
+    // paying an unsure debt: has the original landed since it was owed?
+    var dq=debt.afterId!=null?'ingredient_cost_id=eq.'+icId+'&id=gt.'+debt.afterId+'&order=id.asc'
+                             :'ingredient_cost_id=eq.'+icId+'&order=id.desc&limit=1';
+    lookUp('ingredient_price_history',dq,function(rows){
+      if(rows==null)return settle('unknown',debt.afterId);
+      for(var j=0;j<rows.length;j++)if(isThis(rows[j]))return settle('ok');
+      send();
+    });
+  }else send();
 }
 function toggleActive(){
   var it=findItem(editId);if(!it)return;
@@ -1134,7 +1175,7 @@ function toggleActive(){
   hold(keys);syncSaveBtn();
   var gen=modalGen,verb=toActive?' restored':' retired';
   function landed(){free(keys);var cur=findItem(id);if(cur)cur.active=toActive;rowSeq[id]=++writeSeq;
-    if(gen===modalGen)closeEdit();else{refreshPicker();syncSaveBtn();}
+    if(gen===modalGen)closeEdit();else{refreshPicker();syncSaveBtn();reshowRow(id);}
     render();showToast(label+verb,false);}
   function no(){free(keys);syncSaveBtn();showToast(label+' — update failed, try again',true);}
   api('PATCH','ingredient_costs','id=eq.'+id,{active:toActive,updated_at:new Date().toISOString()},function(r,status){
@@ -1151,7 +1192,7 @@ function toggleActive(){
 
 /* ---- Price history ---- */
 function openHist(){
-  if(modalBusy())return;
+  if(modalBusy()||(editId!=null&&histOut[editId]))return;
   var it=findItem(editId);if(!it)return;
   document.getElementById('histName').textContent=nameOf(it);
   document.getElementById('histBody').innerHTML='<div class="hist-empty">Loading…</div>';
