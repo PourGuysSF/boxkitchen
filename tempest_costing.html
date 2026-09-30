@@ -289,12 +289,21 @@ var savingKey={};             // 'oi:<order_item id>' / 'ic:<ledger id>' / 'nm:<
    before it writes - "before any retry, re-GET and reconcile" - so a second
    tap cannot make a second row. Holds what the first try sent, so a row found
    later is logged with the values and provenance it was saved under. */
-var unsure={};                // savingKey -> {price,qty,unit,prov,payload,label,logged}
+var unsure={};                // savingKey -> [try...]; a try is {price,qty,unit,prov,payload,label,logged}
 /* Slice 4 (review of #154): an EDIT whose answer never came and whose look
    found the old values. A PATCH can still commit after the look, and then the
    ledger holds a price with no history row while the list shows the old one.
    The next save of the row looks first; a load that shows it landed logs it. */
-var unsureEdit={};            // ledger id -> {payload,price,qty,unit,prov,label,log}
+var unsureEdit={};            // ledger id -> [try...], each also carrying `log` (it changed the price)
+/* Review 3 of #154: EVERY unconfirmed try is kept, not just the first - a third
+   try with new numbers must still recognise the second try's row. A try leaves
+   the list when a look or load shows it landed (and it is logged), or when a
+   save lands with its very numbers (it is superseded, and logged by that save). */
+function noteTry(map,key,t){var L=map[key]||(map[key]=[]);
+  for(var i=0;i<L.length;i++)if(sameLedger(t.payload,L[i].payload))return;L.push(t);}
+function tryFor(map,key,row){var L=map[key]||[];for(var i=0;i<L.length;i++)if(sameLedger(row,L[i].payload))return L[i];return null;}
+function dropTry(map,key,row){var L=map[key];if(!L)return;
+  for(var i=L.length-1;i>=0;i--)if(sameLedger(row,L[i].payload))L.splice(i,1);if(!L.length)delete map[key];}
 /* Slice 4 (m15, m44): a ledger GET answers with the table as it was when SENT.
    A save that lands while it is out would be undone when it lands - the row
    dropped, or an old link written back on the next edit. Every row this page
@@ -525,11 +534,11 @@ function keepNewer(fetched,seqAtSend){
    `unsure`, marked logged, so a retry still finds it rather than adding it
    again, and does not log it twice. */
 function settleLoaded(){
-  for(var id in unsureEdit){var ue=unsureEdit[id],it=findItem(Number(id));
-    if(!it)continue;
-    if(sameLedger(it,ue.payload)&&ue.log)logPrice(it.id,ue.price,ue.qty,ue.unit,ue.prov,ue.label);
-    if(sameLedger(it,ue.payload))delete unsureEdit[id];}
-  for(var k in unsure){var u=unsure[k];if(u.logged)continue;
+  for(var id in unsureEdit){var it=findItem(Number(id)),t=it&&tryFor(unsureEdit,id,it);
+    if(!t)continue;
+    if(t.log&&!t.logged)logPrice(it.id,t.price,t.qty,t.unit,t.prov,t.label);
+    dropTry(unsureEdit,id,it);}
+  for(var k in unsure)for(var j=0;j<unsure[k].length;j++){var u=unsure[k][j];if(u.logged)continue;
     for(var i=0;i<items.length;i++){var x=items[i];
       if(!x.active||!sameLedger(x,u.payload))continue;
       if(u.price!=null)logPrice(x.id,u.price,u.qty,u.unit,u.prov,u.label);
@@ -631,6 +640,11 @@ function reshowRow(id){
   for(var i=0;i<EDIT_FIELDS.length;i++){var el=document.getElementById(EDIT_FIELDS[i]);
     if(editSnap&&el.value===editSnap[i])el.value=now[i];}
   editSnap=now;ucPreview();
+  // and the chosen line names what the row is linked to now (review 3: a
+  // re-link that landed left it naming the old item) - unless re-picked here
+  if(pickId==null){document.getElementById('pickChosenV').textContent=vendorOf(it);
+    document.getElementById('pickChosenN').textContent=nameOf(it);
+    document.getElementById('fName').disabled=(it.order_item_id!=null);}
   var rb=document.getElementById('retireBtn');
   rb.textContent=it.active?'Retire':'Restore';rb.className='link-btn retire'+(it.active?'':' restore');
   document.getElementById('editSub').textContent=it.active?'Update pack size or price.':'This item is retired.';
@@ -912,19 +926,6 @@ function saveItem(){
     payload={location:LOCATION,order_item_id:orderItemId,name:name,invoice_alias:alias,pack_qty:packQty,pack_unit:unit,pack_price:packPrice,active:true,updated_at:nowIso};
   }else{
     var it=findItem(editId);if(!it)return;
-    // Slice 4: an earlier save of this row went unanswered and was not seen to
-    // land. Look before this one - if it landed late, it is the row this save
-    // changes, and it owes its history row.
-    if(unsureEdit[editId]){var id0=editId,g0=modalGen;
-      lookUp('ingredient_costs','id=eq.'+id0,function(rows){
-        if(rows==null){showToast('Could not confirm '+itemLabel(it)+' saved — check the connection, then tap Save again',true,LONG_TOAST);return;}
-        var ue=unsureEdit[id0];delete unsureEdit[id0];
-        for(var i=0;i<rows.length;i++)if(rows[i].id===id0&&ue&&sameLedger(rows[i],ue.payload)){
-          landRow(rows[i]);if(ue.log)logPrice(id0,ue.price,ue.qty,ue.unit,ue.prov,ue.label);}
-        if(modalGen===g0&&editId===id0)saveItem();
-      });
-      return;
-    }
     // closeEdit() sets editId=null and opening another item overwrites it,
     // so a callback that re-read the shared editId would update the wrong
     // row and log the price against the wrong item — or against null.
@@ -1034,20 +1035,44 @@ function saveItem(){
   }
 
   if(savingId!=null){
-    api('PATCH','ingredient_costs','id=eq.'+savingId,payload,function(r,status){
-      var a=answerOf(r,status);
-      if(a==='ok'){delete unsureEdit[savingId];return done(r[0],'saved');}
-      if(a==='no')return failed();
-      // A PATCH is safe to send twice, but "failed" would still be a lie if it
-      // landed - and the history row it owes would never be written.
+    var thisTry={payload:payload,price:packPrice,qty:packQty,unit:unit,prov:prov,label:label,log:priceChanged};
+    var patch=function(){
+      api('PATCH','ingredient_costs','id=eq.'+savingId,payload,function(r,status){
+        var a=answerOf(r,status);
+        if(a==='ok'){dropTry(unsureEdit,savingId,r[0]);return done(r[0],'saved');}
+        if(a==='no')return failed();
+        // A PATCH is safe to send twice, but "failed" would still be a lie if it
+        // landed - and the history row it owes would never be written. Until a
+        // look or a load shows it, it is remembered (unsureEdit) - whether the
+        // look found the old values or could not be made at all.
+        lookUp('ingredient_costs','id=eq.'+savingId,function(rows){
+          if(rows==null){thisTry.log=priceChanged;noteTry(unsureEdit,savingId,thisTry);return unconfirmed();}
+          for(var i=0;i<rows.length;i++)if(rows[i].id===savingId&&sameLedger(rows[i],payload)){dropTry(unsureEdit,savingId,rows[i]);return done(rows[i],'saved');}
+          thisTry.log=priceChanged;noteTry(unsureEdit,savingId,thisTry);
+          failed();
+        });
+      });
+    };
+    // An earlier save of this row went unanswered. Look before this one - under
+    // the lock, as part of this save: Save reads "Saving…", nothing else starts
+    // a write, and Cancel lets it finish like any other save. (Review 3 of #154:
+    // the look ran unlocked, and Cancel during it dropped the save unsaid.)
+    if(unsureEdit[savingId]){
       lookUp('ingredient_costs','id=eq.'+savingId,function(rows){
         if(rows==null)return unconfirmed();
-        for(var i=0;i<rows.length;i++)if(rows[i].id===savingId&&sameLedger(rows[i],payload))return done(rows[i],'saved');
-        // not there yet - but it may still commit; remember it (see unsureEdit)
-        unsureEdit[savingId]={payload:payload,price:packPrice,qty:packQty,unit:unit,prov:prov,label:label,log:priceChanged};
-        failed();
+        var row=null;for(var i=0;i<rows.length;i++)if(rows[i].id===savingId)row=rows[i];
+        var t=row&&tryFor(unsureEdit,savingId,row);
+        if(t){
+          // it landed late: it is the row this save changes, and owes its history row
+          landRow(row);if(t.log&&!t.logged)logPrice(savingId,t.price,t.qty,t.unit,t.prov,t.label);
+          dropTry(unsureEdit,savingId,row);
+          priceChanged=(!numEq(row.pack_price,packPrice)||!numEq(row.pack_qty,packQty)||(row.pack_unit||'')!==unit)&&
+                       (row.pack_price!=null||packPrice!=null);
+          if(sameLedger(row,payload))return done(row,'saved');   // it already holds this save
+        }
+        patch();
       });
-    });
+    }else patch();
     return;
   }
 
@@ -1064,13 +1089,17 @@ function saveItem(){
   // for a guide item only, a row someone else saved. A Custom row of the same
   // name with other numbers is someone else's item, not an answer.
   function theRow(rows){
-    var first=unsure[key0],other=null;
+    var other=null;
     for(var i=0;i<rows.length;i++){var x=rows[i];
       if(!x.active||(x.location!=null&&x.location!==LOCATION))continue;
       if(orderItemId!=null?Number(x.order_item_id)!==orderItemId
                           :(x.order_item_id!=null||(x.name||'').toLowerCase()!==name.toLowerCase()))continue;
-      if(sameLedger(x,payload)||(first&&sameLedger(x,first.payload)))return x;
-      if(orderItemId!=null&&!other&&!findItem(x.id))other=x;}
+      if(sameLedger(x,payload)||tryFor(unsure,key0,x))return x;
+      // review 3: a holder this page already knows is still the answer - its
+      // copy here is stale (retired here, restored elsewhere), or the check
+      // before saving would have caught it; skipping it left every retry at
+      // "failed - try again"
+      if(orderItemId!=null&&!other)other=x;}
     return other;
   }
   // Look, and settle on what is there; `none` runs if nothing is.
@@ -1079,15 +1108,15 @@ function saveItem(){
       if(rows==null)return unconfirmed();
       var row=theRow(rows);
       if(!row)return none();
-      var first=unsure[key0];delete unsure[key0];
-      var logged=!!(first&&first.logged);   // a load already logged it (settleLoaded)
+      var t=tryFor(unsure,key0,row);delete unsure[key0];
+      var logged=!!(t&&t.logged);   // a load already logged it (settleLoaded)
       // ours - this try's, or an earlier try's with the same numbers
       if(sameLedger(row,payload))return done(row,'added',logged?null:mine);
       release();landRow(row);
       // an earlier try landed with other numbers: it is the row, and owes its history
-      if(first&&sameLedger(row,first.payload)){
-        if(first.price!=null&&!logged)logPrice(row.id,first.price,first.qty,first.unit,first.prov,label);
-        return after(label+' had already saved, with its first numbers. Open it to change them.',true,LONG_TOAST);
+      if(t){
+        if(t.price!=null&&!logged)logPrice(row.id,t.price,t.qty,t.unit,t.prov,label);
+        return after(label+' had already saved, with the numbers from an earlier try. Open it to change them.',true,LONG_TOAST);
       }
       // another save already costs this guide item: show it, write nothing
       refreshPicker();render();
@@ -1101,7 +1130,7 @@ function saveItem(){
       if(a==='no')return failed();
       // It may have landed. Look - and until a look finds it, the next save of
       // this item looks before it writes.
-      if(!unsure[key0])unsure[key0]=mine;
+      noteTry(unsure,key0,mine);
       reconcile(failed);
     });
   }

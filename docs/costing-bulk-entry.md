@@ -1,11 +1,11 @@
 # Costing — make the ledger fillable
 
-Status: **Slice 4 is built** on `costing-slice4-write-path` (PR #154), reviewed twice, with
-both reviews' real findings fixed in the same PR — the write path cannot double-fire. A 15s limit on every request; a lost or unreadable answer is looked
+Status: **Slice 4 is built** on `costing-slice4-write-path` (PR #154), reviewed three times,
+with every review's proved findings fixed in the same PR — the write path cannot double-fire. A 15s limit on every request; a lost or unreadable answer is looked
 up in the table, never reported "failed"; a retry looks before it writes; every control in
 the modal but Cancel is locked while a write is out; a slow reload cannot undo a save. See
 "Slice 4 as built" and "Added by the review(s) of PR #154". check_costing.py 396 →
-**509**, clean.
+**553** (20 scenarios), clean.
 
 **m74 and m76 shipped** — merged to `main` as `ef9c172` (PR #153, squashed), reviewed once,
 with the review's findings fixed in the same PR: picking an item puts focus on the item's
@@ -938,6 +938,53 @@ injected, 8 caught; the 21 before them re-run, all caught — 29 in all).
   row that followed it, so the trail reads 53, 51 where the prices were 51 then 53. Both are
   real prices and neither is duplicated, but the order is wrong. Fixing it needs an order the
   server keeps. Recorded.
+
+### Added by the third review of PR #154
+
+Run in a fresh window, read-only, against `32be40e`. Five findings, **each proved** with a
+stub scenario that failed on that commit (17 failing checks); the scenarios are now in the
+suite as `r3_lookfirst`, `r3_editunconfirmed`, `r3_known409`, `r3_thirdtry`,
+`r3_relinkshow` and `r3_late2`, and pass. Fixed:
+
+- **A. The retry's look-first ran unlocked.** After an edit failed on the network, the next
+  Save looked the row up with nothing locked and no "Saving…"; Cancel during the look
+  dropped the save without a word, and a Retire during it could be re-landed as active by the
+  look's older copy of the row. The look is now **part of the save, under its lock**: Save
+  reads "Saving…", nothing else starts a write, and Cancel lets it finish like any save. Its
+  `A2` assertion changed from "Retire goes out" to "Retire is refused" — the race is gone.
+- **B. An edit whose answer AND look both failed was forgotten.** It is now remembered like
+  one whose look found the old values, so a load or the next save that shows it landed logs
+  its history row.
+- **C. A 409 held by a row this page already knew** (retired here, restored elsewhere — or a
+  restore that landed after its own look said "failed") answered "failed — try again"
+  forever. A known holder is the answer too: shown, not skipped.
+- **D. Only the first unconfirmed try was remembered.** Three tries with changed numbers could
+  write a second Custom row, or leave a guide item's middle price with no history row. Both
+  `unsure` and `unsureEdit` now keep **every** unconfirmed try (`noteTry`, `tryFor`,
+  `dropTry`). The "earlier try" message reads *"had already saved, with the numbers from an
+  earlier try"*.
+- **E. A re-link that landed on a reopened row** left the chosen line naming the old item. It
+  catches up, unless the item was re-picked in the modal.
+- **6 injected faults for these, each caught** (among them: the look-first moved back
+  before the lock, a known 409 holder skipped, only the first try kept, a later success
+  forgetting every try). All **35** fault injections across the slice's four rounds re-run
+  on the final code: each caught.
+- **The stub now answers an edit with the whole row**, as PostgREST's
+  `return=representation` does. It echoed only the fields sent, so no test could see a saved
+  row lose `active`. The suite stayed clean with it.
+
+**Recorded as limits, not fixed:**
+
+- **A write that lands after a later one wins at the table** (`r3_late2`): save $81, it times
+  out, save $82, then the $81 commits — the ledger ends on $81. No page code can stop an
+  older write committing last. The page does keep the $81 try remembered, so the load that
+  shows it logs it, and the trail holds the price that won. Whether a request can really
+  commit 15s+ after the phone gave up depends on the project's statement timeout, which is
+  not in the repo.
+- **An earlier Custom try that lands after a later one succeeded** is a second row, since a
+  Custom add has no unique index. Same class as the above.
+- Unmeasured: the table's real rounding and its one-active-row index — the schema is not in
+  the repo — and anything on a real phone on real wifi.
 
 ## Minors list
 
