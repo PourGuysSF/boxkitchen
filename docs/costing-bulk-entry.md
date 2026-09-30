@@ -1,10 +1,16 @@
 # Costing — make the ledger fillable
 
-Status: **m74 is fixed** on `costing-m74-pick-focus`, not yet reviewed — picking an item
-puts focus on the item's Change instead of losing it. **m75 is open**: the picker's rows
-cannot be reached from a keyboard at all. See "Added by the review of PR #152".
-Its review added m76 (the item's Change now reads out which item it holds) and a re-link
-test. check_costing.py 392 → **396**, clean. **Slice 4 is next** (Stephen, 2026-09-29).
+Status: **Slice 4 is built** on `costing-slice4-write-path` (PR #154), reviewed three times,
+with every review's proved findings fixed in the same PR — the write path cannot double-fire. A 15s limit on every request; a lost or unreadable answer is looked
+up in the table, never reported "failed"; a retry looks before it writes; every control in
+the modal but Cancel is locked while a write is out; a slow reload cannot undo a save. See
+"Slice 4 as built" and "Added by the review(s) of PR #154". check_costing.py 396 →
+**553** (20 scenarios), clean.
+
+**m74 and m76 shipped** — merged to `main` as `ef9c172` (PR #153, squashed), reviewed once,
+with the review's findings fixed in the same PR: picking an item puts focus on the item's
+Change, which reads out the item it holds. **m75 is open**: the picker's rows cannot be
+reached from a keyboard at all. See "Added by the review of PR #152".
 
 **m67, m68, m72 and m73 shipped** — merged to `main` as `3216edf` (PR #152, squashed),
 reviewed once, with the review's findings fixed in the same PR — the two "Change" buttons
@@ -779,6 +785,206 @@ Two notes. "A folded save files as setting up" also fails **7 slice-3 assertions
 `s3-5:`): those sequences close the modal between saves, so they now run through the folded bar
 and guard it too. And the original-margin injection fails with the title's top at 129.8px
 against the bar's bottom at 137.8 — the 8px, reproduced by its own guard.
+
+## Slice 4 as built
+
+"The write path cannot double-fire." Built on `costing-slice4-write-path`. Three decisions,
+Stephen, 2026-09-29: a **15-second** limit; **Cancel stays live** while a write is out; and
+**a retry for missing price-history rows is its own later step**, not this slice.
+
+### What it does
+
+- **`api()` gives up after 15s** (`API_TIMEOUT`). There was no limit, so a dead connection
+  hung Save forever. It calls back exactly once, with status `0` for no answer at all
+  (network error or timeout). Proved in real Chrome, not only the stub: with the limit cut
+  to 500ms for the probe, a request to a local server that accepts and never answers came
+  back `r=null status=0 after 502ms`.
+- **Three answers, not two.** `answerOf()` sorts every write's answer into `ok` (here is the
+  row), `no` (the server answered and wrote nothing — "failed, try again" is true), and
+  `unknown` (no answer, an unreadable one, or a 409). An `unknown` may have landed, so it is
+  never reported failed: the page **looks it up** (`lookUp()`) and reports what the table
+  holds. If the table cannot be asked either, it says *"Could not confirm X saved — check the
+  connection, then tap Save again"*.
+- **An add whose answer was unknown is remembered in `unsure`**, and the next save of the
+  same item (or Custom name) **looks before it writes** — the plan's "before any retry,
+  re-GET and reconcile". A lost add retried is one row, not two. If the earlier try is found
+  with different numbers than the retry, it is kept and logged under its own numbers, and
+  the page says so; nothing is overwritten silently.
+- **A 409 on an add** means the guide item is already held — perhaps by our own earlier
+  try, perhaps by another device. Looked up and shown either way; only a row with our
+  numbers is claimed as ours or given our history row.
+- **Locking (m19).** While a write is out, Save, Retire/Restore, Price history, Change and
+  the picker list are disabled (`modalBusy()`, `syncSaveBtn()`), and the functions behind
+  them refuse too, so no path gets round it. Locked controls read as `--faint`. Cancel stays
+  live; reopening a row whose write is still out shows it locked, Save reading "Saving…".
+  **This reverses slice 1's "the picker, Cancel and Change stay live"** — the B-new mispick
+  test now corrects a mispick by Cancel and ＋ Add, and asserts Change is locked.
+- **Keys widened.** A Custom add is keyed by its name (m17); a re-link also holds the guide
+  item it moves *to* (m30); Retire/Restore holds its row, so Save-then-Retire cannot send two
+  PATCHes (m19), and a Restore holds its guide item, so two retired rows cannot both be
+  restored at once (m52). Retire/Restore gets the same look-up-on-`unknown` handling.
+- **A slow reload cannot undo a save (m15, m44).** Every row this page sees land is stamped
+  (`landRow()`, `rowSeq`), and a ledger load keeps any row written after it was sent
+  (`keepNewer()`). `landRow()` also replaces by id, so a row a reload already holds is never
+  pushed twice.
+- **Price history, within the no-duplicates promise only.** A history POST whose answer is
+  lost is looked up by its values; found, it is not owed and nothing is shown. A debt owed on
+  an `unknown` answer is marked, and paying it looks first. There is still **no automatic
+  retry** of a missing row — that is the later step.
+
+### Proved
+
+- `check_costing.py` **466 assertions, 14 scenarios, clean** (396 → 466). A new `slice4`
+  scenario (66) plus 4 in existing ones. The stub gained per-write fates — `lost` (the table
+  takes it, the answer never comes), `hang` (nothing answers until the harness fires the
+  page's own timeout), `drop` (lost before the table), `reject` (400), `conflict` (409) — a
+  stateful price-history table for lookups, and `failHistory` now means the server said no
+  (500), which is what it always stood for.
+- **14 injected faults**, 13 caught: no limit, no timeout handler, a lost answer reported
+  failed, a 409 reported failed, a retry that does not look first, controls or the list left
+  live, Retire not refused, a re-link or a restore not holding its guide item, a stale reload
+  replacing the list, a lost history answer not looked up, and `landRow()` pushing twice. The
+  fourteenth found a distinction no test could reach (which provenance to log when a found
+  row has the same numbers as the retry); the branch was removed rather than tested.
+- `check_styling.py`: clean.
+
+### Not done, and not measured
+
+- **The 15s limit on a real phone, on real bad wifi.** Only a silent local server in
+  headless Chrome.
+- **A write that lands after its look-up said it had not.** A server slow past 15s can take
+  a write after the page has looked and said "failed". A guide item is then protected by the
+  partial unique index (the retry gets a 409 and finds it); a Custom add is protected only
+  because its retry looks first again. Narrowed, not closed.
+- **Toast length.** *"Could not confirm … check the connection, then tap Save again"* is
+  the longest toast yet. Not measured; by m16's 195px width at 390px, about four lines. It lasts 1.6s
+  (m27), which is short for something that asks you to act.
+- **Automatic history retry** (m24, m33, m49) — decided later. m35 (two confirms stacked on
+  one save) is untouched.
+
+### Added by the review of PR #154 (slice 4, pre-merge)
+
+The review found ten things; eight were real defects in the new code and are fixed here, each
+with a test that fails when its fault is put back (8 injected faults, 8 caught; the slice's own
+13 re-run and still caught).
+
+- **R1. An older identical history row was taken as proof.** The lookup matched any row with
+  the same values on the same day, so $11, $12, $11 with the last one lost took the first $11
+  as "landed" and the trail ended on $12 under a ledger of $11. Only the **newest** row can
+  prove a write landed now (`order=id.desc&limit=1`).
+- **R2. A Custom retry in other capitals wrote a second row.** The lookup used `name=eq.`,
+  which is case-sensitive in PostgREST, while the page's keys are lower-case. It now asks for
+  all active Custom rows and matches the name itself. The stub now filters `id`,
+  `order_item_id`, `name` and `active` as PostgREST does, so a lookup's *query* is tested,
+  not only the page's matching.
+- **R3. A 5xx was taken as "not written".** A gateway 502/504 can follow a commit. 5xx is now
+  `unknown` and looked up.
+- **R4. A reload hid the first try from its retry.** `stranger()` skipped rows already in
+  `items[]`, so a retry after `init()` wrote again. Now `theRow()`: ours is ours even if known.
+- **R5. A row reopened mid-write unlocked showing the old values.** Save would have written
+  the old price back, and a landed Retire left the button reading "Retire" — a tap then
+  restored the row with no confirm. `reshowRow()` re-shows it from the landed row when
+  nothing was typed, and always corrects the Retire/Restore label.
+- **R6. A history write that timed out and then landed was paid again.** A look that found no
+  trace recorded the debt as definitely unwritten. It is now `unsure`, carries `afterId` (the
+  newest id seen), and paying it asks only for rows written since.
+- **R7. A locked Restore still looked live.** `.link-btn:disabled` (0,2,0) lost to
+  kitchen.css's `.link-btn.retire.restore` (0,3,0) — CLAUDE.md's "rule losing the cascade".
+  Now `#editActions .link-btn:disabled` / `#pickChange:disabled`, and the locked edge is a
+  dashed `--edge` rather than `--hair`, which the palette reserves for separators.
+- **R8. Price history unlocked while its row was still being written.** `histOut` counts
+  history writes out per row; the button and `openHist()` wait for them.
+- **Also from the review:** the reconcile path is one `reconcile()` and one `after()` tail
+  rather than two copies. **Not acted on:** an idempotency key per write (a client-made id in
+  a unique column) would make any retry harmless and replace the matching altogether — it
+  needs a schema change, which Stephen would run, and this slice ruled one out. Recorded as
+  the durable fix if matching keeps producing edge cases. `toggleActive()` still carries its
+  own copy of the lock-and-look pattern.
+
+### Added by the second review of PR #154
+
+Ten findings; eight fixed here, each with a test that fails when its fault is put back (8
+injected, 8 caught; the 21 before them re-run, all caught — 29 in all).
+
+- **Q1. A reopened row with something typed still wrote the old price back.** R5 re-showed a
+  row only when nothing had been typed. `reshowRow()` now gives every *untouched* field the
+  landed value and keeps only what was typed.
+- **Q2. Two history writes for one item could land in either order,** so "the newest row is
+  ours" misjudged which had landed, and a debt could be paid twice. Each item's history
+  writes now go **one at a time** (`histRun()` / `histNext()`), so the newest row is ours or
+  ours did not land. Price history stays locked while any are queued.
+- **Q3. An edit that timed out, looked unwritten, then committed** left a price in the ledger
+  with no history row and the old price on screen. It is remembered in `unsureEdit`: the next
+  save of that row looks first and logs the late landing, and a load that shows it
+  (`settleLoaded()`) logs it too.
+- **Q4. A guide-item add that landed late, then a reload,** blocked the retry as "already
+  costed" and its first price never got a history row. `settleLoaded()` logs it; the add
+  stays in `unsure` marked `logged`, so a retry still finds it and does not log it twice.
+- **Q5. Loads now get 60s** (`LOAD_TIMEOUT`); writes and look-ups keep 15s. At 15s a large
+  load on slow-but-working wifi failed every time on a connection that used to load.
+- **Q6. Numbers match to within half a cent** (`numEq()`), so a column that rounds
+  (numeric(10,2)) does not make a landed write look missing — and a Custom add be written
+  again. The schema is not in the repo; this is a guard, not a measured fact.
+- **Q7. Opening a row whose write is still out** landed focus on its locked Change (m74's
+  loss again). Focus goes to Cancel, the one live control.
+- **Q8. "Could not confirm" and the other act-on-this toasts stay up 6s** (`LONG_TOAST`)
+  rather than 1.6s.
+- **Not acted on:** `toggleActive()` still carries its own lock-and-look copy (recorded
+  under the first review). **`api()` has a timeout on this page only.** CLAUDE.md says a
+  change to a shared pattern goes to every file; Flash, Orders, Counts and the rest still
+  hang forever on a dead connection. That is a site-wide change to pages used in service,
+  with their own callbacks to check, and belongs in its own PR.
+- **Known limitation:** a history write that times out and lands *late* can land after the
+  row that followed it, so the trail reads 53, 51 where the prices were 51 then 53. Both are
+  real prices and neither is duplicated, but the order is wrong. Fixing it needs an order the
+  server keeps. Recorded.
+
+### Added by the third review of PR #154
+
+Run in a fresh window, read-only, against `32be40e`. Five findings, **each proved** with a
+stub scenario that failed on that commit (17 failing checks); the scenarios are now in the
+suite as `r3_lookfirst`, `r3_editunconfirmed`, `r3_known409`, `r3_thirdtry`,
+`r3_relinkshow` and `r3_late2`, and pass. Fixed:
+
+- **A. The retry's look-first ran unlocked.** After an edit failed on the network, the next
+  Save looked the row up with nothing locked and no "Saving…"; Cancel during the look
+  dropped the save without a word, and a Retire during it could be re-landed as active by the
+  look's older copy of the row. The look is now **part of the save, under its lock**: Save
+  reads "Saving…", nothing else starts a write, and Cancel lets it finish like any save. Its
+  `A2` assertion changed from "Retire goes out" to "Retire is refused" — the race is gone.
+- **B. An edit whose answer AND look both failed was forgotten.** It is now remembered like
+  one whose look found the old values, so a load or the next save that shows it landed logs
+  its history row.
+- **C. A 409 held by a row this page already knew** (retired here, restored elsewhere — or a
+  restore that landed after its own look said "failed") answered "failed — try again"
+  forever. A known holder is the answer too: shown, not skipped.
+- **D. Only the first unconfirmed try was remembered.** Three tries with changed numbers could
+  write a second Custom row, or leave a guide item's middle price with no history row. Both
+  `unsure` and `unsureEdit` now keep **every** unconfirmed try (`noteTry`, `tryFor`,
+  `dropTry`). The "earlier try" message reads *"had already saved, with the numbers from an
+  earlier try"*.
+- **E. A re-link that landed on a reopened row** left the chosen line naming the old item. It
+  catches up, unless the item was re-picked in the modal.
+- **6 injected faults for these, each caught** (among them: the look-first moved back
+  before the lock, a known 409 holder skipped, only the first try kept, a later success
+  forgetting every try). All **35** fault injections across the slice's four rounds re-run
+  on the final code: each caught.
+- **The stub now answers an edit with the whole row**, as PostgREST's
+  `return=representation` does. It echoed only the fields sent, so no test could see a saved
+  row lose `active`. The suite stayed clean with it.
+
+**Recorded as limits, not fixed:**
+
+- **A write that lands after a later one wins at the table** (`r3_late2`): save $81, it times
+  out, save $82, then the $81 commits — the ledger ends on $81. No page code can stop an
+  older write committing last. The page does keep the $81 try remembered, so the load that
+  shows it logs it, and the trail holds the price that won. Whether a request can really
+  commit 15s+ after the phone gave up depends on the project's statement timeout, which is
+  not in the repo.
+- **An earlier Custom try that lands after a later one succeeded** is a second row, since a
+  Custom add has no unique index. Same class as the above.
+- Unmeasured: the table's real rounding and its one-active-row index — the schema is not in
+  the repo — and anything on a real phone on real wifi.
 
 ## Minors list
 

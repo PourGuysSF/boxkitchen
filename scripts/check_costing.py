@@ -79,7 +79,12 @@ SCENARIOS = ("ok", "slow", "fail", "empty", "ledgerslow", "ledgerfail",
              # slice 2 - mistakes can be undone
              "relink", "retired", "histfail", "magnitude",
              # slice 3 - every price has a provenance
-             "provenance")
+             "provenance",
+             # slice 4 - the write path cannot double-fire
+             "slice4",
+             # slice 4, third review of #154 - written to fail on 32be40e
+             "r3_lookfirst", "r3_editunconfirmed", "r3_known409", "r3_thirdtry",
+             "r3_relinkshow", "r3_late2")
 
 # ---------------------------------------------------------------- fixtures --
 # Two "Slab bacon" rows on purpose: the whole of slice 1 is that the id we
@@ -152,6 +157,21 @@ HARNESS = r"""
     deferHistory:false,
     /* m45: what the price-history GET answers with */
     histRows:[],
+    /* Slice 4: per-write fates for ingredient_costs POST/PATCH, consumed in
+       order. 'lost' - the table takes it, the answer never comes (onerror);
+       'hang' - the table takes it and nothing answers until timeoutAll();
+       'drop' - lost before the table (onerror, nothing written);
+       'reject' - the server says no (400); 'conflict' - 409, nothing written;
+       'gateway' - the table takes it and a gateway answers 502;
+       'late' - no answer, and the write lands only on landLate().
+       roundPrices: the table stores pack_price to the cent, as numeric(,2)
+       would.
+       nextHistWrite does the same for price-history POSTs ('lost', 'hang',
+       'drop'), plus 'late' - no answer, and the row lands only on landLate(). */
+    nextWrite:[],nextHistWrite:[],
+    /* Slice 4: the price-history table, stateful. A lookup (a GET naming an
+       effective_date) reads it; openHist's GET still reads histRows. */
+    histServer:[],
     /* what confirm() was actually asked - the magnitude check has to SAY
        what it is warning about, or it is just a speed bump */
     confirmMsgs:[]};
@@ -177,31 +197,91 @@ HARNESS = r"""
       /* M1: the ledger arrives in the SECOND request. A picker that calls
          itself loaded on the first one offers priced items as new. */
       if(SCEN==='ledgerfail')return {err:true};
-      var ledger={status:200,text:snap()};
+      /* slice 4: filtered like PostgREST, so a lookup's query is tested, not
+         just the page's own matching - name=eq. is case-sensitive there */
+      var rows=JSON.parse(snap()),qs=u.split('?')[1]||'';
+      qs.split('&').forEach(function(kv){
+        var m=kv.match(/^(id|order_item_id|name|active)=(eq|is)\.(.*)$/);if(!m)return;
+        var f=m[1],v=decodeURIComponent(m[3]);
+        rows=rows.filter(function(r){
+          if(m[2]==='is')return v==='null'?r[f]==null:String(r[f])===v;
+          if(f==='name')return r.name===v;
+          if(f==='active')return String(!!r.active)===v;
+          return String(r[f])===v;});
+      });
+      var ledger={status:200,text:JSON.stringify(rows)};
       if(SCEN==='ledgerslow')return {defer:true,res:ledger};
       return planned(window.__h.nextLedger,ledger,ledger);
     }
-    if(m==='GET'&&u.indexOf('/ingredient_price_history')>-1)
+    if(m==='GET'&&u.indexOf('/ingredient_price_history')>-1){
+      /* slice 4 lookups order by id; openHist orders by effective_date. They
+         are answered like PostgREST: filtered, ordered and limited. */
+      if(u.indexOf('order=id.')>-1){
+        var icq=Number((u.match(/ingredient_cost_id=eq\.(\d+)/)||[])[1]);
+        var gt=u.match(/id=gt\.(\d+)/),lim=u.match(/limit=(\d+)/);
+        var hs=window.__h.histServer.filter(function(h){return h.ingredient_cost_id===icq&&(!gt||h.id>Number(gt[1]));});
+        hs.sort(function(x,y){return u.indexOf('order=id.desc')>-1?y.id-x.id:x.id-y.id;});
+        if(lim)hs=hs.slice(0,Number(lim[1]));
+        return planned(window.__h.nextLedger,{status:200,text:JSON.stringify(hs)},null);
+      }
       return {status:200,text:JSON.stringify(window.__h.histRows)};
+    }
     if(m==='POST'&&u.indexOf('/ingredient_costs')>-1){
+      var fate=window.__h.nextWrite.shift();
+      if(fate==='drop')return {err:true};
+      if(fate==='reject')return {status:400,text:'{"message":"rejected"}'};
+      if(fate==='conflict')return {status:409,text:'{"code":"23505"}'};
       var row=JSON.parse(JSON.stringify(body));row.id=nextId++;
+      if(window.__h.roundPrices&&row.pack_price!=null)row.pack_price=Math.round(row.pack_price*100)/100;
       var added=window.__h.failWrites?{err:true}:{status:201,text:JSON.stringify([row])};
+      /* 'late': no answer, and the row lands only on landLate() - after the
+         page has timed out and looked */
+      if(fate==='late'){lateOps.push(function(){server.push(row);});return {hang:true};}
       if(!window.__h.failWrites)server.push(row);
+      if(fate==='lost')return {err:true};
+      if(fate==='hang')return {hang:true};
+      if(fate==='gateway')return {status:502,text:'<html>Bad gateway</html>'};
       /* B2: hold the write open so the harness can cancel, or open another
          item, before the callback runs. */
       if(SCEN==='inflight')return {defer:true,res:added};
       return added;
     }
     if(m==='PATCH'&&u.indexOf('/ingredient_costs')>-1){
+      var pf=window.__h.nextWrite.shift();
+      if(pf==='drop')return {err:true};
+      if(pf==='reject')return {status:400,text:'{"message":"rejected"}'};
+      if(pf==='conflict')return {status:409,text:'{"code":"23505"}'};
       var p=JSON.parse(JSON.stringify(body));p.id=Number((u.match(/id=eq\.(\d+)/)||[])[1]);
-      var patched=window.__h.failWrites?{err:true}:{status:200,text:JSON.stringify([p])};
-      if(!window.__h.failWrites)for(var k=0;k<server.length;k++)
-        if(server[k].id===p.id)for(var f in p)server[k][f]=p[f];
+      var applyP=function(){for(var k=0;k<server.length;k++)
+        if(server[k].id===p.id)for(var f in p)server[k][f]=p[f];};
+      if(pf==='late'){lateOps.push(applyP);return {hang:true};}
+      if(!window.__h.failWrites)applyP();
+      /* like PostgREST's return=representation: the WHOLE row as it now stands,
+         not just the fields sent (review 3 of #154: an echo of only the sent
+         fields meant no test could see a saved row lose its `active`) */
+      var whole=null;for(var w=0;w<server.length;w++)if(server[w].id===p.id)whole=server[w];
+      var patched=window.__h.failWrites?{err:true}:{status:200,text:JSON.stringify([whole||p])};
+      if(pf==='lost')return {err:true};
+      if(pf==='hang')return {hang:true};
       if(SCEN==='inflight')return {defer:true,res:patched};
       return patched;
     }
     if(m==='POST'&&u.indexOf('/ingredient_price_history')>-1){
-      var logged=window.__h.failHistory?{err:true}:{status:201,text:'[{"id":1}]'};
+      /* failHistory is the SERVER saying no (400): nothing written, and an
+         answer that says so. A 5xx is 'unknown' to the page (a gateway error
+         can follow a commit); a lost answer is nextHistWrite's 'lost'. */
+      if(window.__h.failHistory){var hr={status:400,text:'{"message":"failed"}'};
+        if(window.__h.deferHistory)return {defer:true,res:hr};return hr;}
+      var hfate=window.__h.nextHistWrite.shift();
+      if(hfate==='drop')return {err:true};
+      var hrow=JSON.parse(JSON.stringify(body));hrow.id=window.__h.histServer.length+1;
+      /* 'late': no answer, and the row lands only when landLate() says - after
+         the page has timed out and looked */
+      if(hfate==='late'){lateRows.push(hrow);return {hang:true};}
+      window.__h.histServer.push(hrow);
+      if(hfate==='lost')return {err:true};
+      if(hfate==='hang')return {hang:true};
+      var logged={status:201,text:JSON.stringify([hrow])};
       if(window.__h.deferHistory)return {defer:true,res:logged};
       return logged;
     }
@@ -215,8 +295,10 @@ HARNESS = r"""
   Fake.prototype.send=function(b){
     var self=this,parsed=null;
     if(b){try{parsed=JSON.parse(b);}catch(e){}}
-    reqs.push({m:this._m,u:this._u,body:parsed});
+    reqs.push({m:this._m,u:this._u,body:parsed,timeout:this.timeout});
     var r=route(this._m,this._u,parsed);
+    /* slice 4: no answer until the page's own timeout would fire */
+    if(r&&r.hang){hung.push(self);return;}
     var deliver=function(res){
       if(res.err){if(self.onerror)self.onerror();return;}
       self.status=res.status;self.responseText=res.text;
@@ -226,6 +308,19 @@ HARNESS = r"""
     setTimeout(function(){deliver(r);},0);
   };
   window.XMLHttpRequest=Fake;
+  var hung=[],lateRows=[],lateOps=[];
+  window.__h.landLate=function(){while(lateRows.length){var h=lateRows.shift();
+    h.id=window.__h.histServer.length+1;window.__h.histServer.push(h);}
+    while(lateOps.length)lateOps.shift()();};
+  /* slice 4: fire the page's timeout on everything left hanging */
+  window.__h.timeoutAll=function(){var d=hung.slice();hung.length=0;
+    for(var i=0;i<d.length;i++)if(d[i].ontimeout)d[i].ontimeout();};
+  window.__h.hungCount=function(){return hung.length;};
+  /* slice 4: the table as it stands, and a row written by someone else */
+  window.__h.serverRows=function(){return JSON.parse(snap());};
+  window.__h.serverPush=function(row){server.push(JSON.parse(JSON.stringify(row)));};
+  /* r3: change a row behind the page's back, as another device would */
+  window.__h.serverSet=function(id,f){for(var k=0;k<server.length;k++)if(server[k].id===id)for(var x in f)server[k][x]=f[x];};
   window.__h.releaseDeferred=function(){var d=deferred.slice();deferred.length=0;
     for(var i=0;i<d.length;i++)d[i]();};
   /* release only the oldest held response - the first save, not the second */
@@ -434,9 +529,12 @@ RUNNER = r"""
       ok('B-new: a cancelled add\'s toast names it', toast()==='✓ Slab bacon (Asia Intl) added', toast());
     });
 
-    /* B-new (d): the mispick corrected mid-save. Save Asia Intl, Change, pick
-       Birite, type its numbers. The Asia Intl response must not close Birite,
-       clear what was typed, or claim success for what is on screen. */
+    /* B-new (d): the mispick corrected mid-save. Save Birite Slab bacon, then
+       move to Distilled white vinegar and type its numbers. The first response
+       must not close the second item, clear what was typed, or claim success
+       for what is on screen. Slice 4 locks Change while a save is out (m19),
+       so the way on is Cancel and + Add - Cancel stays live (Stephen,
+       2026-09-29). This block used to go through Change. */
     step(function(){ H.reqs.length=0; closeEdit(); openAdd(); });
     step(function(){ rowFor('Birite','Slab bacon').click(); });
     step(function(){ set('fQty','12'); set('fUnit','lb'); set('fPrice','88.50'); });
@@ -445,9 +543,22 @@ RUNNER = r"""
       ok('B-new: Save says it is saving', $('saveBtn').textContent==='Saving…'&&$('saveBtn').disabled,
          $('saveBtn').textContent+' disabled='+$('saveBtn').disabled);
     });
-    step(function(){ $('pickChosen').querySelector('.pick-change').click(); });
     step(function(){
-      ok('B-new: after Change, Save is live again', $('saveBtn').disabled===false&&$('saveBtn').textContent==='Save',
+      ok('s4: Change is locked while the save is out', $('pickChange').disabled===true);
+      $('pickChange').click();
+    });
+    step(function(){
+      ok('s4: and pressing it anyway changes nothing', pickId===88&&visible($('pickChosen')),
+         'pickId='+pickId);
+      ok('s4: Cancel stays live mid-save', !$('editModal').querySelector('.modal-btn.cancel').disabled);
+      $('editModal').querySelector('.modal-btn.cancel').click();
+    });
+    step(function(){
+      ok('s4: and closes the modal', !shown());
+      openAdd();
+    });
+    step(function(){
+      ok('B-new: after Cancel and + Add, Save is live again', $('saveBtn').disabled===false&&$('saveBtn').textContent==='Save',
          $('saveBtn').textContent+' disabled='+$('saveBtn').disabled);
     });
     step(function(){ rowFor('Birite','Distilled white vinegar').click(); });
@@ -490,7 +601,10 @@ RUNNER = r"""
     step(function(){ $('saveBtn').click(); });
     step(function(){
       ok('B-new: no second write for an item still saving', patches().length===1, 'saw '+patches().length);
-      ok('B-new: and it says why', toast()==='⚠ Sea salt is still saving', toast());
+      /* slice 4: reopened while its write is out, the row's Save is locked and
+         says so - it used to take the tap and answer with a toast */
+      ok('s4: reopened mid-save, Save says it is saving', $('saveBtn').disabled&&$('saveBtn').textContent==='Saving…',
+         $('saveBtn').textContent+' disabled='+$('saveBtn').disabled);
       ok('B-new: the typed value stays', $('fPrice').value==='556', $('fPrice').value);
     });
     step(function(){ closeEdit(); openEdit(costRowFor(169).id); });
@@ -2011,6 +2125,752 @@ RUNNER = r"""
     });
   }
 
+  if(H.scen==='slice4'){
+    /* SLICE 4: THE WRITE PATH CANNOT DOUBLE-FIRE. A write whose answer is
+       lost may still have landed; "failed - try again" then made the retry a
+       duplicate. Each case below loses, holds or refuses an answer on purpose
+       and checks what the page says and what the table ends up holding. */
+    function wait(n){for(var i=0;i<(n||4);i++)step(function(){});}
+    function gets(t){return H.reqs.filter(function(r){return r.m==='GET'&&r.u.indexOf('/'+t)>-1;});}
+    function patches(){return H.reqs.filter(function(r){return r.m==='PATCH';});}
+    function rowsNamed(n){return H.serverRows().filter(function(r){return r.name===n;});}
+    function held(){return H.histServer;}
+    step(function(){});
+    step(function(){ ok('s4: fixtures loaded', items.length===4, 'items='+items.length); });
+
+    /* (1) another device already costs the guide item: the POST is refused
+       (409), the page looks, finds that row, and shows it - no "failed", and
+       no history row claiming our numbers */
+    step(function(){ H.serverPush({id:600,location:'Tempest',order_item_id:169,name:'Slab bacon',
+      invoice_alias:null,pack_qty:40,pack_unit:'lb',pack_price:99,active:true}); });
+    step(function(){ openAdd(); });
+    step(function(){ rowFor('Asia Intl','Slab bacon').click(); });
+    step(function(){ set('fQty','40'); set('fUnit','lb'); set('fPrice','120');
+      H.reqs.length=0; H.nextWrite.push('conflict'); $('saveBtn').click(); });
+    wait();
+    step(function(){
+      ok('s4: every request carries the 15s limit', H.reqs.length>0&&H.reqs.every(function(r){return r.timeout===15000;}),
+         H.reqs.map(function(r){return r.timeout;}).join(','));
+      ok('s4: a 409 is looked up, not reported failed', gets('ingredient_costs').length===1,
+         'lookups='+gets('ingredient_costs').length);
+      ok('s4: it says the item is already costed', toast()==='⚠ Slab bacon (Asia Intl) is already costed — it saved from another try or device', toast());
+      ok('s4: and shows the row that holds it', costRowFor(169)&&costRowFor(169).id===600, JSON.stringify(costRowFor(169)));
+      ok('s4: someone else\'s row gets no history row of ours', hist().length===0, 'hist='+hist().length);
+      ok('s4: and the lock is released', !$('saveBtn').disabled);
+    });
+
+    /* (2) the answer to an add is lost after the table took it: the page looks,
+       finds its own row, and says "added" - once, with one history row */
+    step(function(){ closeEdit(); openAdd(); });
+    step(function(){ rowFor('Birite','Slab bacon').click(); });
+    step(function(){ set('fQty','12'); set('fUnit','lb'); set('fPrice','88.50');
+      H.reqs.length=0; H.nextWrite.push('lost'); $('saveBtn').click(); });
+    wait();
+    step(function(){
+      ok('s4: a lost add is looked up', gets('ingredient_costs').length===1, 'lookups='+gets('ingredient_costs').length);
+      ok('s4: and reported added, not failed', toast()==='✓ Slab bacon (Birite) added', toast());
+      ok('s4: the modal closes as on any save', !shown());
+      ok('s4: one row in the table', H.serverRows().filter(function(r){return r.order_item_id===88;}).length===1);
+      ok('s4: and in the list', !!costRowFor(88));
+      ok('s4: one history row, for the numbers saved', hist().length===1&&Number(hist()[0].body.pack_price)===88.5,
+         JSON.stringify(hist().map(function(h){return h.body.pack_price;})));
+    });
+
+    /* (3) an edit that hangs: nothing answers, and every other control in the
+       modal is locked until the 15s limit fires (m19). Then the page looks,
+       finds the PATCH landed, and says so. */
+    step(function(){ openEdit(502); });
+    step(function(){ set('fPrice','11'); H.reqs.length=0; H.nextWrite.push('hang'); $('saveBtn').click(); });
+    wait(2);
+    step(function(){
+      ok('s4: a hung save holds', H.hungCount()===1&&shown(), 'hung='+H.hungCount());
+      ok('s4: Save says it is saving', $('saveBtn').disabled&&$('saveBtn').textContent==='Saving…');
+      ok('s4: Retire is locked', $('retireBtn').disabled===true);
+      ok('s4: Price history is locked', $('histBtn').disabled===true);
+      ok('s4: Change is locked', $('pickChange').disabled===true);
+      ok('s4: the list is locked', $('pickList').classList.contains('is-saving')&&$('pickList').getAttribute('aria-busy')==='true');
+      ok('css: a locked list takes no taps', getComputedStyle($('pickList')).pointerEvents==='none',
+         getComputedStyle($('pickList')).pointerEvents);
+      ok('css: a locked Retire reads as locked', getComputedStyle($('retireBtn')).color===getComputedStyle($('pickList').querySelector('.pick-n')||$('retireBtn')).color,
+         getComputedStyle($('retireBtn')).color);
+      /* m19: pressing them anyway starts nothing */
+      toggleActive(); openHist(); changePick();
+    });
+    step(function(){
+      ok('m19: Retire mid-save sends no second write', patches().length===1, 'patches='+patches().length);
+      ok('m19: Price history mid-save does not open', !$('histModal').classList.contains('show'));
+      ok('m19: Change mid-save does not reset the pick', visible($('pickChosen')));
+      H.timeoutAll();
+    });
+    wait();
+    step(function(){
+      ok('s4: after the limit the page looks', gets('ingredient_costs').length===1, 'lookups='+gets('ingredient_costs').length);
+      ok('s4: finds the edit landed, and says saved', toast()==='✓ Sea salt saved', toast());
+      ok('s4: the list has the new price', findItem(502)&&Number(findItem(502).pack_price)===11, JSON.stringify(findItem(502)));
+      ok('s4: the price change has its history row', hist().length===1&&Number(hist()[0].body.pack_price)===11,
+         'hist='+hist().length);
+    });
+    step(function(){ openEdit(502); });
+    step(function(){
+      ok('s4: and everything unlocks', !$('saveBtn').disabled&&!$('retireBtn').disabled&&!$('histBtn').disabled&&!$('pickChange').disabled&&
+         !$('pickList').classList.contains('is-saving'));
+    });
+
+    /* (4) the server says no (400): known not written, so "failed" is true and
+       nothing is looked up */
+    step(function(){ set('fPrice','12'); H.reqs.length=0; H.nextWrite.push('reject'); $('saveBtn').click(); });
+    wait();
+    step(function(){
+      ok('s4: a refusal is reported failed', toast()==='⚠ Sea salt failed — try again', toast());
+      ok('s4: without a lookup', gets('ingredient_costs').length===0, 'lookups='+gets('ingredient_costs').length);
+      ok('s4: the modal stays with the typed price', shown()&&$('fPrice').value==='12');
+    });
+
+    /* (5) a history write whose answer is lost after it landed: looked up, found,
+       no debt and no warning - so the next save cannot write it again */
+    step(function(){ H.reqs.length=0; H.nextHistWrite.push('lost'); $('saveBtn').click(); });
+    wait(6);
+    step(function(){
+      ok('s4: a lost history answer is looked up', gets('ingredient_price_history').length===1,
+         'lookups='+gets('ingredient_price_history').length);
+      ok('s4: and found, so the save reads clean', toast()==='✓ Sea salt saved', toast());
+      ok('s4: with no debt left', !historyOwed[502], JSON.stringify(historyOwed[502]));
+      ok('s4: one history row at 12', held().filter(function(h){return h.ingredient_cost_id===502&&Number(h.pack_price)===12;}).length===1);
+    });
+    step(function(){ openEdit(502); });
+    step(function(){ H.reqs.length=0; $('saveBtn').click(); });
+    wait();
+    step(function(){
+      ok('s4: an unchanged re-save writes no second copy', hist().length===0&&
+         held().filter(function(h){return h.ingredient_cost_id===502&&Number(h.pack_price)===12;}).length===1,
+         'new='+hist().length);
+    });
+
+    /* (6) m17: a Custom add lost, AND the lookup fails: the page cannot know,
+       says so, and the retry looks before it writes - one row, not two */
+    step(function(){ openAdd(); });
+    step(function(){ pickCustom(); });
+    step(function(){ set('fName','Smoked paprika'); set('fQty','1'); set('fUnit','lb'); set('fPrice','9');
+      H.reqs.length=0; H.nextWrite.push('lost'); H.nextLedger.push('err'); $('saveBtn').click(); });
+    wait();
+    step(function(){
+      ok('s4: an add that cannot be confirmed says so',
+         toast()==='⚠ Could not confirm Smoked paprika saved — check the connection, then tap Save again', toast());
+      ok('s4: and stays open to try again', shown()&&!$('saveBtn').disabled);
+      ok('s4: (the row did land)', rowsNamed('Smoked paprika').length===1);
+      H.reqs.length=0; $('saveBtn').click();
+    });
+    wait();
+    step(function(){
+      ok('m17: the retry looks first', gets('ingredient_costs').length===1, 'lookups='+gets('ingredient_costs').length);
+      ok('m17: and writes nothing more', posts().length===0, 'posts='+posts().length);
+      ok('m17: one Smoked paprika in the table', rowsNamed('Smoked paprika').length===1, 'rows='+rowsNamed('Smoked paprika').length);
+      ok('m17: it says added', toast()==='✓ Smoked paprika added', toast());
+      ok('m17: and its one history row is written now', hist().length===1&&Number(hist()[0].body.pack_price)===9, 'hist='+hist().length);
+    });
+
+    /* (7) the same, but the retry carries different numbers: the first try's
+       row is the one in the table, so it is kept, logged under ITS numbers,
+       and the page says so rather than writing a second row */
+    step(function(){ openAdd(); });
+    step(function(){ pickCustom(); });
+    step(function(){ set('fName','Chili flakes'); set('fQty','1'); set('fUnit','lb'); set('fPrice','7');
+      H.nextWrite.push('lost'); H.nextLedger.push('err'); $('saveBtn').click(); });
+    wait();
+    step(function(){ set('fPrice','8'); H.reqs.length=0; $('saveBtn').click(); });
+    wait();
+    step(function(){
+      ok('s4: a retry with new numbers writes no second row', posts().length===0&&rowsNamed('Chili flakes').length===1,
+         'posts='+posts().length+' rows='+rowsNamed('Chili flakes').length);
+      ok('s4: says the first try had saved', toast()==='⚠ Chili flakes had already saved, with the numbers from an earlier try. Open it to change them.', toast());
+      ok('s4: logs the price that is really in the table', hist().length===1&&Number(hist()[0].body.pack_price)===7,
+         JSON.stringify(hist().map(function(h){return h.body.pack_price;})));
+    });
+
+    /* (8) lost BEFORE the table: looked up, not there, "failed" - and the retry
+       still looks first, finds nothing, and writes exactly once */
+    step(function(){ openAdd(); });
+    step(function(){ pickCustom(); });
+    step(function(){ set('fName','Maldon salt'); set('fQty','1'); set('fUnit','lb'); set('fPrice','6');
+      H.reqs.length=0; H.nextWrite.push('drop'); $('saveBtn').click(); });
+    wait();
+    step(function(){
+      ok('s4: lost before the table: looked up', gets('ingredient_costs').length===1);
+      ok('s4: not there, so failed is true', toast()==='⚠ Maldon salt failed — try again', toast());
+      ok('s4: (nothing landed)', rowsNamed('Maldon salt').length===0);
+      H.reqs.length=0; $('saveBtn').click();
+    });
+    wait();
+    step(function(){
+      ok('s4: the retry looks, then writes once', gets('ingredient_costs').length===1&&posts().length===1,
+         'lookups='+gets('ingredient_costs').length+' posts='+posts().length);
+      ok('s4: one Maldon salt', rowsNamed('Maldon salt').length===1);
+      ok('s4: added', toast()==='✓ Maldon salt added', toast());
+    });
+
+    /* (9) m30: two rows re-linked to one guide item at once. The first holds
+       the target while it is out; the second is refused. */
+    step(function(){ openEdit(502); });
+    step(function(){ $('pickChange').click(); });
+    step(function(){ rowFor('Birite','Cornstarch').click(); });
+    step(function(){ H.reqs.length=0; H.nextWrite.push('hang'); $('saveBtn').click(); });
+    step(function(){ closeEdit(); openEdit(501); });
+    step(function(){ $('pickChange').click(); });
+    step(function(){ rowFor('Birite','Cornstarch').click(); });
+    step(function(){ set('fQty','1'); set('fUnit','lb'); set('fPrice','3'); $('saveBtn').click(); });
+    step(function(){
+      ok('m30: a second re-link to the same item is refused', patches().length===1, 'patches='+patches().length);
+      ok('m30: and says why', toast()==='⚠ Cornstarch (Birite) is still saving', toast());
+      closeEdit(); H.timeoutAll();
+    });
+    wait();
+    step(function(){ ok('m30: the first re-link lands', findItem(502)&&findItem(502).order_item_id===44, JSON.stringify(findItem(502))); });
+
+    /* (10) m52: two retired rows on one guide item, both restored at once. The
+       first holds the item; the second is refused rather than failing at the
+       unique index with "update failed". */
+    step(function(){ H.serverPush({id:506,location:'Tempest',order_item_id:77,name:'Butter',invoice_alias:null,
+      pack_qty:36,pack_unit:'lb',pack_price:110,active:false}); init(); });
+    wait();
+    step(function(){ ok('m52: (both retired Butter rows loaded)', !!findItem(503)&&!!findItem(506)); showRetired=true; render(); openEdit(503); });
+    step(function(){ H.reqs.length=0; H.nextWrite.push('hang'); toggleActive(); });
+    step(function(){ closeEdit(); openEdit(506); });
+    step(function(){ toggleActive(); });
+    step(function(){
+      ok('m52: a second restore on the same item is refused', patches().length===1, 'patches='+patches().length);
+      ok('m52: and says why', toast()==='⚠ Butter (Birite) is still saving', toast());
+      closeEdit(); H.timeoutAll();
+    });
+    wait();
+    step(function(){
+      ok('m52: the first restore lands, found by lookup', findItem(503)&&findItem(503).active===true, JSON.stringify(findItem(503)));
+      ok('m52: and says so', toast()==='✓ Butter (Birite) restored', toast());
+    });
+
+    /* (11) m15, m44: a reload sent before a save lands after it. The stale list
+       must not undo the save. */
+    step(function(){ H.nextLedger.push('defer'); init(); });
+    step(function(){ openEdit(501); });
+    step(function(){ set('fQty','1'); set('fUnit','gal'); set('fPrice','5'); $('saveBtn').click(); });
+    wait();
+    step(function(){
+      ok('m15: (the save landed first)', findItem(501)&&Number(findItem(501).pack_price)===5);
+      H.releaseDeferred();
+    });
+    wait();
+    step(function(){
+      ok('m15: a stale reload keeps the saved row', findItem(501)&&Number(findItem(501).pack_price)===5,
+         JSON.stringify(findItem(501)));
+      ok('m44: and its link', findItem(501)&&findItem(501).order_item_id===12, JSON.stringify(findItem(501)&&findItem(501).order_item_id));
+      ok('m15: the other rows still load', !!findItem(502)&&!!findItem(600));
+    });
+
+    /* ---- from the review of #154 ---- */
+    function histFor(id){return held().filter(function(h){return h.ingredient_cost_id===id;});}
+
+    /* R1: $11, $12, $11 on one day, the last one lost BEFORE the table. An
+       identical row further back is not proof - only the newest can be. */
+    step(function(){ closeEdit(); openEdit(502); });
+    step(function(){ set('fPrice','21'); $('saveBtn').click(); });
+    wait();
+    step(function(){ openEdit(502); });
+    step(function(){ set('fPrice','22'); $('saveBtn').click(); });
+    wait();
+    step(function(){ openEdit(502); });
+    step(function(){ set('fPrice','21'); H.nextHistWrite.push('drop'); $('saveBtn').click(); });
+    wait(6);
+    step(function(){
+      var h=histFor(502);
+      ok('R1: an older identical row is not taken as the lost one', !!historyOwed[502],
+         JSON.stringify(historyOwed[502]));
+      ok('R1: and it says it could not confirm', /^⚠ .+ saved, but its price history could not be confirmed$/.test(toast()), toast());
+      ok('R1: (the trail still ends on 22)', h.length&&Number(h[h.length-1].pack_price)===22);
+    });
+    step(function(){ openEdit(502); });
+    step(function(){ $('saveBtn').click(); });
+    wait(6);
+    step(function(){
+      var h=histFor(502);
+      ok('R1: the next save pays it, and the trail ends on 21', Number(h[h.length-1].pack_price)===21&&!historyOwed[502],
+         JSON.stringify(h.map(function(x){return x.pack_price;})));
+    });
+
+    /* R6: the history write times out, the look finds nothing, and THEN it
+       lands. Paying the debt looks at rows since, finds it, and writes none. */
+    step(function(){ openEdit(502); });
+    step(function(){ set('fPrice','23'); H.nextHistWrite.push('late'); $('saveBtn').click(); });
+    wait(2);
+    step(function(){ H.timeoutAll(); });
+    wait(4);
+    step(function(){
+      ok('R6: owed, and marked unsure', historyOwed[502]&&historyOwed[502][0].unsure===true, JSON.stringify(historyOwed[502]));
+      H.landLate();
+    });
+    step(function(){ openEdit(502); });
+    step(function(){ H.reqs.length=0; $('saveBtn').click(); });
+    wait(6);
+    step(function(){
+      ok('R6: paying looks first, finds the late row, writes none', hist().length===0&&histFor(502).filter(function(h){return Number(h.pack_price)===23;}).length===1,
+         'new='+hist().length+' at23='+histFor(502).filter(function(h){return Number(h.pack_price)===23;}).length);
+      ok('R6: and the debt clears', !historyOwed[502], JSON.stringify(historyOwed[502]));
+    });
+
+    /* R2: a Custom retry typed with other capitals still finds the first try */
+    step(function(){ closeEdit(); openAdd(); });
+    step(function(){ pickCustom(); });
+    step(function(){ set('fName','maldon flakes'); set('fQty','1'); set('fUnit','lb'); set('fPrice','4');
+      H.nextWrite.push('lost'); H.nextLedger.push('err'); $('saveBtn').click(); });
+    wait();
+    step(function(){ set('fName','Maldon Flakes'); H.reqs.length=0; $('saveBtn').click(); });
+    wait();
+    step(function(){
+      var n=H.serverRows().filter(function(r){return (r.name||'').toLowerCase()==='maldon flakes';}).length;
+      ok('R2: other capitals do not make a second row', posts().length===0&&n===1, 'posts='+posts().length+' rows='+n);
+    });
+
+    /* R3: a gateway 502 AFTER the table took the add is looked up, not failed */
+    step(function(){ openAdd(); });
+    step(function(){ pickCustom(); });
+    step(function(){ set('fName','Fennel seed'); set('fQty','1'); set('fUnit','lb'); set('fPrice','5');
+      H.reqs.length=0; H.nextWrite.push('gateway'); $('saveBtn').click(); });
+    wait();
+    step(function(){
+      ok('R3: a 502 is looked up', gets('ingredient_costs').length===1, 'lookups='+gets('ingredient_costs').length);
+      ok('R3: and the landed add says added', toast()==='✓ Fennel seed added', toast());
+      ok('R3: one row', rowsNamed('Fennel seed').length===1);
+    });
+
+    /* R4: a reload brings in the first try's row; the retry still finds it as
+       ours rather than skipping a row the page now knows */
+    step(function(){ openAdd(); });
+    step(function(){ pickCustom(); });
+    step(function(){ set('fName','Celery salt'); set('fQty','1'); set('fUnit','lb'); set('fPrice','6');
+      H.nextWrite.push('lost'); H.nextLedger.push('err'); $('saveBtn').click(); });
+    wait();
+    step(function(){ init(); });
+    wait();
+    step(function(){ ok('R4: (the reload brought the row in)', items.some(function(r){return r.name==='Celery salt';}));
+      H.reqs.length=0; $('saveBtn').click(); });
+    wait();
+    step(function(){
+      ok('R4: the retry writes no second row', posts().length===0&&rowsNamed('Celery salt').length===1,
+         'posts='+posts().length+' rows='+rowsNamed('Celery salt').length);
+      ok('R4: and says added', toast()==='✓ Celery salt added', toast());
+    });
+
+    /* R5: Cancel, reopen the same row mid-write: when the write lands the
+       reopened modal shows what landed, so Save cannot write the old price
+       back; and a Retire that lands flips the button to Restore */
+    step(function(){ closeEdit(); openEdit(502); });
+    step(function(){ set('fPrice','31'); H.nextWrite.push('hang'); $('saveBtn').click(); });
+    step(function(){ closeEdit(); openEdit(502); });
+    step(function(){
+      ok('R5: (reopened mid-write: locked, showing the old price)', $('saveBtn').disabled&&$('fPrice').value!=='31', $('fPrice').value);
+      H.timeoutAll();
+    });
+    wait();
+    step(function(){
+      ok('R5: when it lands the reopened modal shows the new price', shown()&&$('fPrice').value==='31', $('fPrice').value);
+      ok('R5: and unlocks', !$('saveBtn').disabled);
+    });
+    step(function(){ H.nextWrite.push('hang'); H.confirmReturn=true; toggleActive(); });
+    step(function(){ closeEdit(); openEdit(502); });
+    step(function(){
+      ok('R5: (reopened mid-retire, it still reads Retire)', $('retireBtn').textContent==='Retire');
+      /* R7: a locked Retire/Restore reads as locked, whatever kitchen.css
+         says about .link-btn.retire / .restore */
+      var cs=getComputedStyle($('retireBtn'));
+      ok('R7: a locked Retire reads as locked (dashed edge)', cs.borderTopStyle==='dashed', cs.borderTopStyle);
+      H.timeoutAll();
+    });
+    wait();
+    step(function(){
+      ok('R5: when the retire lands the button reads Restore', $('retireBtn').textContent==='Restore', $('retireBtn').textContent);
+      ok('R5: (and the row is retired)', findItem(502)&&findItem(502).active===false);
+      H.nextWrite.push('hang'); toggleActive();
+    });
+    step(function(){
+      var cs=getComputedStyle($('retireBtn'));
+      ok('R7: a locked RESTORE reads as locked too - the rule wins the cascade',
+         $('retireBtn').disabled&&cs.borderTopStyle==='dashed'&&cs.color===getComputedStyle(document.documentElement).getPropertyValue('--faint').trim()
+           ||($('retireBtn').disabled&&cs.borderTopStyle==='dashed'&&cs.color==='rgb(169, 167, 160)'),
+         cs.borderTopStyle+' '+cs.color);
+      H.timeoutAll();
+    });
+    wait();
+
+    /* R8: Price history stays shut until the history row a save owes is in */
+    step(function(){ closeEdit(); openEdit(502); });
+    step(function(){ set('fPrice','32'); H.nextHistWrite.push('hang'); $('saveBtn').click(); });
+    wait(2);
+    step(function(){ openEdit(502); });
+    step(function(){
+      ok('R8: Price history is locked while the history row is out', $('histBtn').disabled===true);
+      openHist();
+    });
+    step(function(){
+      ok('R8: and does not open', !$('histModal').classList.contains('show'));
+      H.timeoutAll();
+    });
+    wait(4);
+    step(function(){ ok('R8: it unlocks when the history row settles', $('histBtn').disabled===false); });
+
+    /* ---- from the second review of #154 ---- */
+    /* Q1: reopened mid-write and something typed: the untouched fields still
+       take what landed, so Save cannot write the old price back */
+    step(function(){ closeEdit(); openEdit(502); });
+    step(function(){ set('fPrice','41'); H.nextWrite.push('hang'); $('saveBtn').click(); });
+    step(function(){ closeEdit(); openEdit(502); });
+    step(function(){ set('fAlias','SEA SALT 2#'); H.timeoutAll(); });
+    wait();
+    step(function(){
+      ok('Q1: a typed field is kept', $('fAlias').value==='SEA SALT 2#', $('fAlias').value);
+      ok('Q1: an untouched field takes what landed', $('fPrice').value==='41', $('fPrice').value);
+      H.reqs.length=0; $('saveBtn').click();
+    });
+    wait();
+    step(function(){
+      var pt=patches();
+      ok('Q1: so Save does not write the old price back', pt.length===1&&Number(pt[0].body.pack_price)===41,
+         pt.map(function(x){return x.body.pack_price;}).join(','));
+    });
+
+    /* Q2: one item's history rows go out one at a time. A debt and a new price
+       together: the debt's write times out and lands late, after the new one -
+       and paying it later finds it rather than writing it twice. */
+    step(function(){ openEdit(502); });
+    step(function(){ set('fPrice','51'); H.failHistory=true; $('saveBtn').click(); });
+    wait();
+    step(function(){ H.failHistory=false; ok('Q2: (51 is owed)', owedIndex(502,51,num(findItem(502).pack_qty),findItem(502).pack_unit,
+      {source:'manual',ref:null,date:today()})>-1, JSON.stringify(historyOwed[502])); openEdit(502); });
+    step(function(){ set('fPrice','53'); H.reqs.length=0; H.nextHistWrite.push('late'); $('saveBtn').click(); });
+    wait(2);
+    step(function(){
+      ok('Q2: the second history write waits for the first', hist().length===1, 'sent='+hist().length);
+      H.timeoutAll();
+    });
+    wait(6);
+    step(function(){
+      ok('Q2: then the new price goes', hist().length===2, 'sent='+hist().length);
+      H.landLate();
+    });
+    step(function(){ openEdit(502); });
+    step(function(){ H.reqs.length=0; $('saveBtn').click(); });
+    wait(6);
+    step(function(){
+      ok('Q2: paying finds the late 51 and writes none', histFor(502).filter(function(h){return Number(h.pack_price)===51;}).length===1,
+         JSON.stringify(histFor(502).map(function(h){return h.pack_price;})));
+      ok('Q2: and the debt clears', !historyOwed[502], JSON.stringify(historyOwed[502]));
+    });
+
+    /* Q3: an edit that times out, looks unwritten, then commits. A reload
+       shows it - and it gets its history row then, not never. */
+    step(function(){ openEdit(502); });
+    step(function(){ set('fPrice','61'); H.nextWrite.push('late'); $('saveBtn').click(); });
+    wait(2);
+    step(function(){ H.timeoutAll(); });
+    wait();
+    step(function(){
+      ok('Q3: (looked, not there: failed)', /failed — try again$/.test(toast()), toast());
+      H.landLate(); closeEdit(); init();
+    });
+    wait(6);
+    step(function(){
+      ok('Q3: the reload shows the late price', Number(findItem(502).pack_price)===61, JSON.stringify(findItem(502)));
+      ok('Q3: and it has its history row', histFor(502).filter(function(h){return Number(h.pack_price)===61;}).length===1);
+    });
+    /* ...and the other way to meet it: the next save looks first */
+    step(function(){ openEdit(502); });
+    step(function(){ set('fPrice','62'); H.nextWrite.push('late'); $('saveBtn').click(); });
+    wait(2);
+    step(function(){ H.timeoutAll(); });
+    wait();
+    step(function(){ H.landLate(); openEdit(502); });
+    step(function(){ set('fPrice','63'); $('saveBtn').click(); });
+    wait(8);
+    step(function(){
+      var h=histFor(502).map(function(x){return Number(x.pack_price);});
+      ok('Q3: a save after a late landing logs the late price first', h.indexOf(62)>-1&&h.indexOf(63)>h.indexOf(62), JSON.stringify(h));
+    });
+
+    /* Q4: a guide-item add that lands late, then a reload: its first price
+       gets its history row, and the retry is refused as already costed */
+    step(function(){ openEdit(600); });
+    step(function(){ H.confirmReturn=true; toggleActive(); });
+    wait();
+    step(function(){ ok('Q4: (169 is free again)', !costRowFor(169)); openAdd(); });
+    step(function(){ rowFor('Asia Intl','Slab bacon').click(); });
+    step(function(){ set('fQty','40'); set('fUnit','lb'); set('fPrice','140'); H.nextWrite.push('late'); $('saveBtn').click(); });
+    wait(2);
+    step(function(){ H.timeoutAll(); });
+    wait();
+    step(function(){ H.landLate(); init(); });
+    wait(6);
+    step(function(){
+      var r=costRowFor(169);
+      ok('Q4: the reload shows the late add', r&&Number(r.pack_price)===140, JSON.stringify(r));
+      ok('Q4: and its first price has its history row', r&&histFor(r.id).filter(function(h){return Number(h.pack_price)===140;}).length===1);
+    });
+
+    /* Q5: loads get 60s; writes and look-ups keep 15s */
+    step(function(){ H.reqs.length=0; init(); });
+    wait();
+    step(function(){
+      var loads=H.reqs.filter(function(r){return r.m==='GET';});
+      ok('Q5: a load waits 60s', loads.length>=2&&loads.every(function(r){return r.timeout===60000;}),
+         loads.map(function(r){return r.timeout;}).join(','));
+    });
+
+    /* Q6: a table that rounds to the cent: a landed Custom add with 12.345 is
+       still recognised, not written twice */
+    step(function(){ closeEdit(); H.roundPrices=true; openAdd(); });
+    step(function(){ pickCustom(); });
+    step(function(){ set('fName','Saffron'); set('fQty','1'); set('fUnit','g'); set('fPrice','12.345');
+      H.reqs.length=0; H.nextWrite.push('lost'); $('saveBtn').click(); });
+    wait();
+    step(function(){
+      ok('Q6: a rounded landing is recognised', toast()==='✓ Saffron added'&&rowsNamed('Saffron').length===1,
+         toast()+' rows='+rowsNamed('Saffron').length);
+      H.roundPrices=false;
+    });
+
+    /* Q7: opening a row whose write is still out, from the picker: focus goes
+       to Cancel, the one live control, not to the locked Change */
+    step(function(){ openEdit(501); });
+    step(function(){ set('fPrice','7'); H.nextWrite.push('hang'); $('saveBtn').click(); });
+    step(function(){ closeEdit(); openAdd(); });
+    step(function(){ pickExisting(501,12); });
+    step(function(){
+      ok('Q7: a locked row opens with focus on Cancel', document.activeElement===$('editModal').querySelector('.modal-btn.cancel'),
+         document.activeElement&&(document.activeElement.id||document.activeElement.className));
+      H.timeoutAll();
+    });
+    wait();
+  }
+
+  /* ==== third review of #154: scenarios written to FAIL if the finding is real ==== */
+  if(H.scen.indexOf('r3_')===0){
+    function wait(n){for(var i=0;i<(n||4);i++)step(function(){});}
+    function gets(t){return H.reqs.filter(function(r){return r.m==='GET'&&r.u.indexOf('/'+t)>-1;});}
+    function patches(){return H.reqs.filter(function(r){return r.m==='PATCH';});}
+    function rowsNamed(n){return H.serverRows().filter(function(r){return r.name===n;});}
+    function srv(id){return H.serverRows().filter(function(r){return r.id===id;})[0];}
+    function histFor(id){return H.histServer.filter(function(h){return h.ingredient_cost_id===id;});}
+    function prices(id){return JSON.stringify(histFor(id).map(function(h){return Number(h.pack_price);}));}
+    step(function(){});
+    step(function(){ ok('r3: fixtures loaded', items.length===4, 'items='+items.length); });
+
+    /* A. After a network-failed edit, the retry's look-first step is not a
+       write in flight: nothing is locked, Save never reads Saving..., and
+       Cancel during it drops the save without a word. */
+    if(H.scen==='r3_lookfirst'){
+      step(function(){ openEdit(502); });
+      step(function(){ set('fPrice','15'); H.nextWrite.push('drop'); $('saveBtn').click(); });
+      wait();
+      step(function(){
+        ok('A: (a plain network failure: failed - try again)', toast()==='⚠ Sea salt failed — try again', toast());
+        ok('A: (and it is now remembered in unsureEdit)', !!unsureEdit[502], JSON.stringify(unsureEdit));
+        H.reqs.length=0; H.nextLedger.push('defer'); $('saveBtn').click();
+      });
+      step(function(){
+        ok('A: (the retry is looking first)', gets('ingredient_costs').length===1, 'gets='+gets('ingredient_costs').length);
+        ok('A: while it looks, Save reads Saving... and is locked', $('saveBtn').disabled&&$('saveBtn').textContent==='Saving…',
+           'disabled='+$('saveBtn').disabled+' text='+$('saveBtn').textContent);
+        ok('A: while it looks, Retire is locked', $('retireBtn').disabled, 'retire live');
+        ok('A: while it looks, Price history is locked', $('histBtn').disabled, 'hist live');
+        ok('A: while it looks, Change is locked', $('pickChange').disabled, 'change live');
+        closeEdit();   // Cancel - which on any other save lets the write finish and report
+        H.releaseDeferred();
+      });
+      wait(6);
+      step(function(){
+        ok('A: after Cancel the save still goes out (as every other save does)', patches().length===1,
+           'patches='+patches().length+' table price='+srv(502).pack_price+' toast='+toast());
+      });
+      /* A2. Retire during the look: the look's snapshot re-lands the row as ACTIVE */
+      step(function(){ openEdit(502); });
+      step(function(){ set('fPrice','17'); H.nextWrite.push('late'); $('saveBtn').click(); });
+      wait(2);
+      step(function(){ H.timeoutAll(); });
+      wait();
+      step(function(){
+        ok('A2: (looked, not there: failed)', /failed — try again$/.test(toast()), toast());
+        H.landLate();                        // the 17 commits after all
+        H.reqs.length=0; H.nextLedger.push('defer'); $('saveBtn').click();   // retry: look first (held)
+      });
+      /* fix round: the look is part of the save now, so Retire is locked out
+         of the race entirely (this used to assert the Retire went out) */
+      step(function(){ H.confirmReturn=true; $('retireBtn').click(); toggleActive(); });
+      wait();
+      step(function(){
+        ok('A2: Retire during the look is refused', patches().length===0&&srv(502).active===true,
+           'patches='+patches().length+' table active='+srv(502).active);
+        H.releaseDeferred();
+      });
+      wait(6);
+      step(function(){
+        ok('A2: the look finds the late 17 and the save completes on it', toast()==='✓ Sea salt saved'&&
+           Number(findItem(502).pack_price)===17&&findItem(502).active!==false, toast()+' '+JSON.stringify(findItem(502)));
+        ok('A2: with one history row for 17', histFor(502).filter(function(h){return Number(h.pack_price)===17;}).length===1, prices(502));
+      });
+    }
+
+    /* B. An edit whose answer is lost AND whose look fails is not remembered:
+       a reload that shows it landed logs nothing, and a re-save with other
+       numbers leaves the landed price out of the trail. (An add in the same
+       state IS remembered - R4 / Q4.) */
+    if(H.scen==='r3_editunconfirmed'){
+      step(function(){ openEdit(502); });
+      step(function(){ set('fPrice','15'); H.nextWrite.push('lost'); H.nextLedger.push('err'); $('saveBtn').click(); });
+      wait();
+      step(function(){
+        ok('B: (could not confirm)', /^⚠ Could not confirm Sea salt saved/.test(toast()), toast());
+        ok('B: (the PATCH did land)', Number(srv(502).pack_price)===15, JSON.stringify(srv(502)));
+        ok('B: (the list still shows the old price)', Number(findItem(502).pack_price)===10);
+        ok('B: the unconfirmed edit is remembered, as an unconfirmed add is', !!unsureEdit[502], JSON.stringify(unsureEdit));
+        closeEdit(); init();
+      });
+      wait(6);
+      step(function(){
+        ok('B: (the reload shows the landed 15)', Number(findItem(502).pack_price)===15);
+        ok('B: and the landed 15 gets its history row', histFor(502).filter(function(h){return Number(h.pack_price)===15;}).length===1, prices(502));
+      });
+      /* B2. no reload: re-save with other numbers */
+      step(function(){ openEdit(501); });
+      step(function(){ set('fQty','1'); set('fUnit','gal'); set('fPrice','5'); H.nextWrite.push('lost'); H.nextLedger.push('err'); $('saveBtn').click(); });
+      wait();
+      step(function(){
+        ok('B2: (could not confirm; 5 is in the table)', /^⚠ Could not confirm/.test(toast())&&Number(srv(501).pack_price)===5, toast());
+        set('fPrice','6'); $('saveBtn').click();
+      });
+      wait(6);
+      step(function(){
+        ok('B2: (6 saved)', Number(srv(501).pack_price)===6, JSON.stringify(srv(501)));
+        ok('B2: the 5 that was in the ledger is in the trail too (as Q3 does for a late landing)',
+           histFor(501).filter(function(h){return Number(h.pack_price)===5;}).length===1, prices(501));
+      });
+    }
+
+    /* C. A 409 whose holder is a row this page already knows (here: retired
+       here, restored on another device) is never found - theRow() skips rows
+       in items[] - so it says "failed - try again", and every retry 409s. */
+    if(H.scen==='r3_known409'){
+      step(function(){ H.serverSet(503,{active:true}); openAdd(); });
+      step(function(){ rowFor('Birite','Butter').click(); });
+      step(function(){ set('fQty','36'); set('fUnit','lb'); set('fPrice','115');
+        H.reqs.length=0; H.nextWrite.push('conflict'); $('saveBtn').click(); });
+      wait();
+      step(function(){
+        ok('C: (409 looked up)', gets('ingredient_costs').length===1);
+        ok('C: a 409 is not reported "failed - try again"', !/failed — try again$/.test(toast()), toast());
+        ok('C: it shows the row that holds the item', !!costRowFor(77)&&costRowFor(77).id===503, JSON.stringify(costRowFor(77)));
+        H.nextWrite.push('conflict'); $('saveBtn').click();
+      });
+      wait();
+      step(function(){ ok('C: (and the retry says it again)', true, toast()); });
+      /* C2. one device: a Restore times out, looks, reads "failed", then lands */
+      step(function(){ closeEdit(); showRetired=true; render(); openEdit(504); });
+      step(function(){ H.nextWrite.push('late'); toggleActive(); });
+      wait(2);
+      step(function(){ H.timeoutAll(); });
+      wait();
+      step(function(){
+        ok('C2: (restore: looked, not there)', /update failed, try again$/.test(toast()), toast());
+        H.landLate(); closeEdit(); openAdd();
+      });
+      step(function(){ rowFor('Birite','Cornstarch').click(); });
+      step(function(){ set('fQty','1'); set('fUnit','lb'); set('fPrice','3'); H.nextWrite.push('conflict'); $('saveBtn').click(); });
+      wait();
+      step(function(){
+        ok('C2: the late-restored row is found, not "failed - try again"', !/failed — try again$/.test(toast()), toast());
+      });
+    }
+
+    /* D. `unsure` remembers only the FIRST try. Try 1 never lands; try 2
+       (new numbers) lands but cannot be confirmed; try 3 (new numbers again)
+       matches neither and writes again. */
+    if(H.scen==='r3_thirdtry'){
+      step(function(){ openAdd(); });
+      step(function(){ pickCustom(); });
+      step(function(){ set('fName','Star anise'); set('fQty','1'); set('fUnit','lb'); set('fPrice','5');
+        H.nextWrite.push('drop'); $('saveBtn').click(); });
+      wait();
+      step(function(){
+        ok('D: (try 1 never landed: failed)', toast()==='⚠ Star anise failed — try again', toast());
+        set('fPrice','6'); H.nextWrite.push('lost'); H.nextLedger.push('pass'); H.nextLedger.push('err'); $('saveBtn').click();
+      });
+      wait();
+      step(function(){
+        ok('D: (try 2 landed, could not confirm)', /^⚠ Could not confirm Star anise saved/.test(toast())&&rowsNamed('Star anise').length===1,
+           toast()+' rows='+rowsNamed('Star anise').length);
+        set('fPrice','6.50'); H.reqs.length=0; $('saveBtn').click();
+      });
+      wait();
+      step(function(){
+        ok('D: try 3 writes no second Star anise', rowsNamed('Star anise').length===1,
+           'rows='+rowsNamed('Star anise').length+' toast='+toast());
+      });
+      /* D2. the same on a guide item: the unique index stops a second row,
+         but try 2's price is in the ledger with no history row */
+      step(function(){ closeEdit(); openAdd(); });
+      step(function(){ rowFor('Asia Intl','Slab bacon').click(); });
+      step(function(){ set('fQty','40'); set('fUnit','lb'); set('fPrice','100'); H.nextWrite.push('drop'); $('saveBtn').click(); });
+      wait();
+      step(function(){ set('fPrice','110'); H.nextWrite.push('lost'); H.nextLedger.push('pass'); H.nextLedger.push('err'); $('saveBtn').click(); });
+      wait();
+      step(function(){ set('fPrice','111'); H.nextWrite.push('conflict'); $('saveBtn').click(); });
+      wait(6);
+      step(function(){
+        var r=H.serverRows().filter(function(x){return x.order_item_id===169;})[0];
+        ok('D2: (try 2 is the row: 110)', r&&Number(r.pack_price)===110, JSON.stringify(r));
+        ok('D2: and 110 has its history row', r&&histFor(r.id).filter(function(h){return Number(h.pack_price)===110;}).length===1,
+           (r?prices(r.id):'no row')+' toast='+toast());
+      });
+    }
+
+    /* E. Reopened mid re-link, something typed: when the re-link lands the
+       fields move to the new item but the chosen line still names the old one */
+    if(H.scen==='r3_relinkshow'){
+      step(function(){ openEdit(501); });
+      step(function(){ $('pickChange').click(); });
+      step(function(){ rowFor('Birite','Slab bacon').click(); });
+      step(function(){ set('fQty','1'); set('fUnit','gal'); set('fPrice','5'); H.nextWrite.push('hang'); $('saveBtn').click(); });
+      step(function(){ closeEdit(); openEdit(501); });
+      step(function(){
+        ok('E: (reopened locked, on the old link)', $('saveBtn').disabled&&$('pickChosenN').textContent==='Distilled white vinegar', $('pickChosenN').textContent);
+        set('fAlias','WHITE VIN 4/1'); H.timeoutAll();
+      });
+      wait();
+      step(function(){
+        ok('E: (the re-link landed)', findItem(501).order_item_id===88, JSON.stringify(findItem(501)));
+        ok('E: the reopened modal names the item it is now linked to', $('pickChosenN').textContent==='Slab bacon',
+           'chosen line="'+$('pickChosenV').textContent+' / '+$('pickChosenN').textContent+'" name field="'+$('fName').value+'"');
+      });
+    }
+
+    /* F. (real-network class) An edit that lands late AFTER the retry's
+       look-first said it had not: unsureEdit is dropped, the retry writes,
+       then the late one overwrites it. */
+    if(H.scen==='r3_late2'){
+      step(function(){ openEdit(502); });
+      step(function(){ set('fPrice','81'); H.nextWrite.push('late'); $('saveBtn').click(); });
+      wait(2);
+      step(function(){ H.timeoutAll(); });
+      wait();
+      step(function(){ ok('F: (failed)', /failed — try again$/.test(toast()), toast()); set('fPrice','82'); $('saveBtn').click(); });
+      wait(6);
+      step(function(){ ok('F: (82 saved)', toast()==='✓ Sea salt saved', toast()); H.landLate(); init(); });
+      wait(6);
+      step(function(){
+        /* fix round: a write landing after a later one wins at the table, which
+           no page code can prevent - recorded as a limit. What the page owes is
+           that the price that won is in the trail. */
+        ok('F: if the late one wins, it is in the trail', Number(srv(502).pack_price)===82||
+           histFor(502).filter(function(h){return Number(h.pack_price)===81;}).length===1, prices(502));
+      });
+    }
+  }
+
   if(document.readyState==='complete')setTimeout(run,0);
   else window.addEventListener('load',function(){setTimeout(run,0);});
 })();
@@ -2106,7 +2966,8 @@ def main():
         # the page links assets/kitchen.css relatively; without this copy
         # every scenario runs unstyled and no CSS fault can be caught
         shutil.copytree(os.path.join(ROOT, "assets"), os.path.join(td, "assets"))
-        for scen in SCENARIOS:
+        # ONLY=a,b runs just those scenarios - for a fix round, not for CI
+        for scen in (os.environ['ONLY'].split(',') if os.environ.get('ONLY') else SCENARIOS):
             res, err = run_scenario(chrome, path, scen)
             if res is None:
                 fails.append("%s: harness never reported\n%s" % (scen, err))
