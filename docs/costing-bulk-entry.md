@@ -1,11 +1,11 @@
 # Costing — make the ledger fillable
 
-Status: **Slice 4 is built** on `costing-slice4-write-path` (PR #154), reviewed once, with
-the review's eight real findings fixed in the same PR — the write path cannot double-fire. A 15s limit on every request; a lost or unreadable answer is looked
+Status: **Slice 4 is built** on `costing-slice4-write-path` (PR #154), reviewed twice, with
+both reviews' real findings fixed in the same PR — the write path cannot double-fire. A 15s limit on every request; a lost or unreadable answer is looked
 up in the table, never reported "failed"; a retry looks before it writes; every control in
 the modal but Cancel is locked while a write is out; a slow reload cannot undo a save. See
-"Slice 4 as built" and "Added by the review of PR #154". check_costing.py 396 → **491**,
-clean.
+"Slice 4 as built" and "Added by the review(s) of PR #154". check_costing.py 396 →
+**509**, clean.
 
 **m74 and m76 shipped** — merged to `main` as `ef9c172` (PR #153, squashed), reviewed once,
 with the review's findings fixed in the same PR: picking an item puts focus on the item's
@@ -900,6 +900,44 @@ with a test that fails when its fault is put back (8 injected faults, 8 caught; 
   needs a schema change, which Stephen would run, and this slice ruled one out. Recorded as
   the durable fix if matching keeps producing edge cases. `toggleActive()` still carries its
   own copy of the lock-and-look pattern.
+
+### Added by the second review of PR #154
+
+Ten findings; eight fixed here, each with a test that fails when its fault is put back (8
+injected, 8 caught; the 21 before them re-run, all caught — 29 in all).
+
+- **Q1. A reopened row with something typed still wrote the old price back.** R5 re-showed a
+  row only when nothing had been typed. `reshowRow()` now gives every *untouched* field the
+  landed value and keeps only what was typed.
+- **Q2. Two history writes for one item could land in either order,** so "the newest row is
+  ours" misjudged which had landed, and a debt could be paid twice. Each item's history
+  writes now go **one at a time** (`histRun()` / `histNext()`), so the newest row is ours or
+  ours did not land. Price history stays locked while any are queued.
+- **Q3. An edit that timed out, looked unwritten, then committed** left a price in the ledger
+  with no history row and the old price on screen. It is remembered in `unsureEdit`: the next
+  save of that row looks first and logs the late landing, and a load that shows it
+  (`settleLoaded()`) logs it too.
+- **Q4. A guide-item add that landed late, then a reload,** blocked the retry as "already
+  costed" and its first price never got a history row. `settleLoaded()` logs it; the add
+  stays in `unsure` marked `logged`, so a retry still finds it and does not log it twice.
+- **Q5. Loads now get 60s** (`LOAD_TIMEOUT`); writes and look-ups keep 15s. At 15s a large
+  load on slow-but-working wifi failed every time on a connection that used to load.
+- **Q6. Numbers match to within half a cent** (`numEq()`), so a column that rounds
+  (numeric(10,2)) does not make a landed write look missing — and a Custom add be written
+  again. The schema is not in the repo; this is a guard, not a measured fact.
+- **Q7. Opening a row whose write is still out** landed focus on its locked Change (m74's
+  loss again). Focus goes to Cancel, the one live control.
+- **Q8. "Could not confirm" and the other act-on-this toasts stay up 6s** (`LONG_TOAST`)
+  rather than 1.6s.
+- **Not acted on:** `toggleActive()` still carries its own lock-and-look copy (recorded
+  under the first review). **`api()` has a timeout on this page only.** CLAUDE.md says a
+  change to a shared pattern goes to every file; Flash, Orders, Counts and the rest still
+  hang forever on a dead connection. That is a site-wide change to pages used in service,
+  with their own callbacks to check, and belongs in its own PR.
+- **Known limitation:** a history write that times out and lands *late* can land after the
+  row that followed it, so the trail reads 53, 51 where the prices were 51 then 53. Both are
+  real prices and neither is duplicated, but the order is wrong. Fixing it needs an order the
+  server keeps. Recorded.
 
 ## Minors list
 

@@ -159,7 +159,10 @@ HARNESS = r"""
        'hang' - the table takes it and nothing answers until timeoutAll();
        'drop' - lost before the table (onerror, nothing written);
        'reject' - the server says no (400); 'conflict' - 409, nothing written;
-       'gateway' - the table takes it and a gateway answers 502.
+       'gateway' - the table takes it and a gateway answers 502;
+       'late' - no answer, and the write lands only on landLate().
+       roundPrices: the table stores pack_price to the cent, as numeric(,2)
+       would.
        nextHistWrite does the same for price-history POSTs ('lost', 'hang',
        'drop'), plus 'late' - no answer, and the row lands only on landLate(). */
     nextWrite:[],nextHistWrite:[],
@@ -226,7 +229,11 @@ HARNESS = r"""
       if(fate==='reject')return {status:400,text:'{"message":"rejected"}'};
       if(fate==='conflict')return {status:409,text:'{"code":"23505"}'};
       var row=JSON.parse(JSON.stringify(body));row.id=nextId++;
+      if(window.__h.roundPrices&&row.pack_price!=null)row.pack_price=Math.round(row.pack_price*100)/100;
       var added=window.__h.failWrites?{err:true}:{status:201,text:JSON.stringify([row])};
+      /* 'late': no answer, and the row lands only on landLate() - after the
+         page has timed out and looked */
+      if(fate==='late'){lateOps.push(function(){server.push(row);});return {hang:true};}
       if(!window.__h.failWrites)server.push(row);
       if(fate==='lost')return {err:true};
       if(fate==='hang')return {hang:true};
@@ -243,8 +250,10 @@ HARNESS = r"""
       if(pf==='conflict')return {status:409,text:'{"code":"23505"}'};
       var p=JSON.parse(JSON.stringify(body));p.id=Number((u.match(/id=eq\.(\d+)/)||[])[1]);
       var patched=window.__h.failWrites?{err:true}:{status:200,text:JSON.stringify([p])};
-      if(!window.__h.failWrites)for(var k=0;k<server.length;k++)
-        if(server[k].id===p.id)for(var f in p)server[k][f]=p[f];
+      var applyP=function(){for(var k=0;k<server.length;k++)
+        if(server[k].id===p.id)for(var f in p)server[k][f]=p[f];};
+      if(pf==='late'){lateOps.push(applyP);return {hang:true};}
+      if(!window.__h.failWrites)applyP();
       if(pf==='lost')return {err:true};
       if(pf==='hang')return {hang:true};
       if(SCEN==='inflight')return {defer:true,res:patched};
@@ -292,9 +301,10 @@ HARNESS = r"""
     setTimeout(function(){deliver(r);},0);
   };
   window.XMLHttpRequest=Fake;
-  var hung=[],lateRows=[];
+  var hung=[],lateRows=[],lateOps=[];
   window.__h.landLate=function(){while(lateRows.length){var h=lateRows.shift();
-    h.id=window.__h.histServer.length+1;window.__h.histServer.push(h);}};
+    h.id=window.__h.histServer.length+1;window.__h.histServer.push(h);}
+    while(lateOps.length)lateOps.shift()();};
   /* slice 4: fire the page's timeout on everything left hanging */
   window.__h.timeoutAll=function(){var d=hung.slice();hung.length=0;
     for(var i=0;i<d.length;i++)if(d[i].ontimeout)d[i].ontimeout();};
@@ -2495,6 +2505,138 @@ RUNNER = r"""
     });
     wait(4);
     step(function(){ ok('R8: it unlocks when the history row settles', $('histBtn').disabled===false); });
+
+    /* ---- from the second review of #154 ---- */
+    /* Q1: reopened mid-write and something typed: the untouched fields still
+       take what landed, so Save cannot write the old price back */
+    step(function(){ closeEdit(); openEdit(502); });
+    step(function(){ set('fPrice','41'); H.nextWrite.push('hang'); $('saveBtn').click(); });
+    step(function(){ closeEdit(); openEdit(502); });
+    step(function(){ set('fAlias','SEA SALT 2#'); H.timeoutAll(); });
+    wait();
+    step(function(){
+      ok('Q1: a typed field is kept', $('fAlias').value==='SEA SALT 2#', $('fAlias').value);
+      ok('Q1: an untouched field takes what landed', $('fPrice').value==='41', $('fPrice').value);
+      H.reqs.length=0; $('saveBtn').click();
+    });
+    wait();
+    step(function(){
+      var pt=patches();
+      ok('Q1: so Save does not write the old price back', pt.length===1&&Number(pt[0].body.pack_price)===41,
+         pt.map(function(x){return x.body.pack_price;}).join(','));
+    });
+
+    /* Q2: one item's history rows go out one at a time. A debt and a new price
+       together: the debt's write times out and lands late, after the new one -
+       and paying it later finds it rather than writing it twice. */
+    step(function(){ openEdit(502); });
+    step(function(){ set('fPrice','51'); H.failHistory=true; $('saveBtn').click(); });
+    wait();
+    step(function(){ H.failHistory=false; ok('Q2: (51 is owed)', owedIndex(502,51,num(findItem(502).pack_qty),findItem(502).pack_unit,
+      {source:'manual',ref:null,date:today()})>-1, JSON.stringify(historyOwed[502])); openEdit(502); });
+    step(function(){ set('fPrice','53'); H.reqs.length=0; H.nextHistWrite.push('late'); $('saveBtn').click(); });
+    wait(2);
+    step(function(){
+      ok('Q2: the second history write waits for the first', hist().length===1, 'sent='+hist().length);
+      H.timeoutAll();
+    });
+    wait(6);
+    step(function(){
+      ok('Q2: then the new price goes', hist().length===2, 'sent='+hist().length);
+      H.landLate();
+    });
+    step(function(){ openEdit(502); });
+    step(function(){ H.reqs.length=0; $('saveBtn').click(); });
+    wait(6);
+    step(function(){
+      ok('Q2: paying finds the late 51 and writes none', histFor(502).filter(function(h){return Number(h.pack_price)===51;}).length===1,
+         JSON.stringify(histFor(502).map(function(h){return h.pack_price;})));
+      ok('Q2: and the debt clears', !historyOwed[502], JSON.stringify(historyOwed[502]));
+    });
+
+    /* Q3: an edit that times out, looks unwritten, then commits. A reload
+       shows it - and it gets its history row then, not never. */
+    step(function(){ openEdit(502); });
+    step(function(){ set('fPrice','61'); H.nextWrite.push('late'); $('saveBtn').click(); });
+    wait(2);
+    step(function(){ H.timeoutAll(); });
+    wait();
+    step(function(){
+      ok('Q3: (looked, not there: failed)', /failed — try again$/.test(toast()), toast());
+      H.landLate(); closeEdit(); init();
+    });
+    wait(6);
+    step(function(){
+      ok('Q3: the reload shows the late price', Number(findItem(502).pack_price)===61, JSON.stringify(findItem(502)));
+      ok('Q3: and it has its history row', histFor(502).filter(function(h){return Number(h.pack_price)===61;}).length===1);
+    });
+    /* ...and the other way to meet it: the next save looks first */
+    step(function(){ openEdit(502); });
+    step(function(){ set('fPrice','62'); H.nextWrite.push('late'); $('saveBtn').click(); });
+    wait(2);
+    step(function(){ H.timeoutAll(); });
+    wait();
+    step(function(){ H.landLate(); openEdit(502); });
+    step(function(){ set('fPrice','63'); $('saveBtn').click(); });
+    wait(8);
+    step(function(){
+      var h=histFor(502).map(function(x){return Number(x.pack_price);});
+      ok('Q3: a save after a late landing logs the late price first', h.indexOf(62)>-1&&h.indexOf(63)>h.indexOf(62), JSON.stringify(h));
+    });
+
+    /* Q4: a guide-item add that lands late, then a reload: its first price
+       gets its history row, and the retry is refused as already costed */
+    step(function(){ openEdit(600); });
+    step(function(){ H.confirmReturn=true; toggleActive(); });
+    wait();
+    step(function(){ ok('Q4: (169 is free again)', !costRowFor(169)); openAdd(); });
+    step(function(){ rowFor('Asia Intl','Slab bacon').click(); });
+    step(function(){ set('fQty','40'); set('fUnit','lb'); set('fPrice','140'); H.nextWrite.push('late'); $('saveBtn').click(); });
+    wait(2);
+    step(function(){ H.timeoutAll(); });
+    wait();
+    step(function(){ H.landLate(); init(); });
+    wait(6);
+    step(function(){
+      var r=costRowFor(169);
+      ok('Q4: the reload shows the late add', r&&Number(r.pack_price)===140, JSON.stringify(r));
+      ok('Q4: and its first price has its history row', r&&histFor(r.id).filter(function(h){return Number(h.pack_price)===140;}).length===1);
+    });
+
+    /* Q5: loads get 60s; writes and look-ups keep 15s */
+    step(function(){ H.reqs.length=0; init(); });
+    wait();
+    step(function(){
+      var loads=H.reqs.filter(function(r){return r.m==='GET';});
+      ok('Q5: a load waits 60s', loads.length>=2&&loads.every(function(r){return r.timeout===60000;}),
+         loads.map(function(r){return r.timeout;}).join(','));
+    });
+
+    /* Q6: a table that rounds to the cent: a landed Custom add with 12.345 is
+       still recognised, not written twice */
+    step(function(){ closeEdit(); H.roundPrices=true; openAdd(); });
+    step(function(){ pickCustom(); });
+    step(function(){ set('fName','Saffron'); set('fQty','1'); set('fUnit','g'); set('fPrice','12.345');
+      H.reqs.length=0; H.nextWrite.push('lost'); $('saveBtn').click(); });
+    wait();
+    step(function(){
+      ok('Q6: a rounded landing is recognised', toast()==='✓ Saffron added'&&rowsNamed('Saffron').length===1,
+         toast()+' rows='+rowsNamed('Saffron').length);
+      H.roundPrices=false;
+    });
+
+    /* Q7: opening a row whose write is still out, from the picker: focus goes
+       to Cancel, the one live control, not to the locked Change */
+    step(function(){ openEdit(501); });
+    step(function(){ set('fPrice','7'); H.nextWrite.push('hang'); $('saveBtn').click(); });
+    step(function(){ closeEdit(); openAdd(); });
+    step(function(){ pickExisting(501,12); });
+    step(function(){
+      ok('Q7: a locked row opens with focus on Cancel', document.activeElement===$('editModal').querySelector('.modal-btn.cancel'),
+         document.activeElement&&(document.activeElement.id||document.activeElement.className));
+      H.timeoutAll();
+    });
+    wait();
   }
 
   if(document.readyState==='complete')setTimeout(run,0);
