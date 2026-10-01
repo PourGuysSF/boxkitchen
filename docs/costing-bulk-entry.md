@@ -1,11 +1,14 @@
 # Costing — make the ledger fillable
 
-Status: **Slice 4 is built** on `costing-slice4-write-path` (PR #154), reviewed three times,
-with every review's proved findings fixed in the same PR — the write path cannot double-fire. A 15s limit on every request; a lost or unreadable answer is looked
-up in the table, never reported "failed"; a retry looks before it writes; every control in
-the modal but Cancel is locked while a write is out; a slow reload cannot undo a save. See
-"Slice 4 as built" and "Added by the review(s) of PR #154". check_costing.py 396 →
-**553** (20 scenarios), clean.
+Status: **Slice 5 is built** on `costing-slice5-find`, not yet reviewed — find the item
+fast: word-by-word search in the main list and the ＋ Add filter, invoice names searchable in
+the filter, a match count, and a plain statement when nothing matches. See "Slice 5 as
+built". check_costing.py 553 → **574**, clean.
+
+**Slice 4 shipped** — merged to `main` as `5004291` (PR #154, squashed) after three review
+rounds, and **hand-tested by Stephen on his iPhone on 2026-09-30**: with Airplane Mode on,
+Save said "Could not confirm…"; with it off, the retry added the item once. See "Slice 4 as
+built" and "Added by the review(s) of PR #154".
 
 **m74 and m76 shipped** — merged to `main` as `ef9c172` (PR #153, squashed), reviewed once,
 with the review's findings fixed in the same PR: picking an item puts focus on the item's
@@ -985,6 +988,36 @@ suite as `r3_lookfirst`, `r3_editunconfirmed`, `r3_known409`, `r3_thirdtry`,
   Custom add has no unique index. Same class as the above.
 - Unmeasured: the table's real rounding and its one-active-row index — the schema is not in
   the repo — and anything on a real phone on real wifi.
+
+## Slice 5 as built
+
+"Find the item fast." Built on `costing-slice5-find`. The 16px filter and the "nothing
+matches" picker messages landed early, in slice 1; this slice adds the rest.
+
+- **Word by word, in any order.** `words()` splits a search on whitespace; `hasAll()` wants
+  every word somewhere in the haystack. "birite oregano", "oregano birite" and
+  "  BIRITE   oregano " all find "Birite: Dried oregano, Mexican". Both search boxes use it:
+  the main list (name + invoice name + vendor, as before but no longer one substring) and the
+  ＋ Add filter (vendor + name + invoice names).
+- **Invoice names find guide items in the ＋ Add filter.** `aliasesOf()` gathers every
+  `invoice_alias` on ledger rows for the guide item — retired rows too, since an alias
+  outlives a mislink. Once "WHT VIN 4/1 GAL" is entered for the vinegar, the next invoice
+  finds it by what is printed on it. Before, the filter matched vendor and name only.
+- **A count.** The filter shows *"N of M match"* (M = what the filter is choosing among) in a
+  `.hint` line read out by screen readers (`aria-live="polite"`); the main list's count line
+  gains *"· N match"* while searching. Neither shows without a search.
+- **Nothing matching is a statement.** The main list says *"No costed items match “…”."*, and
+  adds *"Retired items are hidden."* when that could be why; the picker's existing message
+  and the always-offered Custom row are unchanged.
+
+**Proved.** 21 assertions in a new `slice5` scenario (553 → 574, clean). 7 injected faults,
+each caught: one substring in either box, invoice names ignored, retired rows' invoice names
+dropped, no count in either place, and the old bare "No items match.". `check_styling.py`
+clean — no new input, so #135's register is unchanged.
+
+**Not done.** Matching is plain substring per word: no typo tolerance, no plurals
+("tomatoes" does not find "tomato"), and punctuation counts ("4/1" matches, "41" does not).
+Not looked at on a phone.
 
 ## Minors list
 

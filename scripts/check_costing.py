@@ -84,7 +84,9 @@ SCENARIOS = ("ok", "slow", "fail", "empty", "ledgerslow", "ledgerfail",
              "slice4",
              # slice 4, third review of #154 - written to fail on 32be40e
              "r3_lookfirst", "r3_editunconfirmed", "r3_known409", "r3_thirdtry",
-             "r3_relinkshow", "r3_late2")
+             "r3_relinkshow", "r3_late2",
+             # slice 5 - find the item fast
+             "slice5")
 
 # ---------------------------------------------------------------- fixtures --
 # Two "Slab bacon" rows on purpose: the whole of slice 1 is that the id we
@@ -2869,6 +2871,80 @@ RUNNER = r"""
            histFor(502).filter(function(h){return Number(h.pack_price)===81;}).length===1, prices(502));
       });
     }
+  }
+
+  if(H.scen==='slice5'){
+    /* SLICE 5: FIND THE ITEM FAST. Word by word, in any order, across vendor,
+       name and the invoice names already entered - in the + Add filter and the
+       main list - with a count, and a plain statement when nothing matches. */
+    function filt(q){set('pickFilter',q);}
+    function names(){return pickRows().filter(function(r){return !r.classList.contains('pick-custom');})
+      .map(function(r){return r.querySelector('.pick-v').textContent+'/'+r.querySelector('.pick-n').textContent;});}
+    step(function(){});
+    step(function(){ ok('s5: fixtures loaded', items.length===4, 'items='+items.length); openAdd(); });
+    step(function(){ filt('vinegar birite'); });
+    step(function(){
+      ok('s5: words match in any order', names().join()==='Birite/Distilled white vinegar', names().join());
+      ok('s5: with a count of what is offered', $('pickCount').textContent==='1 of 5 match', $('pickCount').textContent);
+      ok('css: the count is on screen', visible($('pickCount')));
+      filt('bacon');
+    });
+    step(function(){
+      ok('s5: one word, both vendors', names().length===2&&$('pickCount').textContent==='2 of 5 match', names().join()+' / '+$('pickCount').textContent);
+      filt('bacon birite');
+    });
+    step(function(){
+      ok('s5: a vendor word narrows it to that vendor', names().join()==='Birite/Slab bacon', names().join());
+      filt('  BIRITE   bacon ');
+    });
+    step(function(){
+      ok('s5: case and spacing do not matter', names().join()==='Birite/Slab bacon', names().join());
+      /* an invoice name entered on a ledger row bridges the paper to the guide */
+      findItem(501).invoice_alias='WHT VIN 4/1 GAL'; findItem(503).invoice_alias='BUTTER UNSLTD 36#';
+      filt('wht vin');
+    });
+    step(function(){
+      ok('s5: an invoice name finds its guide item', names().join()==='Birite/Distilled white vinegar', names().join());
+      filt('unsltd');
+    });
+    step(function(){
+      ok('s5: a retired row\'s invoice name still finds the item', names().join()==='Birite/Butter', names().join());
+      filt('4/1 gal birite');
+    });
+    step(function(){
+      ok('s5: invoice-name words mix with vendor words', names().join()==='Birite/Distilled white vinegar', names().join());
+      filt('zzz');
+    });
+    step(function(){
+      ok('s5: nothing matching is said plainly', $('pickList').textContent.indexOf('No order-guide items match “zzz”.')>-1, $('pickList').textContent);
+      ok('s5: with the count at zero', $('pickCount').textContent==='0 of 5 match', $('pickCount').textContent);
+      ok('s5: Custom is still offered', !!$('pickList').querySelector('.pick-custom'));
+      filt('');
+    });
+    step(function(){
+      ok('s5: no filter, no count', $('pickCount').textContent==='', $('pickCount').textContent);
+      ok('s5: and everything offered', names().length===5, names().join());
+      closeEdit();
+    });
+    /* the main list */
+    step(function(){ set('search','salt sea'); });
+    step(function(){
+      var shownRows=$('listBody').querySelectorAll('.ing-row');
+      ok('s5: main list: words in any order', shownRows.length===1&&shownRows[0].textContent.indexOf('Sea salt')>-1, $('listBody').textContent);
+      ok('s5: main list: the count says how many match', /· 1 match$/.test(count()), count());
+      set('search','wht gal');
+    });
+    step(function(){
+      ok('s5: main list: by invoice name', $('listBody').textContent.indexOf('Distilled white vinegar')>-1&&$('listBody').querySelectorAll('.ing-row').length===1,
+         $('listBody').textContent);
+      set('search','zzz');
+    });
+    step(function(){
+      ok('s5: main list: nothing matching is said plainly', $('listBody').textContent.indexOf('No costed items match “zzz”.')>-1, $('listBody').textContent);
+      ok('s5: and says retired items are hidden', $('listBody').textContent.indexOf('Retired items are hidden.')>-1, $('listBody').textContent);
+      set('search','');
+    });
+    step(function(){ ok('s5: main list: no search, no match count', !/match/.test(count()), count()); });
   }
 
   if(document.readyState==='complete')setTimeout(run,0);
