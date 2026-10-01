@@ -1,11 +1,15 @@
 # Costing — make the ledger fillable
 
-Status: **Slice 4 is built** on `costing-slice4-write-path` (PR #154), reviewed three times,
-with every review's proved findings fixed in the same PR — the write path cannot double-fire. A 15s limit on every request; a lost or unreadable answer is looked
-up in the table, never reported "failed"; a retry looks before it writes; every control in
-the modal but Cancel is locked while a write is out; a slow reload cannot undo a save. See
-"Slice 4 as built" and "Added by the review(s) of PR #154". check_costing.py 396 →
-**553** (20 scenarios), clean.
+Status: **Slice 5 is built** on `costing-slice5-find` (PR #155), reviewed once, with the
+review's findings fixed in the same PR — find the item fast: word-by-word search in the main
+list and the ＋ Add filter, invoice names searchable in both, a priced item found by search
+shown to update rather than "no match", a match count, and a plain statement when nothing
+matches. See "Slice 5 as built". check_costing.py 553 → **584**, clean.
+
+**Slice 4 shipped** — merged to `main` as `5004291` (PR #154, squashed) after three review
+rounds, and **hand-tested by Stephen on his iPhone on 2026-09-30**: with Airplane Mode on,
+Save said "Could not confirm…"; with it off, the retry added the item once. See "Slice 4 as
+built" and "Added by the review(s) of PR #154".
 
 **m74 and m76 shipped** — merged to `main` as `ef9c172` (PR #153, squashed), reviewed once,
 with the review's findings fixed in the same PR: picking an item puts focus on the item's
@@ -985,6 +989,54 @@ suite as `r3_lookfirst`, `r3_editunconfirmed`, `r3_known409`, `r3_thirdtry`,
   Custom add has no unique index. Same class as the above.
 - Unmeasured: the table's real rounding and its one-active-row index — the schema is not in
   the repo — and anything on a real phone on real wifi.
+
+## Slice 5 as built
+
+"Find the item fast." Built on `costing-slice5-find`. The 16px filter and the "nothing
+matches" picker messages landed early, in slice 1; this slice adds the rest.
+
+- **Word by word, in any order.** `words()` splits a search on whitespace; `hasAll()` wants
+  every word somewhere in the haystack. "birite oregano", "oregano birite" and
+  "  BIRITE   oregano " all find "Birite: Dried oregano, Mexican". Both search boxes use it:
+  the main list (name + invoice name + vendor, as before but no longer one substring) and the
+  ＋ Add filter (vendor + name + invoice names).
+- **Invoice names find guide items in the ＋ Add filter.** What a search reads is defined
+  once: `rowText()` for a ledger row (name, invoice name, vendor) and `guideText()` for a
+  guide item (vendor, name, and the invoice name on its *active* ledger row). Once "WHT VIN
+  4/1 GAL" is entered for the vinegar, the next invoice finds it by what is printed on it.
+  Before, the filter matched vendor and name only.
+- **A priced item that a search names is shown to update.** ＋ Add does not offer an item
+  that already has a price — but the invoice name is usually typed *with* the price, so
+  "wht vin" on the next invoice answered "no match" and pointed at Custom, i.e. a duplicate.
+  Now a priced match is listed after the unpriced ones, badged **priced — update**, and a tap
+  opens that row (`pickExisting()`). Unfiltered, priced items stay out of the list.
+- **A count.** Under the filter: *"N of M match"* while filtering, *"M to choose from"*
+  otherwise — always text, and its height held in CSS, so the list never jumps down under a
+  finger on the first letter. Not `aria-live`: it changes per keystroke. The main list's
+  count line gains *"· N of M match"* while searching, M being the rows the list can show
+  (retired included only with Show retired on).
+- **Nothing matching is a statement.** The main list says *"No costed items match “…”."*, and
+  adds *"A retired item matches — tap Show retired."* only when one does; the picker's
+  existing message and the always-offered Custom row are unchanged.
+
+**Proved.** 31 assertions in a new `slice5` scenario (553 → 584, clean). 12 injected faults,
+each caught: one substring in either box, invoice names ignored, no count in either place,
+the old bare "No items match.", priced matches hidden, retired rows' invoice names used, the
+count over a different base, the retired hint when none matches, the count line popping in
+and out, and the count read out per keystroke. `check_styling.py` clean — no new input, so
+#135's register is unchanged.
+
+**From the review of #155, fixed above:** invoice-name search could not reach a priced item
+and pointed at Custom (the main finding); a retired row's invoice name steered searches to
+the item it had been wrongly linked to; the two boxes built their search text differently;
+the match count could outrun its base; the retired hint showed when no retired item
+matched; the count line moved the list; the count was announced per keystroke; and the
+picker scanned the ledger per guide item per keystroke (now one map per render). Not acted
+on: a guide item with a null vendor or name is guarded (`||''`), not otherwise handled.
+
+**Not done.** Matching is plain substring per word: no typo tolerance, no plurals
+("tomatoes" does not find "tomato"), and punctuation counts ("4/1" matches, "41" does not).
+Not looked at on a phone.
 
 ## Minors list
 

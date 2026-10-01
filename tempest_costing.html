@@ -77,6 +77,8 @@
   #editActions .link-btn:disabled,#pickChange:disabled{color:var(--faint);border-color:var(--edge);border-style:dashed;cursor:default}
   .pick-list.is-saving{pointer-events:none}
   .pick-list.is-saving .pick-v,.pick-list.is-saving .pick-n{color:var(--faint)}
+  /* slice 5: the count line holds its height whether or not it has text */
+  #pickCount{min-height:1.3em}
   .inv-fields{display:flex;gap:8px;margin-top:8px}
   /* qualified to out-specify kitchen.css's .modal input[type="text"], which is
      0.95rem = 15.2px; an unqualified .inv-input loses on specificity — (0,2,1)
@@ -189,6 +191,9 @@
       <!-- Choosing: a filter + a list you tap. Nothing is ever selected for you. -->
       <div id="pickChoose">
         <input class="pick-filter" id="pickFilter" type="text" placeholder="Filter items…" autocomplete="off" oninput="renderPick()">
+        <!-- slice 5: "12 of 250 match" while filtering. Not aria-live: it changes
+             on every keystroke, and a screen reader queued one per letter. -->
+        <div class="hint pick-count" id="pickCount"></div>
         <div class="pick-list" id="pickList"></div>
       </div>
       <!-- Chosen: the pick, with its vendor, and a deliberate way out. -->
@@ -461,6 +466,19 @@ function sameLedger(row,p){
          (row.name||'')===(p.name||'')&&(row.invoice_alias||null)===(p.invoice_alias||null)&&
          numEq(row.pack_qty,p.pack_qty)&&(row.pack_unit||'')===(p.pack_unit||'')&&numEq(row.pack_price,p.pack_price);
 }
+/* Slice 5: a search is a set of words, each of which must appear somewhere -
+   in any order. "birite oregano" finds "Birite: Dried oregano, Mexican", which
+   one substring never could. */
+function words(q){return String(q||'').toLowerCase().split(/\s+/).filter(Boolean);}
+/* What a search reads, defined once for both boxes. A ledger row: its name, its
+   invoice name, its vendor. A guide item: its vendor and name, plus the invoice
+   name on its ACTIVE ledger row - the only row the partial index allows, so the
+   two boxes see the same invoice name. A retired row's invoice name is left out:
+   rows are retired for being linked to the wrong item, and their invoice name
+   would steer the next search back to it. (Review of #155.) */
+function rowText(it){return nameOf(it)+' '+(it.invoice_alias||'')+' '+vendorOf(it);}
+function guideText(o,row){return (o.vendor||'')+' '+(o.name||'')+' '+((row&&row.invoice_alias)||'');}
+function hasAll(hay,ws){hay=hay.toLowerCase();for(var i=0;i<ws.length;i++)if(hay.indexOf(ws[i])<0)return false;return true;}
 function num(v){var n=parseFloat(String(v==null?'':v).replace(/[^0-9.\-]/g,''));return isNaN(n)?0:n;}
 function money(n){var v=Number(n)||0;return '$'+v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
 function ucFmt(n){var v=Number(n)||0;return '$'+v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:(v<1?3:2)});}
@@ -555,19 +573,25 @@ function landRow(row){
 /* ---- Render list (grouped by vendor) ---- */
 function toggleRetired(){showRetired=!showRetired;document.getElementById('retiredToggle').textContent=showRetired?'Hide retired':'Show retired';render();}
 function render(){
-  var q=(document.getElementById('search').value||'').trim().toLowerCase();
+  var q=(document.getElementById('search').value||'').trim(),ws=words(q);
   var vis=items.filter(function(it){
     if(!showRetired&&!it.active)return false;
-    if(q){var hay=(nameOf(it)+' '+(it.invoice_alias||'')+' '+vendorOf(it)).toLowerCase();if(hay.indexOf(q)<0)return false;}
+    // slice 5: word by word, across the name, the invoice name and the vendor
+    if(ws.length&&!hasAll(rowText(it),ws))return false;
     return true;
   });
   var activeCount=items.filter(function(it){return it.active;}).length;
   var priced=items.filter(function(it){return it.active&&unitCost(it)!=null;}).length;
-  document.getElementById('countTag').innerHTML='<b>'+activeCount+'</b> item'+(activeCount===1?'':'s')+' · <b>'+priced+'</b> priced';
+  document.getElementById('countTag').innerHTML='<b>'+activeCount+'</b> item'+(activeCount===1?'':'s')+' · <b>'+priced+'</b> priced'+
+    // N of M, both counted over the rows the list can show - with Show retired
+    // on, M includes the retired, so the match count never outruns its base
+    (ws.length&&items.length?' · <b>'+vis.length+'</b> of '+items.filter(function(it){return showRetired||it.active;}).length+' match':'');
 
   var body=document.getElementById('listBody');
   if(!items.length){body.innerHTML='<div class="empty">No costed items yet.<br>Tap <b>＋ Add</b> to price your first item.</div>';return;}
-  if(!vis.length){body.innerHTML='<div class="empty">No items match.</div>';return;}
+  // a statement, not an error: what was looked for, and what is still possible
+  if(!vis.length){body.innerHTML='<div class="empty">No costed items match “'+esc(q)+'”.'+
+    (!showRetired&&items.some(function(it){return !it.active&&hasAll(rowText(it),ws);})?'<br>A retired item matches — tap Show retired.':'')+'</div>';return;}
 
   // group by vendor, vendor order following the order guide, off-guide last
   var groups={},order=[];
@@ -710,21 +734,32 @@ function showChooser(){
    out; one that exists but has no price stays, marked, and taps through to
    that row rather than making a second one. */
 function renderPick(){
-  var q=(document.getElementById('pickFilter').value||'').trim().toLowerCase();
+  var q=(document.getElementById('pickFilter').value||'').trim(),ws=words(q);
   // Re-linking an existing row is a different list from adding a new one.
   var relink=(editId!=null);
-  var h='',shown=0;
+  var h='',shown=0,offered=0,priced='';
+  // each guide item's active row, found once rather than per item per keystroke
+  var held={};for(var k=0;k<items.length;k++)if(items[k].active&&items[k].order_item_id!=null)held[items[k].order_item_id]=items[k];
   for(var i=0;i<orderItems.length;i++){
-    var o=orderItems[i],row=costRowFor(o.id);
+    var o=orderItems[i],row=held[o.id]||null;
     if(relink){
       // A guide item already held by another ACTIVE row is not a legal
       // target — the partial unique index would reject it. The row's own
       // current item stays listed, so you can change your mind back.
       if(row&&row.id!==editId)continue;
-    }else{
-      if(row&&unitCost(row)!=null)continue;
+    }else if(row&&unitCost(row)!=null){
+      // Already priced: not offered to price again. But a search that names it
+      // - usually by the invoice name typed with its price - shows it, to open
+      // and update; "no match" there sent people to Custom and a duplicate.
+      // (Review of #155.)
+      if(ws.length&&hasAll(guideText(o,row),ws))
+        priced+='<div class="pick-row pick-priced" onclick="pickExisting('+row.id+','+o.id+')">'+
+          '<div class="pick-row-main"><div class="pick-v">'+esc(o.vendor)+'</div>'+
+          '<div class="pick-n">'+esc(o.name)+'</div></div><div class="pick-badge">priced — update</div></div>';
+      continue;
     }
-    if(q&&(o.vendor+' '+o.name).toLowerCase().indexOf(q)<0)continue;
+    offered++;
+    if(ws.length&&!hasAll(guideText(o,row),ws))continue;
     shown++;
     // In relink mode a tap re-points THIS row; it never navigates to another.
     var act=relink?('pickItem('+o.id+')'):(row?('pickExisting('+row.id+','+o.id+')'):('pickItem('+o.id+')'));
@@ -737,6 +772,10 @@ function renderPick(){
   // Four states, not one. Until the guide has loaded there is nothing to tap —
   // not even Custom, which would otherwise be the only row on a screen that
   // reads as "the order guide is empty".
+  // The line is always there (its height is held in CSS) so the list does not
+  // jump down under a finger on the first letter typed.
+  var pc=document.getElementById('pickCount');
+  pc.textContent=!(guideLoaded&&ledgerLoaded)?'':(ws.length?(shown+' of '+offered+' match'):(offered+' to choose from'));
   if(guideError||ledgerError){
     document.getElementById('pickList').innerHTML='<div class="pick-empty pick-error">'+
       (guideError?'The order guide didn’t load.':'The costed-item list didn’t load.')+
@@ -750,8 +789,10 @@ function renderPick(){
     return;
   }
   if(!orderItems.length)h='<div class="pick-empty">The order guide is empty — use <b>Custom</b> below.</div>';
-  else if(!shown)h=q?('<div class="pick-empty">No order-guide items match “'+esc(q)+'”.</div>')
+  else if(!shown&&priced)h='';   // the priced matches below are the answer
+  else if(!shown)h=ws.length?('<div class="pick-empty">No order-guide items match “'+esc(q)+'”.</div>')
                     :'<div class="pick-empty">Every order-guide item is already priced — use <b>Custom</b> below.</div>';
+  h+=priced;
   h+='<div class="pick-row pick-custom" onclick="pickCustom()"><div class="pick-row-main"><div class="pick-n">✎ Custom (not on order guide)</div></div></div>';
   document.getElementById('pickList').innerHTML=h;
 }
