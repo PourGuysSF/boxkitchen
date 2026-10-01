@@ -2882,11 +2882,17 @@ RUNNER = r"""
       .map(function(r){return r.querySelector('.pick-v').textContent+'/'+r.querySelector('.pick-n').textContent;});}
     step(function(){});
     step(function(){ ok('s5: fixtures loaded', items.length===4, 'items='+items.length); openAdd(); });
-    step(function(){ filt('vinegar birite'); });
+    var listTop=null;
+    step(function(){ listTop=$('pickList').getBoundingClientRect().top; filt('vinegar birite'); });
     step(function(){
       ok('s5: words match in any order', names().join()==='Birite/Distilled white vinegar', names().join());
       ok('s5: with a count of what is offered', $('pickCount').textContent==='1 of 5 match', $('pickCount').textContent);
       ok('css: the count is on screen', visible($('pickCount')));
+      /* review of #155: the count line holds its height, so the list does not
+         jump down under a finger on the first letter */
+      ok('css: typing does not move the list', Math.abs($('pickList').getBoundingClientRect().top-listTop)<0.5,
+         listTop+' -> '+$('pickList').getBoundingClientRect().top);
+      ok('s5: the count is not read out on every keystroke', !$('pickCount').hasAttribute('aria-live'));
       filt('bacon');
     });
     step(function(){
@@ -2908,7 +2914,9 @@ RUNNER = r"""
       filt('unsltd');
     });
     step(function(){
-      ok('s5: a retired row\'s invoice name still finds the item', names().join()==='Birite/Butter', names().join());
+      /* review of #155: rows are retired for being linked to the wrong item, so
+         a retired row's invoice name must NOT steer a search to that item */
+      ok('s5: a retired row\'s invoice name does not find its old item', names().indexOf('Birite/Butter')<0, names().join());
       filt('4/1 gal birite');
     });
     step(function(){
@@ -2922,8 +2930,30 @@ RUNNER = r"""
       filt('');
     });
     step(function(){
-      ok('s5: no filter, no count', $('pickCount').textContent==='', $('pickCount').textContent);
+      ok('s5: no filter: how many there are to choose from', $('pickCount').textContent==='5 to choose from', $('pickCount').textContent);
       ok('s5: and everything offered', names().length===5, names().join());
+      /* review of #155: an item already priced is not offered to price again,
+         but a search that names it - usually by its invoice name - shows it to
+         update, instead of "no match" and a nudge toward a duplicate Custom */
+      var v=findItem(501);v.pack_qty=4;v.pack_unit='gal';v.pack_price=19.96;
+      filt('wht vin');
+    });
+    step(function(){
+      var pr=$('pickList').querySelectorAll('.pick-priced');
+      ok('s5: a priced item found by its invoice name is shown to update', pr.length===1&&pr[0].textContent.indexOf('Distilled white vinegar')>-1,
+         $('pickList').textContent);
+      ok('s5: marked as priced', pr[0]&&pr[0].querySelector('.pick-badge').textContent==='priced — update');
+      ok('s5: and not as "no match"', $('pickList').textContent.indexOf('No order-guide items match')<0, $('pickList').textContent);
+      ok('s5: it is not counted as one to price', $('pickCount').textContent==='0 of 4 match', $('pickCount').textContent);
+      filt('');
+    });
+    step(function(){
+      ok('s5: priced items stay out of the unfiltered list', $('pickList').querySelectorAll('.pick-priced').length===0);
+      filt('wht vin');
+    });
+    step(function(){ $('pickList').querySelector('.pick-priced').click(); });
+    step(function(){
+      ok('s5: tapping it opens that row to update', shown()&&editId===501, 'editId='+editId);
       closeEdit();
     });
     /* the main list */
@@ -2931,7 +2961,7 @@ RUNNER = r"""
     step(function(){
       var shownRows=$('listBody').querySelectorAll('.ing-row');
       ok('s5: main list: words in any order', shownRows.length===1&&shownRows[0].textContent.indexOf('Sea salt')>-1, $('listBody').textContent);
-      ok('s5: main list: the count says how many match', /· 1 match$/.test(count()), count());
+      ok('s5: main list: the count says how many match', /· 1 of 2 match$/.test(count()), count());
       set('search','wht gal');
     });
     step(function(){
@@ -2941,8 +2971,17 @@ RUNNER = r"""
     });
     step(function(){
       ok('s5: main list: nothing matching is said plainly', $('listBody').textContent.indexOf('No costed items match “zzz”.')>-1, $('listBody').textContent);
-      ok('s5: and says retired items are hidden', $('listBody').textContent.indexOf('Retired items are hidden.')>-1, $('listBody').textContent);
-      set('search','');
+      ok('s5: no retired hint when no retired item matches', $('listBody').textContent.indexOf('retired')<0, $('listBody').textContent);
+      set('search','butter');
+    });
+    step(function(){
+      ok('s5: a search only a retired item matches says so', $('listBody').textContent.indexOf('A retired item matches — tap Show retired.')>-1,
+         $('listBody').textContent);
+      showRetired=true; render();
+    });
+    step(function(){
+      ok('s5: with Show retired, the count base includes them', /· 1 of 4 match$/.test(count()), count());
+      showRetired=false; set('search','');
     });
     step(function(){ ok('s5: main list: no search, no match count', !/match/.test(count()), count()); });
   }
