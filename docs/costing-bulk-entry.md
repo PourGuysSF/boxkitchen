@@ -2176,8 +2176,10 @@ the same PR.
 - **`check_styling.py` has a cleanup race.** Twice now — on GitHub for #149 and locally
   for #153 — it measured every page and then crashed deleting its temp directory
   ("Directory not empty") while Chrome was still writing its profile. Re-running passes. It
-  crashes before its verdict, so it can only fail loudly, never pass wrongly. **Open**:
-  wait for Chrome to exit, or clean up with `ignore_errors`.
+  crashes before its verdict, so it can only fail loudly, never pass wrongly. **Fixed** on
+  `styling-guard-cleanup` after a third CI hit (#155): it now waits for each Chrome to exit
+  and removes its temp directory ignoring errors. Six clean runs in a row, and a page broken
+  on purpose (an input at 12px) still fails it with exit 1.
 - **8 assertions** in all, 384 → **392**, clean. **7 injected faults, each caught**: no
   focus move, focus sent to `#invRef`, each label dropped, the ring put back outside, the
   ring left ink on the ink fill, and `aria-pressed` not kept in step. They prove 6 of the
