@@ -1,0 +1,25 @@
+# The count sheet builds its boxes at runtime, so the styling guard's 16px
+# check (#135) cannot see them, and the page's promise that it only ever
+# reads cannot be tested against the live database. check_inventory.py drives
+# the real page in headless Chrome against a stubbed api(), so it can run here.
+name: inventory guard
+
+on:
+  pull_request:
+    paths: ['tempest_inventory.html', 'assets/**', 'scripts/check_inventory.py']
+  push:
+    branches: [main]
+    paths: ['tempest_inventory.html', 'assets/**', 'scripts/check_inventory.py']
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: browser-actions/setup-chrome@v1
+        id: chrome
+        with:
+          chrome-version: stable
+      - run: python3 scripts/check_inventory.py
+        env:
+          CHROME: ${{ steps.chrome.outputs.chrome-path }}

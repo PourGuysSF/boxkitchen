@@ -1,7 +1,8 @@
 # Inventory Guide — the monthly count
 
 Status: **plan v1, approved by Stephen 2026-10-06** with one change: Tempest's real storage
-places, in walking order (see "Decisions"). **Nothing is built.** Every decision below was made
+places, in walking order (see "Decisions"). **Slice 0 is closed** — the tables are live and
+seeded. **Slice 1 is built** on the branch, not merged: see "Slice 1 as built". Every decision below was made
 by Stephen in the interview that produced this document. Branch `inventory-guide`, in the
 worktree `~/Developer/boxkitchen-inventory`.
 
@@ -298,6 +299,9 @@ The page exists, and writes nothing.
 harness proves the page makes **no request but GET**, and that the runtime-built boxes compute
 to ≥16px — the measurement `check_styling.py` cannot make.
 
+> **BUILT 2026-10-06** on `inventory-guide`, not yet merged — see "Slice 1 as built" below.
+> The walk-through is still to do.
+
 ### Slice 2 — Set-up (manager)
 
 - Add, rename, reorder and retire places.
@@ -402,6 +406,81 @@ incomplete whenever it should be; the page never writes to any `flash_*` table.
   section). `BUILD_PLAN.md`: B3 status.
 - `check_styling.py` needs **no page-list change** — it takes `glob("*.html")`, so the new page
   is checked from Slice 1 on. Confirm it runs clean.
+- `assets/kitchen.css`: add *inventory* to the `used by:` banner of every shared section the
+  page uses — no rule changes, but the banners are how the next person tells a shared
+  component from a private one. As of Slice 1: DATE / NAME / INTRO BARS (`.date-bar`,
+  `.intro`), CATEGORY HEADER (`.cat-header`), COUNT ROWS (`.count-row` and family), and the
+  section holding `.link-btn` (Try again). HEADER, EMPTY / LOADING and TOAST already say
+  every page. Re-check the list against the page at the time; later slices add to it.
+
+---
+
+## Slice 1 as built
+
+`tempest_inventory.html` (new), `scripts/check_inventory.py` (new),
+`.github/workflows/inventory-guard.yml` (new, mirrors the costing guard). **No shared file
+touched**: `kitchen.css`, `index.html`, `check_styling.py` and `CLAUDE.md` are as they were.
+The page is reachable only by its address; no tile links to it yet.
+
+### What it does
+
+- Three GETs — places, item-in-place rows (with the guide item embedded), and the price list's
+  **pack sizes only** (`select=order_item_id,pack_qty,pack_unit`: the page never asks for a
+  price, so none can reach a staff screen by accident). The sheet is drawn only when **all
+  three** have landed; one failure, error or 60s timeout shows "Could not load the count
+  sheet" with **Try again**, and no partial sheet — without the pack sizes a 40 lb case would
+  get one box in order units, a different count rather than a smaller one.
+- Places in walking order, each with its item count; an empty place (Tempest's Line) says
+  "Nothing is stored here yet." Items in their `sort_order`.
+- Boxes per "Which boxes an item gets". A pack counts only with a quantity above zero **and** a
+  unit. An item in two places is drawn in both, each saying "also in …". An item retired from
+  the order guide says so. An item whose *place* is retired is shown under "Not in an active
+  place" rather than dropped.
+- Boxes are `.stock-input`: 16px, qualified against `.modal input[type="text"]`, 44px tall,
+  `inputmode="decimal"`, **disabled** (dashed `--edge` on `--press`). One-box rows line their
+  boxes up in one column (a floor under the unit text); two-box rows wrap under the name.
+- `api()` is the costing page's, with its timeouts (this page uses only the 60s load one).
+
+### Two departures from the plan
+
+- **No Manager switch yet.** A switch that unlocks nothing is a control that lies. It arrives
+  with Slice 2, which gives manager mode something to do. So this page holds no PIN at all.
+- **The class prefix is `stock-`, not `inv-`.** `.inv-input` already exists in `kitchen.css` —
+  it is the costing page's invoice-number field. Reusing the prefix would have put two
+  unrelated components one typo apart.
+
+### Proved
+
+- `check_inventory.py`: **79 assertions, 7 scenarios, clean** (ok, slow, fail, packfail, hang,
+  empty, orphan). Among them: no request but GET in every scenario; every read scoped to
+  Tempest and active rows; the price list asked for pack size only; no `$` in the rendered
+  text although the fixture hands back prices; all 14 boxes ≥16px, ≥44px, decimal, disabled,
+  labelled; no row runs off the edge at 390px or 320px; a name containing markup shown as
+  text; a second load while loading sends nothing; Try again recovers.
+- **It fails when it should.** Fourteen deliberate breaks, each in a throwaway copy, each
+  caught: a 15.2px box, asking for prices, drawing from partial data, an unescaped name, a
+  pack of 1 given two boxes, a blank-unit pack treated as a pack, orphans dropped, boxes left
+  enabled, a stray POST, no load timeout, retired items requested, "also in" on every row,
+  boxes forced onto one line, and one-box rows knocked out of their column (13px apart). One further break was **correctly not caught**: dropping the
+  `.modal …` qualifier changes nothing on this page, because no box sits in a modal — Slice 2
+  must measure any box it puts in one.
+- `check_styling.py`: clean, **11 pages**, 83 inputs measured, 75 on the register (unchanged).
+- **Live data, read-only**, rendered in headless Chrome at 390px: 198 items, 10 places in
+  walking order, 217 boxes, none under 16px, no row overflowing, no `$`, 36 rows with "also
+  in", 4 of 198 items with a pack size at the time (Recipe Costing is being filled).
+
+### Not proved
+
+- On a real iPhone, with real fonts. The harness strips the webfonts (no network); the live
+  render loaded them. Stephen's walk-through is the check that matters here.
+- Print — Slice 5.
+
+### Found while building — for Recipe Costing, not this page
+
+**Bubu arare** (Birite, order unit EA) was given a pack of **1,210.58 oz** in Recipe Costing on
+2026-10-06. That looks like a typo — possibly a price typed into the pack-size box. Because the
+price list is shared, the count sheet faithfully asks for "Full × 1210.58 oz" plus loose ounces.
+Fix it in Recipe Costing; nothing here needs to change.
 
 ---
 

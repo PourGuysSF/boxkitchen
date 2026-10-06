@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<script>
+  (function(){
+    var raw = localStorage.getItem('boxkitchen_auth');
+    var ts = raw ? parseInt(raw, 10) : 0;
+    var TTL = 30 * 24 * 60 * 60 * 1000; // 30 days
+    if (!ts || isNaN(ts) || (Date.now() - ts) > TTL) {
+      window.location.replace('index.html');
+    }
+  })();
+</script>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#fbfaf6">
+<title>Tempest Inventory</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=Playfair+Display:wght@700;900&display=swap">
+<link rel="stylesheet" href="assets/kitchen.css?v=2026-09-19">
+<style>
+  /* Inventory Guide — page-level rules only (docs/inventory-guide.md).
+     Rows, headers and bars are the shared count-sheet components in
+     assets/kitchen.css; only the two-box layout is new. */
+
+  /* a place heading carries its item count on the right */
+  .stock-place-hd{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+  .stock-place-n{font-family:var(--font-cond);font-size:14px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--grey);white-space:nowrap}
+  .stock-none{padding:12px 18px;font-size:0.85rem;color:var(--grey);font-style:italic;border-bottom:1px solid var(--hair)}
+
+  /* The boxes sit beside the name when they fit, and wrap under it, still
+     right-aligned, when they don't — a two-box row on a phone. */
+  .count-row.stock-row{flex-wrap:wrap;row-gap:8px}
+  .stock-row .count-info{min-width:140px}
+  .stock-boxes{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px 12px;margin-left:auto}
+  .stock-box{display:flex;align-items:center;gap:6px}
+  .stock-lbl{font-family:var(--font-cond);font-size:14px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--grey)}
+  /* a floor under the unit keeps the boxes in one column down the page —
+     EA, BU, DOZ and BSKT would otherwise each push the box a different
+     distance — so an empty box is found by looking down one line */
+  .stock-unit{min-width:2.8em;font-size:0.85rem;color:var(--grey);white-space:nowrap}
+
+  /* 16px, and written qualified so it can never lose the cascade to
+     kitchen.css's `.modal input[type="text"]` (0.95rem): #135. Not
+     .count-input, which is 15.2px and zooms iPhones on Meat and Portion. */
+  .modal input[type="text"].stock-input,.stock-input{width:64px;min-height:44px;padding:8px 6px;background:var(--paper);border:1px solid var(--edge);border-radius:6px;color:var(--ink);font-family:var(--font);font-size:16px;font-variant-numeric:tabular-nums;text-align:center;outline:none;-webkit-appearance:none;appearance:none}
+  /* No count is open, so a box is locked: dashed edge on the press fill.
+     The edge stays --edge (3:1), so the box is still plainly a box. */
+  .stock-input:disabled{background:var(--press);border-style:dashed;opacity:1}
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="header-row">
+    <a class="home-link" href="index.html">← Home</a>
+    <h1>Tempest <span>Inventory</span></h1>
+    <div class="date-sub">Preview</div>
+  </div>
+</div>
+<div class="date-bar">
+  <div class="date-display">Count sheet</div>
+  <div class="date-sub" id="sheetSummary"></div>
+</div>
+<div class="intro" id="introBar">Preview — nothing on this page saves yet. Walk the kitchen with it and check every item is in the right place, in the right order.</div>
+<div id="appBody"><div class="loading"><div class="spinner"></div><p>Loading the count sheet…</p></div></div>
+<div class="toast" id="toast"></div>
+<script>
+var SB='https://sxppuyarecqkgkrsrefc.supabase.co',SK='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN4cHB1eWFyZWNxa2drcnNyZWZjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczOTA4MzAsImV4cCI6MjA5Mjk2NjgzMH0.GM8OfcR68_JjdPeQ3k7j6L3ulJFaeS1xnSLBcdtYXtU';
+var LOCATION='Tempest';
+var places=[],items=[],packs={},loading=false,st=null;
+
+/* Ported from tempest_costing.html (its slice 4). This page only ever GETs. */
+var API_TIMEOUT=15000;
+/* A load of the whole sheet gets 60s, so slow-but-working wifi still opens it. */
+var LOAD_TIMEOUT=60000;
+/* status 0 = no answer at all (network error or timeout). One callback per
+   request, whichever of load/error/timeout comes first. `ms` overrides. */
+function api(m,t,q,d,cb,ms){var x=new XMLHttpRequest(),fired=false;function fire(r,s){if(fired)return;fired=true;if(cb)cb(r,s);}
+  x.open(m,SB+'/rest/v1/'+t+(q?'?'+q:''));x.timeout=ms||(m==='GET'?LOAD_TIMEOUT:API_TIMEOUT);x.setRequestHeader('apikey',SK);x.setRequestHeader('Authorization','Bearer '+SK);if(d){x.setRequestHeader('Content-Type','application/json');x.setRequestHeader('Prefer','return=representation');}
+  x.onload=function(){var r=null;try{r=JSON.parse(x.responseText);}catch(e){}fire(r,x.status);};x.onerror=function(){fire(null,0);};x.ontimeout=function(){fire(null,0);};x.send(d?JSON.stringify(d):null);}
+
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+function num(v){var n=parseFloat(v);return isFinite(n)?n:null;}
+
+function showToast(msg,type){
+  var t=document.getElementById('toast');
+  t.textContent=(type==='success'?'✓ ':'⚠ ')+msg;
+  t.className='toast show '+(type||'success');
+  clearTimeout(st);st=setTimeout(function(){t.className='toast';},1800);
+}
+
+/* Three reads, and the sheet is drawn only when all three have landed. The
+   boxes an item gets depend on its pack size, so drawing without the price
+   list would give a 40 lb case one box in order units: a different count,
+   not a smaller one. One failure fails the whole sheet. */
+function loadAll(){
+  if(loading)return;
+  loading=true;
+  document.getElementById('appBody').innerHTML='<div class="loading"><div class="spinner"></div><p>Loading the count sheet…</p></div>';
+  var got={},need=3,failed=false;
+  function land(key){return function(r,s){
+    if(failed)return;
+    if(!(s>=200&&s<300)||!Array.isArray(r)){failed=true;loading=false;loadFailed();return;}
+    got[key]=r;
+    if(--need)return;
+    loading=false;
+    places=got.places;items=got.items;packs=packMap(got.packs);
+    render();
+  };}
+  api('GET','inventory_places','location=eq.'+LOCATION+'&active=eq.true&select=id,label,sort_order&order=sort_order.asc,id.asc',null,land('places'));
+  api('GET','inventory_items','location=eq.'+LOCATION+'&active=eq.true&select=id,order_item_id,place_id,sort_order,order_items(name,vendor,unit,active)&order=sort_order.asc,id.asc',null,land('items'));
+  /* Pack sizes only. This page never asks for a price, so no dollar figure
+     can reach a staff screen by accident. */
+  api('GET','ingredient_costs','location=eq.'+LOCATION+'&active=eq.true&order_item_id=not.is.null&select=order_item_id,pack_qty,pack_unit',null,land('packs'));
+}
+
+function loadFailed(){
+  document.getElementById('sheetSummary').textContent='';
+  document.getElementById('appBody').innerHTML='<div class="empty">Could not load the count sheet. Check the signal, then try again.<br><br>'
+    +'<button class="link-btn" onclick="loadAll()">Try again</button></div>';
+  showToast('Could not load the count sheet','error');
+}
+
+/* order_item_id -> {qty, unit}, only for a usable pack: a quantity above
+   zero AND a unit. Anything less is "no pack yet", never a guess. */
+function packMap(rows){
+  var m={};
+  for(var i=0;i<rows.length;i++){
+    var q=num(rows[i].pack_qty),u=String(rows[i].pack_unit||'').trim();
+    if(q>0&&u)m[rows[i].order_item_id]={qty:q,unit:u};
+  }
+  return m;
+}
+
+function render(){
+  var body=document.getElementById('appBody');
+  if(!places.length||!items.length){
+    document.getElementById('sheetSummary').textContent='';
+    body.innerHTML='<div class="empty">No places or items are set up for the count yet.</div>';
+    return;
+  }
+  var labelOf={},byPlace={},placesOf={},distinct={},nItems=0,nPacked=0,orphans=[];
+  for(var i=0;i<places.length;i++){labelOf[places[i].id]=places[i].label;byPlace[places[i].id]=[];}
+  for(var i=0;i<items.length;i++){
+    var it=items[i],oid=it.order_item_id;
+    // an item whose place is retired must still show up, not silently drop off the count
+    if(!byPlace[it.place_id]){orphans.push(it);continue;}
+    byPlace[it.place_id].push(it);
+    (placesOf[oid]=placesOf[oid]||[]).push(labelOf[it.place_id]);
+    if(!distinct[oid]){distinct[oid]=1;nItems++;if(packs[oid])nPacked++;}
+  }
+  var h='';
+  for(var i=0;i<places.length;i++){
+    var p=places[i],rows=byPlace[p.id];
+    h+=placeHead(p.label,rows.length);
+    if(!rows.length)h+='<div class="stock-none">Nothing is stored here yet.</div>';
+    for(var j=0;j<rows.length;j++)h+=rowHtml(rows[j],p.label,placesOf);
+  }
+  if(orphans.length){
+    h+=placeHead('Not in an active place',orphans.length);
+    for(var j=0;j<orphans.length;j++)h+=rowHtml(orphans[j],'',placesOf);
+  }
+  body.innerHTML=h;
+  document.getElementById('sheetSummary').textContent=nItems+' items · '+places.length+' places';
+  document.getElementById('introBar').textContent='Preview — nothing on this page saves yet. Walk the kitchen with it and check every item is in the right place, in the right order. '
+    +nPacked+' of '+nItems+' items have a pack size in Recipe Costing, so they get Full and Loose boxes; the rest are counted in order-guide units until they have one.';
+}
+
+function placeHead(label,n){
+  return '<div class="cat-header stock-place-hd"><div class="cat-label">'+esc(label)+'</div>'
+    +'<div class="stock-place-n">'+n+' item'+(n===1?'':'s')+'</div></div>';
+}
+
+/* Which boxes an item gets (docs/inventory-guide.md, "Which boxes an item gets"):
+   a pack of more than 1 -> Full x pack, and Loose in pack units;
+   a pack of exactly 1   -> one box in the pack unit;
+   no pack yet           -> one box in the order-guide unit. */
+function rowHtml(it,here,placesOf){
+  var g=it.order_items||{},name=g.name||'(unknown item)',pk=packs[it.order_item_id];
+  var sub=[];
+  if(g.vendor)sub.push(esc(g.vendor));
+  var also=(placesOf[it.order_item_id]||[]).filter(function(l){return l!==here;});
+  if(also.length)sub.push('also in '+esc(also.join(', ')));
+  if(g.active===false)sub.push('no longer on the order guide');
+  var boxes;
+  if(pk&&pk.qty>1){
+    boxes=box(it,'full','Full','× '+pk.qty+' '+pk.unit,'Full packs of '+name)
+         +box(it,'loose','Loose',pk.unit,'Loose '+pk.unit+' of '+name);
+  }else{
+    var u=pk?pk.unit:(g.unit||'units');
+    boxes=box(it,'full','',u,name+', in '+u);
+  }
+  return '<div class="count-row stock-row">'
+    +'<div class="count-info"><div class="count-name">'+esc(name)+'</div>'
+    +(sub.length?'<div class="count-par">'+sub.join(' · ')+'</div>':'')+'</div>'
+    +'<div class="stock-boxes">'+boxes+'</div></div>';
+}
+
+function box(it,part,label,unit,aria){
+  return '<label class="stock-box">'+(label?'<span class="stock-lbl">'+label+'</span>':'')
+    +'<input class="stock-input" type="text" inputmode="decimal" autocomplete="off" disabled'
+    +' data-item-id="'+it.id+'" data-part="'+part+'" aria-label="'+esc(aria)+'">'
+    +'<span class="stock-unit">'+esc(unit)+'</span></label>';
+}
+
+loadAll();
+</script>
+</body>
+</html>
