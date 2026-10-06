@@ -1,10 +1,19 @@
 # Costing — make the ledger fillable
 
-Status: **Slice 6 is built and reviewed twice** — PR #157, open, not merged. Run the run:
-Save & next, a per-invoice count in the modal, and the run's button on a row of its own. The
-first review's six real findings (m77–m82) and the second's three (m83–m85) are fixed in the
-PR. See "Slice 6 as built" and "Added by the review(s) of PR #157". check_costing.py 584 →
-613 → 633 → **651**, clean. **This is the last planned slice.** Not yet tried on a phone.
+Status: **All six planned slices have shipped, and no costing work is in progress.** Still
+open, none scheduled: m1 (after Save & next, iOS opens the keyboard only on a tap of the
+filter), m75 (the picker's rows cannot be reached from a keyboard), the toast is not a live
+region on any page, `api()` has a timeout on this page only, a write that lands after a
+later one wins at the table, a retry for missing price-history rows, and the focus ring
+clipped on the shared toggles across six pages (see m72).
+
+**Slice 6 shipped** — merged to `main` as `e14bf61` (PR #157, squashed) after two review
+rounds, with both rounds' findings (m77–m85) fixed in the PR; check_costing.py **651**,
+clean. **Phone-tested by Stephen on his iPhone on 2026-10-06**: an edit opened from the main
+list shows only Cancel and Save, and Save fits on the screen; ＋ Add shows Save & next on a
+row of its own; and a real run off a real invoice kept the filter text and the invoice's
+number and date from item to item, the count went up by one per item, and no value carried
+over into the next item. See "Slice 6 as built" and "Added by the review(s) of PR #157".
 
 **Slice 5 shipped** — merged to `main` as `07e3e2a` (PR #155, squashed), reviewed once with its
 findings fixed in the PR, and phone-tested by Stephen. See "Slice 5 as built".
