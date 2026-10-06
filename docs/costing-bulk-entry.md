@@ -1,10 +1,11 @@
 # Costing — make the ledger fillable
 
-Status: **Slice 5 is built** on `costing-slice5-find` (PR #155), reviewed once, with the
-review's findings fixed in the same PR — find the item fast: word-by-word search in the main
-list and the ＋ Add filter, invoice names searchable in both, a priced item found by search
-shown to update rather than "no match", a match count, and a plain statement when nothing
-matches. See "Slice 5 as built". check_costing.py 553 → **584**, clean.
+Status: **Slice 6 is built** on `costing-slice6-run`, not yet reviewed — run the run: Save &
+next, a per-invoice count in the modal, and the run's button on a row of its own. See "Slice
+6 as built". check_costing.py 584 → **613**, clean. **This is the last planned slice.**
+
+**Slice 5 shipped** — merged to `main` as `07e3e2a` (PR #155, squashed), reviewed once with its
+findings fixed in the PR, and phone-tested by Stephen. See "Slice 5 as built".
 
 **Slice 4 shipped** — merged to `main` as `5004291` (PR #154, squashed) after three review
 rounds, and **hand-tested by Stephen on his iPhone on 2026-09-30**: with Airplane Mode on,
@@ -1037,6 +1038,42 @@ on: a guide item with a null vendor or name is guarded (`||''`), not otherwise h
 **Not done.** Matching is plain substring per word: no typo tolerance, no plurals
 ("tomatoes" does not find "tomato"), and punctuation counts ("4/1" matches, "41" does not).
 Not looked at on a phone.
+
+## Slice 6 as built
+
+"Run the run." Built on `costing-slice6-run`. Three decisions, Stephen, 2026-10-06: **wait
+for the save to land, then show the next item**; **count per invoice**; **Save & next on a
+row of its own, above Cancel / Save**.
+
+- **Save & next** (`saveItem(true)`) is Save — the same write path, slice 4's lock and
+  look-ups and all — and then, **only once the save has landed**, `nextItem()`: the
+  `closeEdit()` boundary (pick and every value field cleared, a whole invoice folded) and
+  straight back into ＋ Add with the **filter text that found the last item** and the
+  **invoice bar** kept. It works from an edit too: the next item is still picked from ＋ Add.
+- **m18 is closed by the wait.** The repaint-under-a-thumb came from a save landing while the
+  next list was already on screen; Save & next never shows that list until the save is in,
+  so it is drawn once, already without the item just priced. A save that fails stays on its
+  item with what was typed, as Save does, and is not counted. (A save left running by
+  *Cancel* can still land under an open picker — m18's original path — unchanged here.)
+- **The count** (`runCounts`, keyed by the provenance each save was filed under): *"N saved
+  on invoice SR-88214"* in invoice mode, *"N saved since you opened this page"* when setting
+  up. Changing the invoice in the bar starts a new count; going back to an invoice shows its
+  own. It is a `.hint` line under the modal's subtitle, blank at zero, and counts only saves
+  that landed.
+- **m2 — three buttons at phone width.** Save & next spans the full width on its own row;
+  Cancel and Save keep theirs below it. Measured: its row sits clear above theirs, it spans
+  both, neither of them wraps, and all are ≥44px. A screenshot at 500px confirms it.
+- With the filter kept, the item just priced reappears under it as slice 5's **priced —
+  update** row, below the items still to price.
+
+**Proved.** 29 assertions in a new `slice6` scenario (584 → 613, clean). 8 injected faults,
+each caught: the next item shown before the save lands, the filter text dropped, Save & next
+merely closing, one count for every invoice, no count shown, Save & next left unlocked, no
+row of its own, and a failure moving on anyway. `check_styling.py` clean.
+
+**Not done.** m1 is unchanged: focus returns to the filter from a save's callback, which iOS
+will not treat as a tap, so the keyboard does not open by itself — tap the filter to type the
+next item. Not run on a phone.
 
 ## Minors list
 

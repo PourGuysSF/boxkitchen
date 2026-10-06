@@ -86,7 +86,9 @@ SCENARIOS = ("ok", "slow", "fail", "empty", "ledgerslow", "ledgerfail",
              "r3_lookfirst", "r3_editunconfirmed", "r3_known409", "r3_thirdtry",
              "r3_relinkshow", "r3_late2",
              # slice 5 - find the item fast
-             "slice5")
+             "slice5",
+             # slice 6 - run the run
+             "slice6")
 
 # ---------------------------------------------------------------- fixtures --
 # Two "Slab bacon" rows on purpose: the whole of slice 1 is that the id we
@@ -2984,6 +2986,100 @@ RUNNER = r"""
       showRetired=false; set('search','');
     });
     step(function(){ ok('s5: main list: no search, no match count', !/match/.test(count()), count()); });
+  }
+
+  if(H.scen==='slice6'){
+    /* SLICE 6: RUN THE RUN. Save & next saves, waits for it to land, then opens
+       a fresh + Add keeping the filter text and the invoice bar - so a run of
+       items needs no re-typing - with a count of what has been saved on the
+       invoice. */
+    function wait(n){for(var i=0;i<(n||4);i++)step(function(){});}
+    function onChooser(){return shown()&&visible($('pickChoose'))&&!visible($('pickChosen'));}
+    step(function(){});
+    step(function(){ ok('s6: fixtures loaded', items.length===4, 'items='+items.length);
+      setInvMode('invoice'); set('invRef','SR-88214'); set('invDate','2026-10-02'); openAdd(); });
+    step(function(){
+      /* m2: three buttons at phone width - the run's button on its own row */
+      var n=$('nextBtn').getBoundingClientRect(),c=$('editModal').querySelector('.modal-btn.cancel').getBoundingClientRect(),
+          sv=$('saveBtn').getBoundingClientRect();
+      ok('css: Save & next is on screen', visible($('nextBtn')));
+      ok('css: Save & next has its own row, above Cancel and Save', n.bottom<=c.top-8&&n.bottom<=sv.top-8, n.bottom+' vs '+c.top+'/'+sv.top);
+      ok('css: and spans the width of both', n.width>=(sv.right-c.left)-1, n.width+' vs '+(sv.right-c.left));
+      ok('css: Save and Cancel do not wrap', sv.height<=56&&c.height<=56, sv.height+'/'+c.height);
+      ok('css: Save & next is a 44px tap target', n.height>=44, String(n.height));
+      ok('s6: no count before anything is saved', $('runCount').textContent==='', $('runCount').textContent);
+      set('pickFilter','bacon');
+    });
+    step(function(){ rowFor('Asia Intl','Slab bacon').click(); });
+    step(function(){ set('fQty','40'); set('fUnit','lb'); set('fPrice','120'); H.reqs.length=0; H.nextWrite.push('hang'); $('nextBtn').click(); });
+    wait(2);
+    step(function(){
+      /* wait, then show (Stephen, 2026-10-06): nothing moves until it lands */
+      ok('s6: while it saves, the item stays on screen', visible($('pickChosen'))&&$('fPrice').value==='120');
+      ok('s6: both save buttons are locked', $('nextBtn').disabled&&$('saveBtn').disabled&&$('saveBtn').textContent==='Saving…');
+      H.timeoutAll();
+    });
+    wait();
+    step(function(){
+      ok('s6: when it lands, the next item: a fresh + Add', onChooser()&&editId==null&&pickId==null&&$('editTitle').textContent==='Add costed item',
+         'editId='+editId+' pickId='+pickId+' title='+$('editTitle').textContent);
+      ok('s6: the filter text is kept', $('pickFilter').value==='bacon', $('pickFilter').value);
+      /* the item just priced is no longer offered to price - with the filter
+         still naming it, it shows only as slice 5's "priced - update" row */
+      ok('s6: and applied to the list', !!rowFor('Birite','Slab bacon')&&!rowFor('Birite','Slab bacon').classList.contains('pick-priced')&&
+         !!rowFor('Asia Intl','Slab bacon')&&rowFor('Asia Intl','Slab bacon').classList.contains('pick-priced'), $('pickList').textContent);
+      ok('s6: every value field is cleared', ['fQty','fUnit','fPrice','fAlias','fName'].every(function(id){return $(id).value==='';}));
+      ok('s6: the invoice bar is kept', invMode==='invoice'&&invRef==='SR-88214'&&invDate==='2026-10-02', invMode+' '+invRef+' '+invDate);
+      ok('s6: and folded, as between any two items', visible($('invSet')));
+      ok('s6: the count says one saved on the invoice', $('runCount').textContent==='1 saved on invoice SR-88214', $('runCount').textContent);
+      ok('s6: it was saved under the invoice', (function(){var h=hist();return h.length===1&&h[0].body.invoice_ref==='SR-88214';})());
+    });
+    /* a second item of the run */
+    step(function(){ rowFor('Birite','Slab bacon').click(); });
+    step(function(){ set('fQty','12'); set('fUnit','lb'); set('fPrice','88.50'); $('nextBtn').click(); });
+    wait();
+    step(function(){
+      ok('s6: a second Save & next', onChooser()&&$('pickFilter').value==='bacon');
+      ok('s6: counts two on the invoice', $('runCount').textContent==='2 saved on invoice SR-88214', $('runCount').textContent);
+      ok('s6: and nothing is left to price under "bacon"', $('pickCount').textContent==='0 of 3 match', $('pickCount').textContent);
+    });
+    /* a failure stays on its item, as Save does */
+    step(function(){ set('pickFilter','vinegar'); });
+    step(function(){ rowFor('Birite','Distilled white vinegar').click(); });
+    step(function(){ set('fQty','4'); set('fUnit','gal'); set('fPrice','19.96'); H.nextWrite.push('reject'); $('nextBtn').click(); });
+    wait();
+    step(function(){
+      ok('s6: a failed Save & next stays on the item', shown()&&editId===501&&$('fPrice').value==='19.96', 'editId='+editId);
+      ok('s6: and says so', toast()==='⚠ Distilled white vinegar (Birite) failed — try again', toast());
+      ok('s6: and does not count it', $('runCount').textContent==='2 saved on invoice SR-88214', $('runCount').textContent);
+      $('nextBtn').click();
+    });
+    wait();
+    step(function(){
+      ok('s6: Save & next from an edit goes on to + Add too', onChooser()&&$('editTitle').textContent==='Add costed item'&&$('pickFilter').value==='vinegar');
+      ok('s6: three on the invoice', $('runCount').textContent==='3 saved on invoice SR-88214', $('runCount').textContent);
+    });
+    /* a new invoice starts a new count; setting up has its own */
+    step(function(){ unfoldInv(); set('invRef','SR-90001'); });
+    step(function(){
+      ok('s6: a new invoice in the bar starts a new count', $('runCount').textContent==='', $('runCount').textContent);
+      $('invSetupBtn').click();
+    });
+    step(function(){ set('pickFilter',''); pickCustom(); });
+    step(function(){ set('fName','Smoked paprika'); set('fQty','1'); set('fUnit','lb'); set('fPrice','9'); $('nextBtn').click(); });
+    wait();
+    step(function(){
+      ok('s6: setting up counts since the page was opened', $('runCount').textContent==='1 saved since you opened this page', $('runCount').textContent);
+      setInvMode('invoice'); set('invRef','SR-88214');
+    });
+    step(function(){
+      ok('s6: and the first invoice\'s count is still its own', $('runCount').textContent==='3 saved on invoice SR-88214', $('runCount').textContent);
+    });
+    /* plain Save still closes */
+    step(function(){ pickCustom(); });
+    step(function(){ set('fName','Cumin'); set('fQty','1'); set('fUnit','lb'); set('fPrice','8'); $('saveBtn').click(); });
+    wait();
+    step(function(){ ok('s6: plain Save still closes the window', !shown()); });
   }
 
   if(document.readyState==='complete')setTimeout(run,0);
