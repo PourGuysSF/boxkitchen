@@ -187,7 +187,8 @@
     </div>
     <h3 id="editTitle">Add costed item</h3>
     <div class="msub" id="editSub">Price what you buy.</div>
-    <!-- slice 6: how many saved on the invoice in the bar - the paper's lines -->
+    <!-- slice 6: how many saved on the invoice in the bar - the paper's lines.
+         m84: shown only in a run (runUi), like Save & next -->
     <div class="hint run-count" id="runCount" role="status"></div>
 
     <div id="pickWrap">
@@ -244,7 +245,8 @@
     </div>
 
     <!-- slice 6 (m2): the run's button has a row to itself, full width, so a thumb
-         going for it cannot meet Cancel or Save (Stephen, 2026-10-06) -->
+         going for it cannot meet Cancel or Save (Stephen, 2026-10-06). m84: only in
+         a run - an edit opened from the main list keeps Cancel / Save alone -->
     <button class="modal-btn save save-next" id="nextBtn" onclick="saveItem(true)">Save &amp; next →</button>
     <div class="modal-btns">
       <button class="modal-btn cancel" onclick="closeEdit()">Cancel</button>
@@ -670,7 +672,8 @@ function syncSaveBtn(){var busy=modalBusy(),b=document.getElementById('saveBtn')
 function reshowRow(id){
   if(editId!==id)return;
   var it=findItem(id);if(!it)return;
-  if(!editDirty()){openEdit(id);return;}
+  // m84: re-showing the row keeps whatever run it was opened in
+  if(!editDirty()){openEdit(id,null,document.getElementById('nextBtn').style.display!=='none');return;}
   var now=[nameOf(it),it.invoice_alias||'',(it.pack_qty==null?'':String(it.pack_qty)),it.pack_unit||'',(it.pack_price==null?'':String(it.pack_price))];
   for(var i=0;i<EDIT_FIELDS.length;i++){var el=document.getElementById(EDIT_FIELDS[i]);
     if(editSnap&&el.value===editSnap[i])el.value=now[i];}
@@ -708,8 +711,24 @@ function openAdd(filter){
   document.getElementById('editActions').style.display='none';
   showChooser();
   snapFields();
+  runUi(true);
   document.getElementById('editModal').classList.add('show');
-  setTimeout(function(){document.getElementById('pickFilter').focus();},120);
+  // m84: Save & next reopens a modal that never hid, so it kept the last
+  // item's scroll - the next one opened with its title under the bar
+  document.querySelector('#editModal .modal').scrollTop=0;
+  // m83: not out from under someone typing the next invoice's number
+  setTimeout(function(){if(!inBar())document.getElementById('pickFilter').focus();},120);
+}
+/* m83: the invoice bar is being typed in. A save landing mid-run must neither
+   fold it nor take the focus out of it - the half-typed number would be filed
+   against, and an iPhone keyboard would drop. */
+function inBar(){var a=document.activeElement;return !!a&&(a.id==='invRef'||a.id==='invDate');}
+/* m84: Save & next and the run's count belong to a run - ＋ Add, and an item
+   opened from inside it. An edit from the main list is not a run, and without
+   them it fits an iPhone screen again (the m29 measurement). */
+function runUi(on){
+  document.getElementById('nextBtn').style.display=on?'':'none';
+  document.getElementById('runCount').style.display=on?'':'none';
 }
 function clearFields(){
   document.getElementById('fName').value='';document.getElementById('fName').disabled=false;
@@ -845,7 +864,7 @@ function pickCustom(){
 /* An order-guide item that already has a row with no price: edit that row —
    but carrying which row you tapped. Both Slab bacons unpriced would otherwise
    open an identical modal reading only "Slab bacon". */
-function pickExisting(icId,orderItemId){if(modalBusy())return;openEdit(icId,orderById[orderItemId]||null);pickLanded();}
+function pickExisting(icId,orderItemId){if(modalBusy())return;openEdit(icId,orderById[orderItemId]||null,true);pickLanded();}
 function showChosen(vendor,name){
   relinking=false;
   document.getElementById('pickChosenV').textContent=vendor;
@@ -856,7 +875,7 @@ function showChosen(vendor,name){
 }
 /* `chosen` is the order-guide row that was tapped to get here, when the
    picker is what opened this modal. */
-function openEdit(id,chosen){
+function openEdit(id,chosen,inRun){
   var it=findItem(id);if(!it)return;
   modalMoved();
   editId=id;
@@ -880,6 +899,7 @@ function openEdit(id,chosen){
   rb.textContent=it.active?'Retire':'Restore';rb.className='link-btn retire'+(it.active?'':' restore');
   ucPreview();
   snapFields();
+  runUi(!!inRun);   // m84: only pickExisting() - an item opened from inside ＋ Add - is part of a run
   // editId is set only now; modalMoved() above synced with none
   syncSaveBtn();
   document.getElementById('editModal').classList.add('show');
@@ -901,7 +921,9 @@ function closeEdit(){
   showChooser();
   // m29: closing is the boundary. A whole invoice folds here, so the next
   // item opens with room for Save; Cancel folds it as surely as a save does.
-  invFolded=(invMode==='invoice'&&!!invRef&&!!invDate);
+  // m83: unless it is being typed in - a save that lands while the next
+  // number is half-typed would fold the bar on "SR-" and file the run there.
+  invFolded=(invMode==='invoice'&&!!invRef&&!!invDate&&!inBar());
   syncInvBar();
 }
 /* Slice 6: the next item of a run. closeEdit() is the boundary (it folds a
@@ -916,13 +938,18 @@ function nextItem(filter){closeEdit();openAdd(filter);}
    m79: every landing this page learns of is counted, not only done()'s - a
    late landing found by a look or a reload is a line filed all the same. */
 var runCounts={};
+var MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function shortDate(d){var m=/^(\d{4})-(\d\d)-(\d\d)$/.exec(d||'');return m?MONTHS[Number(m[2])-1]+' '+Number(m[3]):(d||'');}
 function runKey(p){return p&&p.source==='invoice'?('inv:'+(p.ref||'')+'|'+(p.date||'')):'setup';}
 function countRun(p,id){var k=runKey(p),s=runCounts[k]||(runCounts[k]={});s[id]=true;syncRunCount();}
 function syncRunCount(){
   var p=provNow(),s=runCounts[runKey(p)],n=s?Object.keys(s).length:0,el=document.getElementById('runCount');
   // m80: the date is part of the key, so the line names it - correcting the
-  // date of an invoice shows that invoice-and-date's own count, and says so
-  var t=!n?'':(p.source==='invoice'?(n+' saved on invoice '+p.ref+', dated '+p.date):(n+' saved since you opened this page'));
+  // date of an invoice shows that invoice-and-date's own count, and says so.
+  // m85: and says what it cannot know - it is this page's count, not the
+  // invoice's: a reload, or a second phone on the same invoice, starts over.
+  var t=!n?'':(p.source==='invoice'?(n+' saved on '+p.ref+' ('+shortDate(p.date)+') since this page opened')
+                                   :(n+' saved setting up since this page opened'));
   // m82: a live region, and syncInvBar() runs on every keystroke in the bar -
   // written only when it says something new, so it is read out only then
   if(el.textContent!==t)el.textContent=t;

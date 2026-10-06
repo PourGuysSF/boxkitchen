@@ -89,8 +89,8 @@ SCENARIOS = ("ok", "slow", "fail", "empty", "ledgerslow", "ledgerfail",
              "slice5",
              # slice 6 - run the run
              "slice6",
-             # the review of PR #157 (slice 6)
-             "r6_count")
+             # the reviews of PR #157 (slice 6)
+             "r6_count", "r6_run")
 
 # ---------------------------------------------------------------- fixtures --
 # Two "Slab bacon" rows on purpose: the whole of slice 1 is that the id we
@@ -3039,7 +3039,7 @@ RUNNER = r"""
       ok('s6: every value field is cleared', ['fQty','fUnit','fPrice','fAlias','fName'].every(function(id){return $(id).value==='';}));
       ok('s6: the invoice bar is kept', invMode==='invoice'&&invRef==='SR-88214'&&invDate==='2026-10-02', invMode+' '+invRef+' '+invDate);
       ok('s6: and folded, as between any two items', visible($('invSet')));
-      ok('s6: the count says one saved on the invoice', $('runCount').textContent==='1 saved on invoice SR-88214, dated 2026-10-02', $('runCount').textContent);
+      ok('s6: the count says one saved on the invoice', $('runCount').textContent==='1 saved on SR-88214 (Oct 2) since this page opened', $('runCount').textContent);
       ok('s6: it was saved under the invoice', (function(){var h=hist();return h.length===1&&h[0].body.invoice_ref==='SR-88214';})());
       ok('m81: the next item adds one list build to closeEdit() and no more', H.renders<=2, 'renders='+H.renders);
       H.unwrapRP();
@@ -3054,7 +3054,7 @@ RUNNER = r"""
     wait();
     step(function(){
       ok('s6: a second Save & next', onChooser()&&$('pickFilter').value==='bacon');
-      ok('s6: counts two on the invoice', $('runCount').textContent==='2 saved on invoice SR-88214, dated 2026-10-02', $('runCount').textContent);
+      ok('s6: counts two on the invoice', $('runCount').textContent==='2 saved on SR-88214 (Oct 2) since this page opened', $('runCount').textContent);
       ok('s6: and nothing is left to price under "bacon"', $('pickCount').textContent==='0 of 3 match', $('pickCount').textContent);
     });
     /* m77: correct a line already saved - the count is of items, not saves */
@@ -3064,7 +3064,7 @@ RUNNER = r"""
     wait();
     step(function(){
       ok('m77: (the correction saved, and moved on)', onChooser()&&findItem(H.serverRows().filter(function(r){return r.order_item_id===169;})[0].id).pack_price===112);
-      ok('m77: correcting a line is still one line', $('runCount').textContent==='2 saved on invoice SR-88214, dated 2026-10-02', $('runCount').textContent);
+      ok('m77: correcting a line is still one line', $('runCount').textContent==='2 saved on SR-88214 (Oct 2) since this page opened', $('runCount').textContent);
     });
     /* a failure stays on its item, as Save does */
     step(function(){ set('pickFilter','vinegar'); });
@@ -3074,13 +3074,13 @@ RUNNER = r"""
     step(function(){
       ok('s6: a failed Save & next stays on the item', shown()&&editId===501&&$('fPrice').value==='19.96', 'editId='+editId);
       ok('s6: and says so', toast()==='⚠ Distilled white vinegar (Birite) failed — try again', toast());
-      ok('s6: and does not count it', $('runCount').textContent==='2 saved on invoice SR-88214, dated 2026-10-02', $('runCount').textContent);
+      ok('s6: and does not count it', $('runCount').textContent==='2 saved on SR-88214 (Oct 2) since this page opened', $('runCount').textContent);
       $('nextBtn').click();
     });
     wait();
     step(function(){
       ok('s6: Save & next from an edit goes on to + Add too', onChooser()&&$('editTitle').textContent==='Add costed item'&&$('pickFilter').value==='vinegar');
-      ok('s6: three on the invoice', $('runCount').textContent==='3 saved on invoice SR-88214, dated 2026-10-02', $('runCount').textContent);
+      ok('s6: three on the invoice', $('runCount').textContent==='3 saved on SR-88214 (Oct 2) since this page opened', $('runCount').textContent);
     });
     /* a new invoice starts a new count; setting up has its own */
     step(function(){ unfoldInv(); set('invRef','SR-90001'); });
@@ -3092,11 +3092,11 @@ RUNNER = r"""
     step(function(){ set('fName','Smoked paprika'); set('fQty','1'); set('fUnit','lb'); set('fPrice','9'); $('nextBtn').click(); });
     wait();
     step(function(){
-      ok('s6: setting up counts since the page was opened', $('runCount').textContent==='1 saved since you opened this page', $('runCount').textContent);
+      ok('s6: setting up counts since the page was opened', $('runCount').textContent==='1 saved setting up since this page opened', $('runCount').textContent);
       setInvMode('invoice'); set('invRef','SR-88214');
     });
     step(function(){
-      ok('s6: and the first invoice\'s count is still its own', $('runCount').textContent==='3 saved on invoice SR-88214, dated 2026-10-02', $('runCount').textContent);
+      ok('s6: and the first invoice\'s count is still its own', $('runCount').textContent==='3 saved on SR-88214 (Oct 2) since this page opened', $('runCount').textContent);
       set('invDate','2026-10-01');
     });
     step(function(){
@@ -3104,7 +3104,7 @@ RUNNER = r"""
       set('invDate','2026-10-02');
     });
     step(function(){
-      ok('m80: back to the date, back to its count', $('runCount').textContent==='3 saved on invoice SR-88214, dated 2026-10-02', $('runCount').textContent);
+      ok('m80: back to the date, back to its count', $('runCount').textContent==='3 saved on SR-88214 (Oct 2) since this page opened', $('runCount').textContent);
     });
     /* plain Save still closes */
     step(function(){ pickCustom(); });
@@ -3119,7 +3119,7 @@ RUNNER = r"""
        the four places a row is found landed other than done(). */
     function wait(n){for(var i=0;i<(n||4);i++)step(function(){});}
     function cnt(){return $('runCount').textContent;}
-    function says(n){return n+' saved on invoice SR-1, dated 2026-10-02';}
+    function says(n){return n+' saved on SR-1 (Oct 2) since this page opened';}
     step(function(){});
     step(function(){ ok('r6: fixtures loaded', items.length===4, 'items='+items.length);
       setInvMode('invoice'); set('invRef','SR-1'); set('invDate','2026-10-02'); openAdd(); });
@@ -3173,6 +3173,87 @@ RUNNER = r"""
       closeEdit(); init(); });
     wait();
     step(function(){ ok('m79: a reload that finds an edit landed counts it', cnt()===says(4), cnt()); });
+  }
+
+  if(H.scen==='r6_run'){
+    /* THE SECOND REVIEW OF PR #157. m83: a save landing while the next
+       invoice number is being typed neither folds the bar nor takes focus out
+       of it. m84: Save & next and the count live only in a run. And the two
+       paths the first round left untested: Cancel during Save & next, and the
+       invoice changed while a save is out. */
+    function wait(n){for(var i=0;i<(n||4);i++)step(function(){});}
+    function onChooser(){return shown()&&visible($('pickChoose'))&&!visible($('pickChosen'));}
+    function cnt(){return $('runCount').textContent;}
+    function says(n){return n+' saved on SR-88214 (Oct 2) since this page opened';}
+    function box(){return $('editModal').querySelector('.modal');}
+    step(function(){});
+    step(function(){ ok('r6b: fixtures loaded', items.length===4, 'items='+items.length);
+      setInvMode('invoice'); set('invRef','SR-88214'); set('invDate','2026-10-02'); openAdd(); });
+    step(function(){ set('pickFilter','bacon'); });
+    step(function(){ rowFor('Asia Intl','Slab bacon').click(); });
+    step(function(){ set('fQty','40'); set('fUnit','lb'); set('fPrice','120'); H.nextWrite.push('hang'); $('nextBtn').click(); });
+    wait(2);
+    /* (1) while it saves, the next invoice's number is started */
+    step(function(){ unfoldInv(); $('invRef').focus(); set('invRef','SR-9');
+      ok('r6b: (typing the next number while the save is out)', document.activeElement===$('invRef')&&invRef==='SR-9'&&$('nextBtn').disabled);
+      H.timeoutAll(); });
+    wait(60);   /* past openAdd()'s 120ms focus */
+    step(function(){
+      ok('r6b: (the save landed and the run moved on)', onChooser()&&$('pickFilter').value==='bacon');
+      ok('m83: the bar being typed in is not folded on the half-typed number', visible($('invFields'))&&!visible($('invSet')));
+      ok('m83: and the focus stays in it', document.activeElement===$('invRef'), document.activeElement&&document.activeElement.id);
+      ok('r6b: the save in flight was filed under the invoice it was made on', hist().length===1&&hist()[0].body.invoice_ref==='SR-88214');
+      set('invRef','SR-88214');
+    });
+    step(function(){
+      ok('r6b: and counted there, not under the number in the bar when it landed', cnt()===says(1), cnt());
+      $('invRef').blur();
+    });
+    /* (2) Cancel during Save & next: the save finishes and counts, and the
+       window stays shut */
+    step(function(){ rowFor('Birite','Slab bacon').click(); });
+    step(function(){ set('fQty','12'); set('fUnit','lb'); set('fPrice','88.50'); H.nextWrite.push('hang'); $('nextBtn').click(); });
+    wait(2);
+    step(function(){ closeEdit(); H.timeoutAll(); });
+    wait();
+    step(function(){
+      ok('r6b: Cancel during Save & next stays closed when the save lands', !shown());
+      ok('r6b: and the save still counts', cnt()===says(2), cnt());
+    });
+    /* (3) m84: an edit from the main list is not a run */
+    step(function(){ openEdit(502); });
+    step(function(){
+      ok('m84: an edit from the main list has no Save & next', shown()&&!visible($('nextBtn'))&&visible($('saveBtn')));
+      ok('m84: and no run count', !visible($('runCount')));
+      closeEdit(); openAdd();
+    });
+    step(function(){ ok('m84: ＋ Add has both', visible($('nextBtn'))&&visible($('runCount')));
+      set('pickFilter','vinegar'); });
+    step(function(){ rowFor('Birite','Distilled white vinegar').click(); });
+    step(function(){
+      ok('m84: an item opened from inside ＋ Add is part of the run', editId===501&&visible($('nextBtn'))&&visible($('runCount')), 'editId='+editId);
+      box().scrollTop=150;
+      ok('m84: (the window is scrolled down)', box().scrollTop>0, String(box().scrollTop));
+      set('fQty','4'); set('fUnit','gal'); set('fPrice','19.96'); $('nextBtn').click();
+    });
+    wait();
+    step(function(){
+      ok('m84: the next item opens at the top of the window', onChooser()&&box().scrollTop===0, String(box().scrollTop));
+    });
+    /* (4) m84: a run's edit re-shown by a save landing late keeps its run */
+    step(function(){ rowFor('Birite','Distilled white vinegar').click(); });
+    step(function(){ set('fPrice','21'); H.nextWrite.push('hang'); $('saveBtn').click(); });
+    wait(2);
+    step(function(){ closeEdit(); openAdd(); });
+    step(function(){ set('pickFilter','vinegar'); });
+    step(function(){ rowFor('Birite','Distilled white vinegar').click(); });
+    step(function(){ ok('r6b: (reopened while its save is still out)', editId===501&&$('saveBtn').disabled&&visible($('nextBtn')));
+      H.timeoutAll(); });
+    wait();
+    step(function(){
+      ok('r6b: (the landed save re-showed the row)', shown()&&editId===501&&$('fPrice').value==='21', $('fPrice').value);
+      ok('m84: and it is still part of the run', visible($('nextBtn'))&&visible($('runCount')));
+    });
   }
 
   if(document.readyState==='complete')setTimeout(run,0);
