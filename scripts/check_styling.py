@@ -425,6 +425,18 @@ def find_chrome():
     return None
 
 
+def stop(proc):
+    """Kill a Chrome and wait for it. A bare kill() returned while Chrome was
+    still writing its profile, and the temp directory's cleanup then crashed
+    with "Directory not empty" - three times on CI and once locally, always
+    after every page had been measured."""
+    proc.kill()
+    try:
+        proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        pass
+
+
 def measure_inputs(chrome, tmp):
     """{page: [field, ...]} - one Chrome per page, all launched at once.
 
@@ -471,9 +483,9 @@ def measure_inputs(chrome, tmp):
                                "neutralised (see FS_GATE)" % (got.get("page"),))
                 else:
                     found[f] = got["fields"]
-                proc.kill(); fo.close(); fe.close(); del procs[f]
+                stop(proc); fo.close(); fe.close(); del procs[f]
     for f, (proc, dom, fo, fe) in procs.items():
-        proc.kill(); fo.close(); fe.close()
+        stop(proc); fo.close(); fe.close()
         fail(f, 1, "check 11: the page never reported its fields - it may have "
                    "thrown before </body>; see the run's stderr")
     return found
@@ -483,8 +495,15 @@ chrome = find_chrome()
 if not chrome:
     sys.exit("check_styling: no Chrome found, so the 16px input rule (check 11, "
              "issue #135) cannot run. Set CHROME=/path/to/chrome.")
-with tempfile.TemporaryDirectory() as _tmp:
+# Cleaned up by hand, ignoring errors: Chrome's helper processes can outlive the
+# one stop() waited for and still be writing. A leftover temp file is harmless;
+# a crash here threw away a finished measurement and failed the check.
+# (TemporaryDirectory(ignore_cleanup_errors=True) needs Python 3.10; macOS ships 3.9.)
+_tmp = tempfile.mkdtemp()
+try:
     measured = measure_inputs(chrome, _tmp)
+finally:
+    shutil.rmtree(_tmp, ignore_errors=True)
 
 seen = set()
 for f, fields in sorted(measured.items()):
