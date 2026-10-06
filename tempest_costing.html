@@ -77,6 +77,8 @@
   #editActions .link-btn:disabled,#pickChange:disabled{color:var(--faint);border-color:var(--edge);border-style:dashed;cursor:default}
   .pick-list.is-saving{pointer-events:none}
   .pick-list.is-saving .pick-v,.pick-list.is-saving .pick-n{color:var(--faint)}
+  /* slice 6: Save & next, a row of its own above Cancel / Save */
+  .modal-btn.save-next{display:block;width:100%;margin-bottom:10px}
   /* slice 5: the count line holds its height whether or not it has text */
   #pickCount{min-height:1.3em}
   .inv-fields{display:flex;gap:8px;margin-top:8px}
@@ -185,6 +187,9 @@
     </div>
     <h3 id="editTitle">Add costed item</h3>
     <div class="msub" id="editSub">Price what you buy.</div>
+    <!-- slice 6: how many saved on the invoice in the bar - the paper's lines.
+         m84: shown only in a run (runUi), like Save & next -->
+    <div class="hint run-count" id="runCount" role="status"></div>
 
     <div id="pickWrap">
       <div class="nb-label">Order-guide item</div>
@@ -239,6 +244,10 @@
       <button class="link-btn retire" id="retireBtn" onclick="toggleActive()">Retire</button>
     </div>
 
+    <!-- slice 6 (m2): the run's button has a row to itself, full width, so a thumb
+         going for it cannot meet Cancel or Save (Stephen, 2026-10-06). m84: only in
+         a run - an edit opened from the main list keeps Cancel / Save alone -->
+    <button class="modal-btn save save-next" id="nextBtn" onclick="saveItem(true)">Save &amp; next →</button>
     <div class="modal-btns">
       <button class="modal-btn cancel" onclick="closeEdit()">Cancel</button>
       <button class="modal-btn save" id="saveBtn" onclick="saveItem()">Save</button>
@@ -387,6 +396,7 @@ function invTidy(){var r=document.getElementById('invRef');if(r.value!==invRef)r
    a text box, so no phone keyboard springs up over the modal. */
 function unfoldInv(){invFolded=false;syncInvBar();document.getElementById('invInvoiceBtn').focus();}
 function syncInvBar(){
+  syncRunCount();
   var inv=invMode==='invoice';
   // only a whole invoice folds: one missing a number or a date keeps its
   // fields on screen, so the save gate's focus() never lands on a hidden box
@@ -554,11 +564,13 @@ function keepNewer(fetched,seqAtSend){
 function settleLoaded(){
   for(var id in unsureEdit){var it=findItem(Number(id)),t=it&&tryFor(unsureEdit,id,it);
     if(!t)continue;
+    countRun(t.prov,it.id);   // m79: a late landing is a line filed all the same
     if(t.log&&!t.logged)logPrice(it.id,t.price,t.qty,t.unit,t.prov,t.label);
     dropTry(unsureEdit,id,it);}
   for(var k in unsure)for(var j=0;j<unsure[k].length;j++){var u=unsure[k][j];if(u.logged)continue;
     for(var i=0;i<items.length;i++){var x=items[i];
       if(!x.active||!sameLedger(x,u.payload))continue;
+      countRun(u.prov,x.id);
       if(u.price!=null)logPrice(x.id,u.price,u.qty,u.unit,u.prov,u.label);
       u.logged=true;break;}}
 }
@@ -644,6 +656,7 @@ function modalBusy(){return !!savingGen[modalGen]||(editId!=null&&!!savingKey['i
    live (Stephen, 2026-09-29): the write finishes in the background and still
    reports. The functions behind these refuse too, so no path gets round it. */
 function syncSaveBtn(){var busy=modalBusy(),b=document.getElementById('saveBtn');b.disabled=busy;b.textContent=busy?'Saving…':'Save';
+  document.getElementById('nextBtn').disabled=busy;
   document.getElementById('retireBtn').disabled=busy;
   // m19: and Price history stays shut until the history row a save owes is in
   document.getElementById('histBtn').disabled=busy||(editId!=null&&!!histOut[editId]);
@@ -659,7 +672,8 @@ function syncSaveBtn(){var busy=modalBusy(),b=document.getElementById('saveBtn')
 function reshowRow(id){
   if(editId!==id)return;
   var it=findItem(id);if(!it)return;
-  if(!editDirty()){openEdit(id);return;}
+  // m84: re-showing the row keeps whatever run it was opened in
+  if(!editDirty()){openEdit(id,null,document.getElementById('nextBtn').style.display!=='none');return;}
   var now=[nameOf(it),it.invoice_alias||'',(it.pack_qty==null?'':String(it.pack_qty)),it.pack_unit||'',(it.pack_price==null?'':String(it.pack_price))];
   for(var i=0;i<EDIT_FIELDS.length;i++){var el=document.getElementById(EDIT_FIELDS[i]);
     if(editSnap&&el.value===editSnap[i])el.value=now[i];}
@@ -684,19 +698,37 @@ function free(keys){for(var i=0;i<keys.length;i++)delete savingKey[keys[i]];}
    settles m9's "list-order luck". */
 function costRowFor(orderItemId){for(var i=0;i<items.length;i++)if(items[i].active&&items[i].order_item_id===orderItemId)return items[i];return null;}
 
-function openAdd(){
+function openAdd(filter){
   modalMoved();
   editId=null;pickId=null;
   document.getElementById('editTitle').textContent='Add costed item';
   document.getElementById('editSub').textContent='Price what you buy.';
   document.getElementById('pickWrap').style.display='';
-  document.getElementById('pickFilter').value='';
+  // slice 6: Save & next passes the filter that found the last item (m81: set
+  // before showChooser() draws the list, so it is drawn once, not twice)
+  document.getElementById('pickFilter').value=filter||'';
   clearFields();
   document.getElementById('editActions').style.display='none';
   showChooser();
   snapFields();
+  runUi(true);
   document.getElementById('editModal').classList.add('show');
-  setTimeout(function(){document.getElementById('pickFilter').focus();},120);
+  // m84: Save & next reopens a modal that never hid, so it kept the last
+  // item's scroll - the next one opened with its title under the bar
+  document.querySelector('#editModal .modal').scrollTop=0;
+  // m83: not out from under someone typing the next invoice's number
+  setTimeout(function(){if(!inBar())document.getElementById('pickFilter').focus();},120);
+}
+/* m83: the invoice bar is being typed in. A save landing mid-run must neither
+   fold it nor take the focus out of it - the half-typed number would be filed
+   against, and an iPhone keyboard would drop. */
+function inBar(){var a=document.activeElement;return !!a&&(a.id==='invRef'||a.id==='invDate');}
+/* m84: Save & next and the run's count belong to a run - ＋ Add, and an item
+   opened from inside it. An edit from the main list is not a run, and without
+   them it fits an iPhone screen again (the m29 measurement). */
+function runUi(on){
+  document.getElementById('nextBtn').style.display=on?'':'none';
+  document.getElementById('runCount').style.display=on?'':'none';
 }
 function clearFields(){
   document.getElementById('fName').value='';document.getElementById('fName').disabled=false;
@@ -832,7 +864,7 @@ function pickCustom(){
 /* An order-guide item that already has a row with no price: edit that row —
    but carrying which row you tapped. Both Slab bacons unpriced would otherwise
    open an identical modal reading only "Slab bacon". */
-function pickExisting(icId,orderItemId){if(modalBusy())return;openEdit(icId,orderById[orderItemId]||null);pickLanded();}
+function pickExisting(icId,orderItemId){if(modalBusy())return;openEdit(icId,orderById[orderItemId]||null,true);pickLanded();}
 function showChosen(vendor,name){
   relinking=false;
   document.getElementById('pickChosenV').textContent=vendor;
@@ -843,7 +875,7 @@ function showChosen(vendor,name){
 }
 /* `chosen` is the order-guide row that was tapped to get here, when the
    picker is what opened this modal. */
-function openEdit(id,chosen){
+function openEdit(id,chosen,inRun){
   var it=findItem(id);if(!it)return;
   modalMoved();
   editId=id;
@@ -867,6 +899,7 @@ function openEdit(id,chosen){
   rb.textContent=it.active?'Retire':'Restore';rb.className='link-btn retire'+(it.active?'':' restore');
   ucPreview();
   snapFields();
+  runUi(!!inRun);   // m84: only pickExisting() - an item opened from inside ＋ Add - is part of a run
   // editId is set only now; modalMoved() above synced with none
   syncSaveBtn();
   document.getElementById('editModal').classList.add('show');
@@ -888,8 +921,38 @@ function closeEdit(){
   showChooser();
   // m29: closing is the boundary. A whole invoice folds here, so the next
   // item opens with room for Save; Cancel folds it as surely as a save does.
-  invFolded=(invMode==='invoice'&&!!invRef&&!!invDate);
+  // m83: unless it is being typed in - a save that lands while the next
+  // number is half-typed would fold the bar on "SR-" and file the run there.
+  invFolded=(invMode==='invoice'&&!!invRef&&!!invDate&&!inBar());
   syncInvBar();
+}
+/* Slice 6: the next item of a run. closeEdit() is the boundary (it folds a
+   whole invoice, clears the pick and every value field); the modal then opens
+   straight back as ＋ Add with the filter text that found the last item. */
+function nextItem(filter){closeEdit();openAdd(filter);}
+/* Slice 6: items saved per invoice, counted as the paper's lines are: keyed by
+   the provenance each save was filed under, so changing the invoice in the bar
+   starts a new count. Setting up counts since the page was opened.
+   m77: each key holds a SET of ledger ids, not a tally - correcting a line, or
+   saving one again, is still one line on the paper.
+   m79: every landing this page learns of is counted, not only done()'s - a
+   late landing found by a look or a reload is a line filed all the same. */
+var runCounts={};
+var MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function shortDate(d){var m=/^(\d{4})-(\d\d)-(\d\d)$/.exec(d||'');return m?MONTHS[Number(m[2])-1]+' '+Number(m[3]):(d||'');}
+function runKey(p){return p&&p.source==='invoice'?('inv:'+(p.ref||'')+'|'+(p.date||'')):'setup';}
+function countRun(p,id){var k=runKey(p),s=runCounts[k]||(runCounts[k]={});s[id]=true;syncRunCount();}
+function syncRunCount(){
+  var p=provNow(),s=runCounts[runKey(p)],n=s?Object.keys(s).length:0,el=document.getElementById('runCount');
+  // m80: the date is part of the key, so the line names it - correcting the
+  // date of an invoice shows that invoice-and-date's own count, and says so.
+  // m85: and says what it cannot know - it is this page's count, not the
+  // invoice's: a reload, or a second phone on the same invoice, starts over.
+  var t=!n?'':(p.source==='invoice'?(n+' saved on '+p.ref+' ('+shortDate(p.date)+') since this page opened')
+                                   :(n+' saved setting up since this page opened'));
+  // m82: a live region, and syncInvBar() runs on every keystroke in the bar -
+  // written only when it says something new, so it is read out only then
+  if(el.textContent!==t)el.textContent=t;
 }
 function ucPreview(){
   var q=num(document.getElementById('fQty').value),p=num(document.getElementById('fPrice').value),u=document.getElementById('fUnit').value.trim()||'unit';
@@ -925,7 +988,12 @@ function magnitudeWarning(it,packQty,packPrice,unit,label){
   return label+': '+from+' → '+to+'\n\n'+why+'\n\nSave anyway?';
 }
 
-function saveItem(){
+/* Slice 6: Save & next is Save, then - only once the save has LANDED - a fresh
+   ＋ Add with the filter text and the invoice bar kept. Waiting is the m18 fix
+   (Stephen, 2026-10-06): the list is drawn once, already without the item just
+   priced, instead of losing a row under a thumb mid-reach. A save that fails
+   stays on its item, as Save does. */
+function saveItem(andNext){
   // Nothing is ever picked for you, so nothing can be saved without a pick.
   if(editId==null&&pickId==null){showToast('Tap the item you are pricing',true);showChooser();return;}
   var name=document.getElementById('fName').value.trim();
@@ -954,6 +1022,7 @@ function saveItem(){
   // gen says whether the modal is still showing this save when it returns;
   // label names the item so the toast is true even if it is not.
   var gen=modalGen,label,keys,payload,orderItemId,savingId,priceChanged;
+  var keepFilter=andNext?document.getElementById('pickFilter').value:'';
 
   if(editId==null){
     orderItemId=(pickId!=='custom')?pickId:null;
@@ -1036,7 +1105,7 @@ function saveItem(){
   // `logAs`: the history row this landing owes - this save's own values, or
   // (for a row found from an earlier try) the values that try was saved with.
   function done(row,verb,logAs){
-    release();
+    release();countRun(prov,row.id);
     if(savingId==null){landRow(row);if(logAs&&logAs.price!=null)logPrice(row.id,logAs.price,logAs.qty,logAs.unit,logAs.prov,label);}
     else{landRow(row);
       // m24: `owed` is the recovery. priceChanged compares the form against
@@ -1071,7 +1140,11 @@ function saveItem(){
   // the list update silently and what they are typing stays - and a reopened
   // row catches up with what just landed on it.
   function after(msg,isErr,ms){
-    if(gen===modalGen)closeEdit();else{refreshPicker();if(savingId!=null)reshowRow(savingId);}
+    // m78: only a save that landed as typed moves on. A warning (an earlier
+    // try's numbers are the ones in the table) closes, as Save does, rather
+    // than carrying the run past an item that did not save what was typed.
+    if(gen===modalGen){if(andNext&&!isErr)nextItem(keepFilter);else closeEdit();}
+    else{refreshPicker();if(savingId!=null)reshowRow(savingId);}
     render();showToast(msg,isErr,ms);
   }
 
@@ -1105,7 +1178,7 @@ function saveItem(){
         var t=row&&tryFor(unsureEdit,savingId,row);
         if(t){
           // it landed late: it is the row this save changes, and owes its history row
-          landRow(row);if(t.log&&!t.logged)logPrice(savingId,t.price,t.qty,t.unit,t.prov,t.label);
+          landRow(row);countRun(t.prov,savingId);if(t.log&&!t.logged)logPrice(savingId,t.price,t.qty,t.unit,t.prov,t.label);
           dropTry(unsureEdit,savingId,row);
           priceChanged=(!numEq(row.pack_price,packPrice)||!numEq(row.pack_qty,packQty)||(row.pack_unit||'')!==unit)&&
                        (row.pack_price!=null||packPrice!=null);
@@ -1156,6 +1229,7 @@ function saveItem(){
       release();landRow(row);
       // an earlier try landed with other numbers: it is the row, and owes its history
       if(t){
+        countRun(t.prov,row.id);   // m79: it is filed under the earlier try's invoice
         if(t.price!=null&&!logged)logPrice(row.id,t.price,t.qty,t.unit,t.prov,label);
         return after(label+' had already saved, with the numbers from an earlier try. Open it to change them.',true,LONG_TOAST);
       }
