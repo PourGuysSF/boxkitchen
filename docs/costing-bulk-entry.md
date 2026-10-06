@@ -1,10 +1,13 @@
 # Costing — make the ledger fillable
 
-Status: **Slice 5 is built** on `costing-slice5-find` (PR #155), reviewed once, with the
-review's findings fixed in the same PR — find the item fast: word-by-word search in the main
-list and the ＋ Add filter, invoice names searchable in both, a priced item found by search
-shown to update rather than "no match", a match count, and a plain statement when nothing
-matches. See "Slice 5 as built". check_costing.py 553 → **584**, clean.
+Status: **Slice 6 is built and reviewed twice** — PR #157, open, not merged. Run the run:
+Save & next, a per-invoice count in the modal, and the run's button on a row of its own. The
+first review's six real findings (m77–m82) and the second's three (m83–m85) are fixed in the
+PR. See "Slice 6 as built" and "Added by the review(s) of PR #157". check_costing.py 584 →
+613 → 633 → **651**, clean. **This is the last planned slice.** Not yet tried on a phone.
+
+**Slice 5 shipped** — merged to `main` as `07e3e2a` (PR #155, squashed), reviewed once with its
+findings fixed in the PR, and phone-tested by Stephen. See "Slice 5 as built".
 
 **Slice 4 shipped** — merged to `main` as `5004291` (PR #154, squashed) after three review
 rounds, and **hand-tested by Stephen on his iPhone on 2026-09-30**: with Airplane Mode on,
@@ -34,8 +37,7 @@ space typed in an invoice number is kept. **The m29 layout pass shipped** — me
 `44c6295` (PR #147, squashed), reviewed once before merge and passed. A set invoice folds the
 bar to one line, which brings the everyday invoice-mode edit back inside an 844px iPhone
 (778 → 699px), and the bar no longer covers the top of the modal title, which it had done in
-every state since slice 3. See "The m29 layout pass, as built". **Slices 4–6 are still
-planned.**
+every state since slice 3. See "The m29 layout pass, as built".
 
 **Slice 3 shipped** — merged to `main` as `54d8ec2` (PR #146, squashed) — the invoice bar, real
 provenance on every history row, and #140 closed. **Round 10 fixed one blocker and three
@@ -710,7 +712,9 @@ number in it (640/802/856, 722/884/938, 778/940/994; bar 90 and 146).
 | the bar itself | 90px | 146px | **67px** |
 
 Against 743px (88vh of an 844px iPhone): **the everyday invoice edit fits again, with 44px to
-spare**, and needs less room than setting up does. The two chooser states are still over the
+spare**, and needs less room than setting up does. *(Slice 6 keeps both edit numbers: its
+Save & next row and count line are hidden on a main-list edit — m84, measured 722 and 699
+again.)* The two chooser states are still over the
 fold in every mode, as they have been since slice 2 (802/856); folded, they are 23px less over
 than setting up.
 
@@ -1038,6 +1042,138 @@ on: a guide item with a null vendor or name is guarded (`||''`), not otherwise h
 ("tomatoes" does not find "tomato"), and punctuation counts ("4/1" matches, "41" does not).
 Not looked at on a phone.
 
+## Slice 6 as built
+
+"Run the run." Built on `costing-slice6-run`. Three decisions, Stephen, 2026-10-06: **wait
+for the save to land, then show the next item**; **count per invoice**; **Save & next on a
+row of its own, above Cancel / Save**.
+
+- **Save & next** (`saveItem(true)`) is Save — the same write path, slice 4's lock and
+  look-ups and all — and then, **only once the save has landed**, `nextItem()`: the
+  `closeEdit()` boundary (pick and every value field cleared, a whole invoice folded) and
+  straight back into ＋ Add with the **filter text that found the last item** and the
+  **invoice bar** kept. It works from an item opened inside ＋ Add too (a needs-price or
+  priced — update row): the next item is still picked from ＋ Add. Since m84, an edit opened
+  from the **main list** has neither Save & next nor the count — it is not a run.
+- **Save & next cannot cause m18 — the wait does it.** The repaint-under-a-thumb came from a save landing while the
+  next list was already on screen; Save & next never shows that list until the save is in,
+  so it is drawn once, already without the item just priced. A save that fails stays on its
+  item with what was typed, as Save does, and is not counted. (A save left running by
+  *Cancel* can still land under an open picker — m18's original path — unchanged here.)
+- **The count** (`runCounts`, keyed by the provenance each save was filed under): *"N saved
+  on SR-88214 (Oct 2) since this page opened"* in invoice mode, *"N saved setting up since
+  this page opened"* when setting up (wording since m85, the date since m80; distinct items
+  since m77). Changing the invoice in the bar starts a new count; going back to an invoice shows its
+  own. It is a `.hint` line under the modal's subtitle, blank at zero, and counts only saves
+  that landed.
+- **m2 — three buttons at phone width.** Save & next spans the full width on its own row;
+  Cancel and Save keep theirs below it. The test checks that its row sits clear above
+  theirs, spans both, that neither of them wraps and that Save & next is ≥44px — in the
+  harness's 756px window, where the modal is at its 380px maximum. The second review
+  measured 358px (Save & next 312×48, Cancel and Save 151×48, nothing wrapping, even at
+  "Saving…"). A screenshot at 500px confirms it.
+- With the filter kept, the item just priced reappears under it as slice 5's **priced —
+  update** row, below the items still to price.
+
+**Proved.** 29 assertions in a new `slice6` scenario (584 → 613, clean). 8 injected faults,
+each caught: the next item shown before the save lands, the filter text dropped, Save & next
+merely closing, one count for every invoice, no count shown, Save & next left unlocked, no
+row of its own, and a failure moving on anyway. `check_styling.py` clean.
+
+**Not done.** m1 is unchanged: focus returns to the filter from a save's callback, which iOS
+will not treat as a tap, so the keyboard does not open by itself — tap the filter to type the
+next item. Not run on a phone.
+
+### Added by the review of PR #157 (slice 6, pre-merge)
+
+The review found eight things. Six were real and are fixed here, each with a test that fails
+when its fault is put back (10 injected faults, 10 caught). Two were not defects.
+
+- m77. **The count counted saves, not lines.** It was a tally bumped by every landed save, so
+  correcting a typo on an item already saved on this invoice, or tapping Save on an unchanged
+  one, made "2 saved" out of one line on the paper. Each key now holds a *set* of ledger ids.
+- m78. **A warning still moved the run on.** When a retry's look finds an earlier try landed
+  with *other* numbers, the page warns "…had already saved, with the numbers from an earlier
+  try. Open it to change them." Save closes there; Save & next went on to a fresh ＋ Add, past
+  an item that did not save what was typed. Now only a save that landed as typed moves on;
+  this warning closes, as Save does. (Rare: it needs an earlier add whose answer was lost.)
+- m79. **Landings found other than by `done()` were not counted.** Four places learn that a
+  row landed: the retry's look that finds an earlier try's numbers (m78's path), the look an
+  edit makes before writing after an unanswered try, and a reload (`settleLoaded()`) for an
+  add or an edit. Each now counts the row under the invoice it was filed under. m77's sets
+  make this safe — a row counted twice is still one.
+- m80. **The count was keyed on number *and* date but named only the number.** Correcting the
+  date blanked the line under the same number, with nothing on screen to say why. It now
+  reads *"3 saved on invoice SR-88214, dated 2026-10-02"*, matching what it counts. Kept on
+  number and date, not number alone: two vendors can share an invoice number, and the rows
+  saved under a wrong date really are filed under it.
+- m81. **Save & next drew the list three times.** `closeEdit()`, `openAdd()`, and again once
+  the filter was put back. `openAdd(filter)` now sets the filter before its one draw.
+- m82. **The count was silent to a screen reader.** `#runCount` is now `role="status"`, and is
+  written only when its text changes — `syncInvBar()` calls it on every keystroke in the bar,
+  and rewriting a live region can have it read out again each time. (The toast is not a live
+  region either, page-wide; so far this count is the only thing a save announces.)
+- **Not defects:** (1) *"Tab then Enter from the last field now hits Save & next, not
+  Save"* — before this PR, Tab from the price went to **Cancel**, which comes before Save, so
+  nothing that used to save now does something else. Two tomato buttons is Stephen's layout
+  (2026-10-06). (2) *"Save & next shows on edits, even retired ones"* — designed: from an edit
+  the next item is still picked from ＋ Add, as this section says above.
+- **Proved.** 20 assertions added (613 → **633**, 23 scenarios, clean), in `slice6` and a new
+  `r6_count` scenario. Faults put back in a scratch copy, each caught: a tally instead of a
+  set; the warning moving on; each of the four uncounted landings; the date dropped from the
+  line; the triple draw; no `role`; and a rewrite on every call. `check_styling.py` clean.
+- **Not done.** Not run on a phone; m1 unchanged.
+
+### Added by the second review of PR #157 (slice 6, pre-merge)
+
+A read-only review in a separate window: "safe to merge", with three smaller findings and two
+test gaps, all confirmed against the code. Two needed Stephen's choice (2026-10-06): **hide
+Save & next on a main-list edit**, and **"…since this page opened"** for the count. Fixed
+here, each with a test that fails when its fault is put back (12 injected faults, 12 caught).
+
+- m83. **A save landing mid-typing folded the bar on a half-typed number.** Save & next →
+  while it says "Saving…", Change on the bar and start the next invoice's number. When the
+  save landed, `closeEdit()` folded the bar on "SR-", and `openAdd()` moved focus to the
+  filter (on an iPhone, the keyboard drops). Every later item would file under "SR-". Plain
+  Save did the same, but closed the window, so it showed. Now neither happens while focus is
+  in the number or date box (`inBar()`); the save in flight still files and counts under the
+  invoice it was made on.
+- m84. **The new row pushed Save off an iPhone screen on every main-list edit** — 722 → 780
+  and 699 → 757 (785 with the count), against 743, undoing m29. Save & next and the count now
+  show only in a run (`runUi()`): ＋ Add, and an item opened from inside it
+  (`pickExisting()`); a main-list edit is Cancel / Save alone, and measures **722 and 699**
+  again. A row re-shown by a late save keeps the run it was opened in. Save & next also now
+  opens the next item at the top of the window — the modal never hides between items, so it
+  had kept the last one's scroll and opened with the title under the bar.
+- m85. **The count said more than it knew.** "N saved on invoice SR-88214" read as the
+  invoice's total, but it is this page's: a reload (iPhone Safari reloads a background tab)
+  or a second phone starts it over, and the cook might re-enter lines that were saved. Now
+  *"3 saved on SR-88214 (Oct 2) since this page opened"*, and *"1 saved setting up since this
+  page opened"* — the old setting-up line read as everything, but left out invoice saves.
+  Measured at 358px: one line (14px).
+- **Test gaps closed.** Cancel during Save & next stays closed when the save lands, and still
+  counts it; a save made under one invoice and landing after the bar was changed counts
+  under the one it was made on. Both behaved correctly; neither had a test.
+- **Doc fixes.** "m18 is closed by the wait" is now "Save & next cannot cause m18" (Cancel's
+  path is still open); the m2 "measured" claim now says what the test measures and where;
+  m2 in the minors list is marked done; and the stale "Slices 4–6 are still planned" is gone.
+- **Measured** (m29's method: modal `scrollHeight` at a pinned 358px, fixture 502):
+  main-list edit 722 setting up / 699 invoice folded, with or without a count; ＋ Add with an
+  item picked 703, **731** with the count — inside 743. **Over:** an item opened from inside
+  ＋ Add during a run, **785** with the count — Save needs a small scroll there. Accepted:
+  that is the run's own screen, and the button above Save is the one the run uses.
+- **Proved.** 18 assertions added (633 → **651**, 24 scenarios, clean), in a new `r6_run`
+  scenario plus the new wording in `slice6` and `r6_count`. Faults put back, each caught: the
+  bar folding anyway; focus taken from it; Save & next on a main-list edit; not on an item
+  from inside ＋ Add; no scroll reset; a re-shown row dropping its run; the count not hidden;
+  each old wording; the month off by one; Cancel reopening on landing; and counting under
+  the bar at landing. `check_styling.py` clean.
+- **Not acted on.** Re-saving an unchanged item, or fixing only its name, counts toward the
+  invoice in the bar — right if the count means "lines on the paper handled", which is the
+  reading kept. The branch predates #156, so its `check_styling.py` can still hit the
+  "Directory not empty" cleanup crash; the merge brings the fix.
+- **Not done.** Not run on a phone; m1 unchanged.
+
 ## Minors list
 
 Carried from the v1 review; append as building proceeds. Do not clear it — something minor
@@ -1046,6 +1182,8 @@ in one slice is often a blocker in the next.
 - m1. Focusing the filter from inside an XHR callback won't open the iOS keyboard (not a
   direct tap). When it does open it covers most of an 88vh modal. *(Slice 6)*
 - m2. Three buttons in `.modal-btns` at 390px — check wrapping and thumb separation. *(Slice 6)*
+  **Done in slice 6:** Save & next has a row of its own; measured at 358px. See "Slice 6 as
+  built".
 - m3. The "(optional …)" span sets its colour inline (`:89`). Move it to a class if that area
   is touched, so `check_styling.py` can see it.
 - m4. Confirm every new modal element is hidden under `@media print`.
@@ -2176,8 +2314,10 @@ the same PR.
 - **`check_styling.py` has a cleanup race.** Twice now — on GitHub for #149 and locally
   for #153 — it measured every page and then crashed deleting its temp directory
   ("Directory not empty") while Chrome was still writing its profile. Re-running passes. It
-  crashes before its verdict, so it can only fail loudly, never pass wrongly. **Open**:
-  wait for Chrome to exit, or clean up with `ignore_errors`.
+  crashes before its verdict, so it can only fail loudly, never pass wrongly. **Fixed** on
+  `styling-guard-cleanup` after a third CI hit (#155): it now waits for each Chrome to exit
+  and removes its temp directory ignoring errors. Six clean runs in a row, and a page broken
+  on purpose (an input at 12px) still fails it with exit 1.
 - **8 assertions** in all, 384 → **392**, clean. **7 injected faults, each caught**: no
   focus move, focus sent to `#invRef`, each label dropped, the ring put back outside, the
   ring left ink on the ink fill, and `aria-pressed` not kept in step. They prove 6 of the
