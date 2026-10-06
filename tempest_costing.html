@@ -188,7 +188,7 @@
     <h3 id="editTitle">Add costed item</h3>
     <div class="msub" id="editSub">Price what you buy.</div>
     <!-- slice 6: how many saved on the invoice in the bar - the paper's lines -->
-    <div class="hint run-count" id="runCount"></div>
+    <div class="hint run-count" id="runCount" role="status"></div>
 
     <div id="pickWrap">
       <div class="nb-label">Order-guide item</div>
@@ -562,11 +562,13 @@ function keepNewer(fetched,seqAtSend){
 function settleLoaded(){
   for(var id in unsureEdit){var it=findItem(Number(id)),t=it&&tryFor(unsureEdit,id,it);
     if(!t)continue;
+    countRun(t.prov,it.id);   // m79: a late landing is a line filed all the same
     if(t.log&&!t.logged)logPrice(it.id,t.price,t.qty,t.unit,t.prov,t.label);
     dropTry(unsureEdit,id,it);}
   for(var k in unsure)for(var j=0;j<unsure[k].length;j++){var u=unsure[k][j];if(u.logged)continue;
     for(var i=0;i<items.length;i++){var x=items[i];
       if(!x.active||!sameLedger(x,u.payload))continue;
+      countRun(u.prov,x.id);
       if(u.price!=null)logPrice(x.id,u.price,u.qty,u.unit,u.prov,u.label);
       u.logged=true;break;}}
 }
@@ -693,13 +695,15 @@ function free(keys){for(var i=0;i<keys.length;i++)delete savingKey[keys[i]];}
    settles m9's "list-order luck". */
 function costRowFor(orderItemId){for(var i=0;i<items.length;i++)if(items[i].active&&items[i].order_item_id===orderItemId)return items[i];return null;}
 
-function openAdd(){
+function openAdd(filter){
   modalMoved();
   editId=null;pickId=null;
   document.getElementById('editTitle').textContent='Add costed item';
   document.getElementById('editSub').textContent='Price what you buy.';
   document.getElementById('pickWrap').style.display='';
-  document.getElementById('pickFilter').value='';
+  // slice 6: Save & next passes the filter that found the last item (m81: set
+  // before showChooser() draws the list, so it is drawn once, not twice)
+  document.getElementById('pickFilter').value=filter||'';
   clearFields();
   document.getElementById('editActions').style.display='none';
   showChooser();
@@ -903,19 +907,25 @@ function closeEdit(){
 /* Slice 6: the next item of a run. closeEdit() is the boundary (it folds a
    whole invoice, clears the pick and every value field); the modal then opens
    straight back as ＋ Add with the filter text that found the last item. */
-function nextItem(filter){
-  closeEdit();openAdd();
-  var pf=document.getElementById('pickFilter');pf.value=filter||'';renderPick();
-}
-/* Slice 6: saves landed per invoice, counted as the paper's lines are: keyed by
+function nextItem(filter){closeEdit();openAdd(filter);}
+/* Slice 6: items saved per invoice, counted as the paper's lines are: keyed by
    the provenance each save was filed under, so changing the invoice in the bar
-   starts a new count. Setting up counts since the page was opened. */
+   starts a new count. Setting up counts since the page was opened.
+   m77: each key holds a SET of ledger ids, not a tally - correcting a line, or
+   saving one again, is still one line on the paper.
+   m79: every landing this page learns of is counted, not only done()'s - a
+   late landing found by a look or a reload is a line filed all the same. */
 var runCounts={};
 function runKey(p){return p&&p.source==='invoice'?('inv:'+(p.ref||'')+'|'+(p.date||'')):'setup';}
-function countRun(p){var k=runKey(p);runCounts[k]=(runCounts[k]||0)+1;syncRunCount();}
+function countRun(p,id){var k=runKey(p),s=runCounts[k]||(runCounts[k]={});s[id]=true;syncRunCount();}
 function syncRunCount(){
-  var n=runCounts[runKey(provNow())]||0,el=document.getElementById('runCount');
-  el.textContent=!n?'':(invMode==='invoice'?(n+' saved on invoice '+invRef):(n+' saved since you opened this page'));
+  var p=provNow(),s=runCounts[runKey(p)],n=s?Object.keys(s).length:0,el=document.getElementById('runCount');
+  // m80: the date is part of the key, so the line names it - correcting the
+  // date of an invoice shows that invoice-and-date's own count, and says so
+  var t=!n?'':(p.source==='invoice'?(n+' saved on invoice '+p.ref+', dated '+p.date):(n+' saved since you opened this page'));
+  // m82: a live region, and syncInvBar() runs on every keystroke in the bar -
+  // written only when it says something new, so it is read out only then
+  if(el.textContent!==t)el.textContent=t;
 }
 function ucPreview(){
   var q=num(document.getElementById('fQty').value),p=num(document.getElementById('fPrice').value),u=document.getElementById('fUnit').value.trim()||'unit';
@@ -1068,7 +1078,7 @@ function saveItem(andNext){
   // `logAs`: the history row this landing owes - this save's own values, or
   // (for a row found from an earlier try) the values that try was saved with.
   function done(row,verb,logAs){
-    release();countRun(prov);
+    release();countRun(prov,row.id);
     if(savingId==null){landRow(row);if(logAs&&logAs.price!=null)logPrice(row.id,logAs.price,logAs.qty,logAs.unit,logAs.prov,label);}
     else{landRow(row);
       // m24: `owed` is the recovery. priceChanged compares the form against
@@ -1103,7 +1113,10 @@ function saveItem(andNext){
   // the list update silently and what they are typing stays - and a reopened
   // row catches up with what just landed on it.
   function after(msg,isErr,ms){
-    if(gen===modalGen){if(andNext)nextItem(keepFilter);else closeEdit();}
+    // m78: only a save that landed as typed moves on. A warning (an earlier
+    // try's numbers are the ones in the table) closes, as Save does, rather
+    // than carrying the run past an item that did not save what was typed.
+    if(gen===modalGen){if(andNext&&!isErr)nextItem(keepFilter);else closeEdit();}
     else{refreshPicker();if(savingId!=null)reshowRow(savingId);}
     render();showToast(msg,isErr,ms);
   }
@@ -1138,7 +1151,7 @@ function saveItem(andNext){
         var t=row&&tryFor(unsureEdit,savingId,row);
         if(t){
           // it landed late: it is the row this save changes, and owes its history row
-          landRow(row);if(t.log&&!t.logged)logPrice(savingId,t.price,t.qty,t.unit,t.prov,t.label);
+          landRow(row);countRun(t.prov,savingId);if(t.log&&!t.logged)logPrice(savingId,t.price,t.qty,t.unit,t.prov,t.label);
           dropTry(unsureEdit,savingId,row);
           priceChanged=(!numEq(row.pack_price,packPrice)||!numEq(row.pack_qty,packQty)||(row.pack_unit||'')!==unit)&&
                        (row.pack_price!=null||packPrice!=null);
@@ -1189,6 +1202,7 @@ function saveItem(andNext){
       release();landRow(row);
       // an earlier try landed with other numbers: it is the row, and owes its history
       if(t){
+        countRun(t.prov,row.id);   // m79: it is filed under the earlier try's invoice
         if(t.price!=null&&!logged)logPrice(row.id,t.price,t.qty,t.unit,t.prov,label);
         return after(label+' had already saved, with the numbers from an earlier try. Open it to change them.',true,LONG_TOAST);
       }

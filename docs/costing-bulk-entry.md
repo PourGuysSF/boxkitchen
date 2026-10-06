@@ -1,8 +1,10 @@
 # Costing — make the ledger fillable
 
-Status: **Slice 6 is built** on `costing-slice6-run`, not yet reviewed — run the run: Save &
-next, a per-invoice count in the modal, and the run's button on a row of its own. See "Slice
-6 as built". check_costing.py 584 → **613**, clean. **This is the last planned slice.**
+Status: **Slice 6 is built and reviewed** — PR #157, open, not merged. Run the run: Save &
+next, a per-invoice count in the modal, and the run's button on a row of its own. The
+review's six real findings (m77–m82) are fixed in the PR. See "Slice 6 as built" and "Added
+by the review of PR #157". check_costing.py 584 → 613 → **633**, clean. **This is the last
+planned slice.** Not yet tried on a phone.
 
 **Slice 5 shipped** — merged to `main` as `07e3e2a` (PR #155, squashed), reviewed once with its
 findings fixed in the PR, and phone-tested by Stephen. See "Slice 5 as built".
@@ -1056,7 +1058,8 @@ row of its own, above Cancel / Save**.
   item with what was typed, as Save does, and is not counted. (A save left running by
   *Cancel* can still land under an open picker — m18's original path — unchanged here.)
 - **The count** (`runCounts`, keyed by the provenance each save was filed under): *"N saved
-  on invoice SR-88214"* in invoice mode, *"N saved since you opened this page"* when setting
+  on invoice SR-88214, dated 2026-10-02"* in invoice mode (the date since m80; it counts
+  distinct items since m77), *"N saved since you opened this page"* when setting
   up. Changing the invoice in the bar starts a new count; going back to an invoice shows its
   own. It is a `.hint` line under the modal's subtitle, blank at zero, and counts only saves
   that landed.
@@ -1074,6 +1077,46 @@ row of its own, and a failure moving on anyway. `check_styling.py` clean.
 **Not done.** m1 is unchanged: focus returns to the filter from a save's callback, which iOS
 will not treat as a tap, so the keyboard does not open by itself — tap the filter to type the
 next item. Not run on a phone.
+
+### Added by the review of PR #157 (slice 6, pre-merge)
+
+The review found eight things. Six were real and are fixed here, each with a test that fails
+when its fault is put back (10 injected faults, 10 caught). Two were not defects.
+
+- m77. **The count counted saves, not lines.** It was a tally bumped by every landed save, so
+  correcting a typo on an item already saved on this invoice, or tapping Save on an unchanged
+  one, made "2 saved" out of one line on the paper. Each key now holds a *set* of ledger ids.
+- m78. **A warning still moved the run on.** When a retry's look finds an earlier try landed
+  with *other* numbers, the page warns "…had already saved, with the numbers from an earlier
+  try. Open it to change them." Save closes there; Save & next went on to a fresh ＋ Add, past
+  an item that did not save what was typed. Now only a save that landed as typed moves on;
+  this warning closes, as Save does. (Rare: it needs an earlier add whose answer was lost.)
+- m79. **Landings found other than by `done()` were not counted.** Four places learn that a
+  row landed: the retry's look that finds an earlier try's numbers (m78's path), the look an
+  edit makes before writing after an unanswered try, and a reload (`settleLoaded()`) for an
+  add or an edit. Each now counts the row under the invoice it was filed under. m77's sets
+  make this safe — a row counted twice is still one.
+- m80. **The count was keyed on number *and* date but named only the number.** Correcting the
+  date blanked the line under the same number, with nothing on screen to say why. It now
+  reads *"3 saved on invoice SR-88214, dated 2026-10-02"*, matching what it counts. Kept on
+  number and date, not number alone: two vendors can share an invoice number, and the rows
+  saved under a wrong date really are filed under it.
+- m81. **Save & next drew the list three times.** `closeEdit()`, `openAdd()`, and again once
+  the filter was put back. `openAdd(filter)` now sets the filter before its one draw.
+- m82. **The count was silent to a screen reader.** `#runCount` is now `role="status"`, and is
+  written only when its text changes — `syncInvBar()` calls it on every keystroke in the bar,
+  and rewriting a live region can have it read out again each time. (The toast is not a live
+  region either, page-wide; so far this count is the only thing a save announces.)
+- **Not defects:** (1) *"Tab then Enter from the last field now hits Save & next, not
+  Save"* — before this PR, Tab from the price went to **Cancel**, which comes before Save, so
+  nothing that used to save now does something else. Two tomato buttons is Stephen's layout
+  (2026-10-06). (2) *"Save & next shows on edits, even retired ones"* — designed: from an edit
+  the next item is still picked from ＋ Add, as this section says above.
+- **Proved.** 20 assertions added (613 → **633**, 23 scenarios, clean), in `slice6` and a new
+  `r6_count` scenario. Faults put back in a scratch copy, each caught: a tally instead of a
+  set; the warning moving on; each of the four uncounted landings; the date dropped from the
+  line; the triple draw; no `role`; and a rewrite on every call. `check_styling.py` clean.
+- **Not done.** Not run on a phone; m1 unchanged.
 
 ## Minors list
 
