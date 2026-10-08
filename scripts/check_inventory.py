@@ -61,7 +61,9 @@ SCENARIOS = (
     # slice 1 - the sheet, read-only
     "ok", "slow", "fail", "packfail", "hang", "empty", "orphan",
     # slice 2 - set-up, manager
-    "mgr", "drag", "dragfail", "move", "remove", "newitems", "places", "busy", "lost")
+    "mgr", "drag", "dragfail", "move", "remove", "newitems", "places", "busy", "lost",
+    # slice 3 - counting saves
+    "start", "count", "inflight", "countlost", "countclosed", "who")
 
 
 def find_chrome():
@@ -157,6 +159,28 @@ COSTS = [
     cost(171, 6, "bunch", 12, active=False),
 ]
 
+STAFF = [
+    {"name": "Maria", "location": "Tempest", "active": True},
+    {"name": "Jose", "location": "Tempest", "active": True},
+    {"name": "Maria", "location": "Tempest", "active": True},    # a second shift: one entry, not two
+    {"name": "Ana", "location": "Tempest", "active": False},     # retired: never offered
+]
+OPEN_COUNT = {"id": 7, "location": "Tempest", "period": "2026-10-01", "status": "open"}
+
+
+def line(i, item, full, loose, snap_qty, snap_unit, by):
+    return {"id": i, "location": "Tempest", "count_id": 7, "inventory_item_id": item,
+            "full_qty": full, "loose_qty": loose, "pack_qty_snap": snap_qty,
+            "pack_unit_snap": snap_unit, "counted_by": by, "updated_at": "2026-10-07T18:00:00Z"}
+
+LINES = [
+    line(900, 201, 3, None, 1, "Each", "Jose"),        # Mayo: counted
+    line(901, 204, None, None, None, "CS", "Maria"),   # Zero pack: counted, then cleared
+    line(902, 101, 1, 4, 40, "lb", "Maria"),           # Ginger: counted against a 40 lb pack,
+                                                       # which the price list has since made 30
+]
+COUNT_SCENARIOS = ["count", "inflight", "countlost", "countclosed", "who"]
+
 # ------------------------------------------------------------ page surgery --
 
 GATE_RE = re.compile(r"window\.location\.replace\('index\.html'\)")
@@ -174,11 +198,17 @@ HARNESS = r"""
     inventory_items:SCEN==='empty'?[]:(SCEN==='orphan'?FX.items.concat([FX.orphan]):FX.items),
     inventory_left_off:FX.leftOff,
     order_items:SCEN==='orphan'?FX.guide:FX.guide.filter(function(r){return r.id!==77;}),
-    ingredient_costs:FX.costs
+    ingredient_costs:FX.costs,
+    staff:FX.staff,
+    inventory_counts:FX.countScens.indexOf(SCEN)>-1?[FX.openCount]:[],
+    inventory_count_lines:FX.countScens.indexOf(SCEN)>-1?FX.lines:[],
+    inventory_count_log:[]
   };
+  /* 'start': last month already has a (closed) count, so starting it again must be refused */
+  if(SCEN==='start')T.inventory_counts.push({id:6,location:'Tempest',period:FX.lastMonth,status:'closed'});
   if(SCEN==='empty')T.inventory_places=[];
   var nextId=5000;
-  window.__h={scen:SCEN,reqs:reqs,fails:[],log:[],tables:T,confirmMsgs:[],confirmReturn:true,
+  window.__h={scen:SCEN,reqs:reqs,fails:[],log:[],tables:T,fx:FX,confirmMsgs:[],confirmReturn:true,
     /* per-table read plans, consumed in order: 'err' = no answer (onerror),
        'e500' = the server says no, 'hang' = nothing until timeoutAll() */
     next:{inventory_places:[],inventory_items:[],ingredient_costs:[],order_items:[],inventory_left_off:[]},
@@ -202,6 +232,8 @@ HARNESS = r"""
       if(q.location&&r.location!==undefined&&('eq.'+r.location)!==q.location)return false;
       if(q.active==='eq.true'&&r.active!==true)return false;
       if(q.order_item_id==='not.is.null'&&r.order_item_id==null)return false;
+      if(q.status&&('eq.'+r.status)!==q.status)return false;
+      if(q.count_id&&('eq.'+r.count_id)!==q.count_id)return false;
       return true;
     }).map(clone);
     if(t==='inventory_items')rows.forEach(function(r){var g=guideRow(r.order_item_id);
@@ -216,14 +248,29 @@ HARNESS = r"""
       if(t==='inventory_items')return o.active&&row.active!==false&&o.place_id===row.place_id&&o.order_item_id===row.order_item_id;
       if(t==='inventory_left_off')return o.active&&row.active!==false&&o.location===row.location&&o.order_item_id===row.order_item_id;
       if(t==='inventory_places')return o.location===row.location&&o.label===row.label;
+      if(t==='inventory_counts')return o.location===row.location&&(o.period===row.period||(o.status==='open'&&row.status!=='closed'));
       return false;
     });
   }
+  function countOpen(cid){return T.inventory_counts.some(function(c){return c.id===cid&&c.status==='open';});}
   function write(m,t,q,body){
-    if(['inventory_items','inventory_left_off','inventory_places'].indexOf(t)<0)
+    if(['inventory_items','inventory_left_off','inventory_places','inventory_counts','inventory_count_lines','inventory_count_log'].indexOf(t)<0)
       return {status:403,text:'{"message":"harness: '+m+' to '+t+' is not allowed"}'};
+    if(t==='inventory_count_log'&&m!=='POST')return {status:403,text:'{"message":"the log is append-only"}'};
+    if(t==='inventory_count_lines'){
+      /* RLS: a line can be added or changed only while its count is open */
+      if(!countOpen(body&&body.count_id))return {status:403,text:'{"code":"42501","message":"new row violates row-level security policy"}'};
+      if(m!=='POST')return {status:405,text:'{"message":"harness: lines are saved by upsert only"}'};
+      var hit=null;for(var i=0;i<T[t].length;i++){var o=T[t][i];if(o.count_id===body.count_id&&o.inventory_item_id===body.inventory_item_id)hit=o;}
+      if(hit){
+        if(q.on_conflict!=='count_id,inventory_item_id')return {status:409,text:'{"code":"23505"}'};
+        for(var k in body)hit[k]=body[k];return {status:201,text:JSON.stringify([clone(hit)])};
+      }
+      var nl=clone(body);nl.id=nextId++;T[t].push(nl);return {status:201,text:JSON.stringify([nl])};
+    }
     if(m==='POST'){
       var row=clone(body);if(row.active===undefined)row.active=true;row.id=nextId++;
+      if(t==='inventory_counts'&&!row.status)row.status='open';   // the column default
       if(clash(t,row,null))return {status:409,text:'{"code":"23505"}'};
       T[t].push(row);return {status:201,text:JSON.stringify([row])};
     }
@@ -256,17 +303,18 @@ HARNESS = r"""
     if(fate==='drop')return {err:true};
     var w=write(m,t,q,body);
     if(fate==='lost')return {err:true};
+    if(fate==='empty')return {status:201,text:'[]'};   // written, but the answer holds no row
     if(fate==='defer')return {defer:true,res:w};
     return w;
   }
 
-  function Fake(){this.status=0;this.responseText='';this.timeout=0;}
+  function Fake(){this.status=0;this.responseText='';this.timeout=0;this._h={};}
   Fake.prototype.open=function(m,u){this._m=m;this._u=u;};
-  Fake.prototype.setRequestHeader=function(){};
+  Fake.prototype.setRequestHeader=function(k,v){this._h[k]=v;};
   Fake.prototype.send=function(b){
     var self=this,parsed=null;
     if(b){try{parsed=JSON.parse(b);}catch(e){}}
-    reqs.push({m:this._m,u:this._u,t:table(this._u),body:parsed,timeout:this.timeout});
+    reqs.push({m:this._m,u:this._u,t:table(this._u),body:parsed,timeout:this.timeout,prefer:this._h.Prefer||''});
     var r=route(this._m,this._u,parsed);
     if(r.hang){hung.push(self);return;}
     var deliver=function(res){
@@ -332,9 +380,9 @@ RUNNER = r"""
       out.textContent=JSON.stringify({scen:H.scen,fails:F,log:H.log});
       document.body.appendChild(out);return;
     }
-    var fn=steps.shift();
-    try{fn();}catch(e){F.push('threw in step: '+(e&&e.message));}
-    setTimeout(run,0);
+    var fn=steps.shift(),wait=0;
+    try{wait=fn();}catch(e){F.push('threw in step: '+(e&&e.message));}
+    setTimeout(run,typeof wait==='number'?wait:0);
   }
 
   /* every scenario: staff never write; and every read is Tempest's */
@@ -356,7 +404,10 @@ RUNNER = r"""
   if(H.scen==='ok'){
     step(function(){
       ok('ok: kitchen.css loaded (the page runs styled)', getComputedStyle(document.querySelector('.header')).position==='sticky');
-      ok('ok: three reads', H.reqs.length===3, H.reqs.length);
+      ok('ok: five reads - places, items, pack sizes, the open count, the staff list', H.reqs.length===5&&['inventory_places','inventory_items','ingredient_costs','inventory_counts','staff'].every(function(t){return reads(t).length===1;}), JSON.stringify(H.reqs.map(function(r){return r.t;})));
+      ok('ok: with no count open, no lines are asked for', reads('inventory_count_lines').length===0);
+      ok('ok: with no count open, staff see no name bar', byId('nameBar').style.display==='none');
+      ok('ok: ...and the intro says no count is open', /No count is open yet/.test(byId('introBar').textContent), byId('introBar').textContent);
       ok('ok: staff never read the order guide or the left-off list', reads('order_items').length===0&&reads('inventory_left_off').length===0);
       ok('ok: every read has the 60s load timeout', H.reqs.every(function(r){return r.timeout===60000;}),
          JSON.stringify(H.reqs.map(function(r){return r.timeout;})));
@@ -441,7 +492,7 @@ RUNNER = r"""
       ok('slow: no box before the data lands', inputs().length===0);
       ok('slow: no summary before the data lands', byId('sheetSummary').textContent==='');
       loadAll();
-      ok('slow: a second load while loading sends nothing', H.reqs.length===3, H.reqs.length);
+      ok('slow: a second load while loading sends nothing', H.reqs.length===5, H.reqs.length);
       H.releaseDeferred();
     });
     step(function(){
@@ -463,7 +514,7 @@ RUNNER = r"""
     });
     step(function(){
       ok(tag+': Try again loads it', inputs().length===14, inputs().length);
-      ok(tag+': ...with three fresh reads', H.reqs.length===6, H.reqs.length);
+      ok(tag+': ...with five fresh reads', H.reqs.length===10, H.reqs.length);
       readOnly(tag);
     });
   }
@@ -471,7 +522,7 @@ RUNNER = r"""
   if(H.scen==='hang'){
     step(function(){
       ok('hang: still loading while nothing answers', /Loading the count sheet/.test(body())&&inputs().length===0);
-      ok('hang: all three reads are waiting', H.hungCount()===3, H.hungCount());
+      ok('hang: the three hung reads are waiting', H.hungCount()===3, H.hungCount());
       H.timeoutAll();
     });
     step(function(){
@@ -907,6 +958,280 @@ RUNNER = r"""
     });
   }
 
+
+  /* ============================== slice 3 ============================== */
+  function inputIn(r,part){return r.querySelector('.stock-input[data-part="'+part+'"]');}
+  function typeIn(r,part,v){var i=inputIn(r,part);i.value=v;i.dispatchEvent(new Event('input',{bubbles:true}));}
+  function leave(r,part){inputIn(r,part).dispatchEvent(new Event('change',{bubbles:true}));}
+  function state(r){var e=r&&r.querySelector('.stock-state');return e?e.textContent:'';}
+  function lineWrites(){return writes().filter(function(w){return w.t==='inventory_count_lines';});}
+  function lastBody(){var w=lineWrites();var b=w.length?JSON.parse(JSON.stringify(w[w.length-1].body)):null;if(b)delete b.updated_at;return JSON.stringify(b);}
+  function serverLines(item){return T.inventory_count_lines.filter(function(l){return l.count_id===7&&(item==null||l.inventory_item_id===item);});}
+  function pickName(n){var s=byId('countedBy');s.value=n;s.dispatchEvent(new Event('change',{bubbles:true}));}
+  function head(label){var h=all('.stock-place-hd').filter(function(h){return h.querySelector('.cat-label').textContent===label;})[0];return h?h.querySelector('.stock-place-n').textContent:'';}
+  function mlabel(iso){var mn=['January','February','March','April','May','June','July','August','September','October','November','December'],p=iso.split('-');return mn[parseInt(p[1],10)-1]+' '+p[0];}
+  function body3(item,full,loose,sq,su,by){return JSON.stringify({location:'Tempest',count_id:7,inventory_item_id:item,full_qty:full,loose_qty:loose,pack_qty_snap:sq,pack_unit_snap:su,counted_by:by});}
+
+  if(H.scen==='count'){
+    step(function(){
+      var lr=reads('inventory_count_lines')[0]||{u:''};
+      ok('count: the open count’s lines are read, once, scoped to it', reads('inventory_count_lines').length===1&&/count_id=eq\.7/.test(lr.u)&&/location=eq\.Tempest/.test(lr.u), lr.u);
+      ok('count: six reads in all, none of them a price', H.reqs.length===6&&H.reqs.every(function(r){return r.u.indexOf('price')<0;}), H.reqs.length);
+      ok('count: the title names the month', byId('sheetTitle').textContent==='October 2026 count', byId('sheetTitle').textContent);
+      ok('count: the summary counts saved rows', byId('sheetSummary').textContent==='2 of 10 counted', byId('sheetSummary').textContent);
+      ok('count: each place says how many are counted', head('Vegetable cooler')==='1 of 4 counted'&&head('Dry storage')==='1 of 5 counted'&&head('Line')==='0 of 0 counted', head('Vegetable cooler')+' / '+head('Dry storage'));
+      var opts=all('#countedBy option').map(function(o){return o.textContent;});
+      ok('count: the name list is the active staff, once each', JSON.stringify(opts)===JSON.stringify(['Pick your name…','Maria','Jose']), JSON.stringify(opts));
+      ok('count: the name box computes to 16px (#135)', parseFloat(getComputedStyle(byId('countedBy')).fontSize)>=16, getComputedStyle(byId('countedBy')).fontSize);
+      ok('count: no box can be typed in before a name is picked', inputs().every(function(i){return i.disabled;}));
+      ok('count: ...and the intro says why', /Pick your name/.test(byId('introBar').textContent));
+      var m=rowNamed('Dry storage','Mayo');
+      ok('count: a saved count is shown, filled', inputIn(m,'full').value==='3'&&inputIn(m,'full').classList.contains('filled'));
+      ok('count: ...with who counted it', state(m)==='✓ Counted by Jose', state(m));
+      var gr=rowNamed('Vegetable cooler','Ginger');
+      ok('count: a row counted against an old pack keeps that pack’s boxes (40 lb, not today’s 30)', JSON.stringify(units(gr))==='["× 40 lb","lb"]'&&inputIn(gr,'full').value==='1'&&inputIn(gr,'loose').value==='4', JSON.stringify(units(gr)));
+      var z=rowNamed('Dry storage','Zero pack');
+      ok('count: a cleared line shows as not counted - empty, no tick', inputIn(z,'full').value===''&&state(z)==='');
+      ok('count: nothing written on load', writes().length===0);
+      pickName('Maria');
+    });
+    step(function(){
+      ok('count: picking a name shows it, with Change', byId('whoName').textContent==='Maria'&&visible(byId('whoName'))&&visible(byId('whoChange'))&&!visible(byId('countedBy'))&&byId('whoLabel').textContent==='Counting as');
+      var kept='';try{kept=sessionStorage.getItem('boxkitchen_inv_who');}catch(e){}
+      ok('count: ...and this page remembers it until it is closed', kept==='Maria', kept);
+      ok('count: the boxes open', inputs().every(function(i){return !i.disabled;}));
+      typeIn(rowNamed('Vegetable cooler','Cilantro'),'full','3');
+      ok('count: typing says it is not saved yet, and sends nothing at once', state(rowNamed('Vegetable cooler','Cilantro'))==='Not saved yet'&&writes().length===0);
+      return 1400;   // past the pause after typing
+    });
+    step(function(){
+      var w=lineWrites()[0]||{u:'',prefer:''};
+      ok('count: a pause after typing saves it - one request', lineWrites().length===1, lineWrites().length);
+      ok('count: ...as an upsert on (count, item), so a retry can never add a second line', /on_conflict=count_id,inventory_item_id/.test(w.u)&&/resolution=merge-duplicates/.test(w.prefer)&&w.m==='POST', w.u+' | '+w.prefer);
+      ok('count: ...with exactly what was counted, in which units, and by whom', lastBody()===body3(102,3,null,null,'BU','Maria'), lastBody());
+      ok('count: ...stamped with a real time', !isNaN(Date.parse((w.body||{}).updated_at)));
+      var c=rowNamed('Vegetable cooler','Cilantro');
+      ok('count: saved, it shows a tick and the name', state(c)==='✓ Counted by Maria', state(c));
+      ok('count: ...and the place and summary move on', head('Vegetable cooler')==='2 of 4 counted'&&byId('sheetSummary').textContent==='3 of 10 counted', head('Vegetable cooler')+' / '+byId('sheetSummary').textContent);
+      var g=rowNamed('Vegetable cooler','Ginger');
+      typeIn(g,'loose','');typeIn(g,'full','2');leave(g,'full');
+    });
+    tick();
+    step(function(){
+      ok('count: leaving a box saves at once; a blank beside a filled box is 0; the old pack is kept', lastBody()===body3(101,2,0,40,'lb','Maria'), lastBody());
+      ok('count: ...and the 0 comes back into the empty box', inputIn(rowNamed('Vegetable cooler','Ginger'),'loose').value==='0');
+      var l=rowNamed('Vegetable cooler','Long unit thing');typeIn(l,'loose','5');leave(l,'loose');
+    });
+    tick();
+    step(function(){
+      ok('count: loose only - the Full box is 0, against today’s 12-bunch pack', lastBody()===body3(103,0,5,12,'bunch','Maria'), lastBody());
+      var t=rowNamed('Vegetable cooler','Tom <b>bold</b> & co');typeIn(t,'full','0');leave(t,'full');
+    });
+    tick();
+    step(function(){
+      ok('count: 0 is a count, and is saved as one', lastBody()===body3(104,0,null,null,'EA','Maria')&&state(rowNamed('Vegetable cooler','Tom <b>bold</b> & co'))==='✓ Counted by Maria', lastBody());
+      H.n=lineWrites().length;
+      var b=rowNamed('Dry storage','Blank unit');typeIn(b,'full','2 cs');leave(b,'full');
+    });
+    tick();
+    step(function(){
+      var b=rowNamed('Dry storage','Blank unit');
+      ok('count: words are refused, in words, and nothing is sent', lineWrites().length===H.n&&/Numbers only/.test(state(b)), state(b));
+      typeIn(b,'full','2,5');leave(b,'full');
+    });
+    tick();
+    step(function(){
+      ok('count: a comma is read as a decimal point', lastBody()===body3(205,2.5,null,null,'EA','Maria'), lastBody());
+      var m=rowNamed('Dry storage','Mayo');typeIn(m,'full','');leave(m,'full');
+    });
+    tick();
+    step(function(){
+      var m=rowNamed('Dry storage','Mayo');
+      ok('count: clearing a saved count sends blanks - not counted, nothing deleted', lastBody()===body3(201,null,null,1,'Each','Maria')&&serverLines(201).length===1, lastBody());
+      ok('count: ...and the row shows as not counted again', state(m)===''&&!inputIn(m,'full').classList.contains('filled'));
+      ok('count: ...and the place count drops', head('Dry storage')==='1 of 5 counted', head('Dry storage'));
+      H.n=lineWrites().length;
+      var o=rowNamed('Dry storage','Old flour');typeIn(o,'full','1');typeIn(o,'full','');leave(o,'full');
+      var c=rowNamed('Vegetable cooler','Cilantro');typeIn(c,'full','3');leave(c,'full');
+    });
+    tick();
+    step(function(){
+      ok('count: typed and erased before saving sends nothing; retyping the saved value sends nothing', lineWrites().length===H.n, lineWrites().length-H.n);
+      var ids={},dup=false;serverLines().forEach(function(l){if(ids[l.inventory_item_id])dup=true;ids[l.inventory_item_id]=1;});
+      ok('count: the table holds one line per row - never two', !dup&&serverLines().length===7, serverLines().length);
+      ok('count: no write to anything but the count lines', writes().every(function(w){return w.t==='inventory_count_lines';}));
+      H.n=lineWrites().length;
+      typeIn(rowNamed('Dry storage','Zero pack'),'full','7');   // typed, not saved yet...
+      loadAll({quiet:true,force:true});                           // ...and the sheet refreshes underneath it
+    });
+    tick();tick();
+    step(function(){
+      var z=rowNamed('Dry storage','Zero pack');
+      ok('count: a refresh never wipes a number typed but not yet saved', inputIn(z,'full').value==='7'&&state(z)==='Not saved yet', inputIn(z,'full').value+' / '+state(z));
+      return 1400;
+    });
+    step(function(){
+      ok('count: ...and it still saves after the refresh', lastBody()===body3(204,7,null,null,'CS','Maria'), lastBody());
+    });
+    unlock();
+    step(function(){
+      var bar=document.querySelector('.stock-countbar');
+      ok('count: once anything is counted, the month cannot be changed', !!bar&&!/Wrong month/.test(bar.textContent), bar&&bar.textContent);
+      H.n=writes().length;H.confirmReturn=true;
+      switchMonth('2026-09-01');
+      ok('count: ...and the page itself refuses, even if asked', writes().length===H.n);
+    });
+  }
+
+  if(H.scen==='inflight'){
+    step(function(){ pickName('Maria'); });
+    step(function(){
+      H.nextWrite.push('defer');
+      var c=rowNamed('Vegetable cooler','Cilantro');typeIn(c,'full','1');leave(c,'full');
+    });
+    tick();
+    step(function(){
+      var c=rowNamed('Vegetable cooler','Cilantro');
+      ok('inflight: the first save is on its way', lineWrites().length===1&&state(c)==='Saving…', state(c));
+      typeIn(c,'full','12');leave(c,'full');
+    });
+    tick();
+    step(function(){
+      ok('inflight: an edit while it is saving does not send a second request alongside it', lineWrites().length===1, lineWrites().length);
+      ok('inflight: ...and the row says the edit is not saved yet', state(rowNamed('Vegetable cooler','Cilantro'))==='Not saved yet', state(rowNamed('Vegetable cooler','Cilantro')));
+      H.releaseDeferred();
+    });
+    tick();tick();
+    step(function(){
+      ok('inflight: when the first lands, the newer value is sent', lineWrites().length===2&&lineWrites()[1].body.full_qty===12, JSON.stringify(lineWrites().map(function(w){return w.body.full_qty;})));
+      ok('inflight: the table ends with the newer value, on one line', serverLines(102).length===1&&serverLines(102)[0].full_qty===12);
+      ok('inflight: and the row says it is saved', state(rowNamed('Vegetable cooler','Cilantro'))==='✓ Counted by Maria');
+    });
+  }
+
+  if(H.scen==='countlost'){
+    step(function(){ pickName('Maria'); });
+    step(function(){
+      H.nextWrite.push('lost');   // the table takes it; the answer never comes
+      var c=rowNamed('Vegetable cooler','Cilantro');typeIn(c,'full','3');leave(c,'full');
+    });
+    tick();
+    step(function(){
+      var c=rowNamed('Vegetable cooler','Cilantro'),b=c.querySelector('button.stock-state');
+      ok('countlost: no answer is not a tick - it says so, and how to fix it', !!b&&/Not saved — no answer from the server\. Tap to try again/.test(b.textContent), state(c));
+      ok('countlost: ...in the error colour, as a 44px button', !!b&&getComputedStyle(b).color==='rgb(180, 35, 24)'&&b.getBoundingClientRect().height>=44);
+      ok('countlost: ...and it is not counted in the summary, though the table has it', byId('sheetSummary').textContent==='2 of 10 counted'&&serverLines(102).length===1);
+      ok('countlost: the typed value stays in the box', inputIn(c,'full').value==='3');
+      b.click();
+    });
+    tick();
+    step(function(){
+      ok('countlost: tapping retries, and the table still has ONE line for it', lineWrites().length===2&&serverLines(102).length===1&&serverLines(102)[0].full_qty===3);
+      ok('countlost: ...now ticked', state(rowNamed('Vegetable cooler','Cilantro'))==='✓ Counted by Maria');
+      H.nextWrite.push('drop');   // lost before the table
+      var t=rowNamed('Vegetable cooler','Tom <b>bold</b> & co');typeIn(t,'full','2');leave(t,'full');
+    });
+    tick();
+    step(function(){
+      ok('countlost: lost before it landed - not saved, nothing in the table', /Not saved/.test(state(rowNamed('Vegetable cooler','Tom <b>bold</b> & co')))&&serverLines(104).length===0);
+      rowNamed('Vegetable cooler','Tom <b>bold</b> & co').querySelector('button.stock-state').click();
+    });
+    tick();
+    step(function(){
+      ok('countlost: the retry saves it, once', serverLines(104).length===1&&serverLines(104)[0].full_qty===2&&state(rowNamed('Vegetable cooler','Tom <b>bold</b> & co'))==='✓ Counted by Maria');
+      H.nextWrite.push('empty');   // a success code, but no row in the answer
+      var l=rowNamed('Vegetable cooler','Long unit thing');typeIn(l,'full','1');leave(l,'full');
+    });
+    tick();
+    step(function(){
+      var st=state(rowNamed('Vegetable cooler','Long unit thing'));
+      ok('countlost: a success code with no row in it is not a tick - only a confirmed row is', /Not saved — the server did not confirm it/.test(st), st);
+    });
+  }
+
+  if(H.scen==='countclosed'){
+    step(function(){ pickName('Maria'); });
+    step(function(){
+      T.inventory_counts[0].status='closed';   // closed on another device meanwhile
+      var c=rowNamed('Vegetable cooler','Cilantro');typeIn(c,'full','3');leave(c,'full');
+    });
+    tick();tick();tick();
+    step(function(){
+      ok('countclosed: the table refuses a line for a closed count', serverLines(102).length===0&&lineWrites().length===1);
+      ok('countclosed: the page re-reads and stops offering boxes', byId('sheetTitle').textContent==='Count sheet'&&inputs().every(function(i){return i.disabled;})&&byId('nameBar').style.display==='none', byId('sheetTitle').textContent);
+      ok('countclosed: ...and says no count is open', /No count is open yet/.test(byId('introBar').textContent));
+    });
+  }
+
+  if(H.scen==='who'){
+    step(function(){ pickName('Maria'); });
+    step(function(){
+      typeIn(rowNamed('Vegetable cooler','Cilantro'),'full','3');   // typed, not yet saved
+      byId('whoChange').click();
+      ok('who: Change sends what was typed, under the name it was typed under', lineWrites().length===1&&lineWrites()[0].body.counted_by==='Maria', JSON.stringify(lineWrites().map(function(w){return w.body.counted_by;})));
+      var kept='x';try{kept=sessionStorage.getItem('boxkitchen_inv_who');}catch(e){}
+      ok('who: ...then forgets the name', kept===null&&visible(byId('countedBy'))&&!visible(byId('whoName')), kept);
+      ok('who: ...and closes the boxes until a name is picked', inputs().every(function(i){return i.disabled;}));
+      pickName('Jose');
+    });
+    tick();
+    step(function(){
+      var t=rowNamed('Vegetable cooler','Tom <b>bold</b> & co');typeIn(t,'full','1');leave(t,'full');
+    });
+    tick();
+    step(function(){
+      ok('who: the next person’s counts carry their name', lastBody()===body3(104,1,null,null,'EA','Jose'), lastBody());
+      ok('who: the earlier row still says who counted it', state(rowNamed('Vegetable cooler','Cilantro'))==='✓ Counted by Maria', state(rowNamed('Vegetable cooler','Cilantro')));
+    });
+  }
+
+  if(H.scen==='start'){
+    var TM=H.fx.thisMonth,LM=H.fx.lastMonth;
+    unlock();
+    step(function(){
+      var bar=document.querySelector('.stock-countbar');
+      ok('start: manager mode says no count is open', !!bar&&/No count is open/.test(bar.textContent));
+      ok('start: ...and offers this month and last month', !!btn(bar,'Start '+mlabel(TM))&&!!btn(bar,'Start '+mlabel(LM)), bar&&bar.textContent);
+      ok('start: the name bar shows in manager mode', byId('nameBar').style.display!=='none');
+      btn(bar,'Start '+mlabel(TM)).click();
+      ok('start: not without a name', writes().length===0&&/Pick your name first/.test(toast()), toast());
+      pickName('Maria');
+    });
+    step(function(){
+      btn(document.querySelector('.stock-countbar'),'Start '+mlabel(LM)).click();
+      ok('start: it asks first, naming the month', /Start the .* count\?/.test(H.confirmMsgs[H.confirmMsgs.length-1])&&H.confirmMsgs[H.confirmMsgs.length-1].indexOf(mlabel(LM))>-1, H.confirmMsgs[H.confirmMsgs.length-1]);
+    });
+    tick();tick();
+    step(function(){
+      var w=writes();
+      ok('start: a month that already has a count is refused by the table, and said so', w.length===1&&w[0].t==='inventory_counts'&&JSON.stringify(w[0].body)===JSON.stringify({location:'Tempest',period:LM})&&/There is already/.test(toast())&&toastIsError(), JSON.stringify(w));
+      btn(document.querySelector('.stock-countbar'),'Start '+mlabel(TM)).click();
+    });
+    tick();tick();tick();
+    step(function(){
+      var w=writes().slice(1);
+      ok('start: a count is one write, then the log says who started it', w.length===2&&w[0].t==='inventory_counts'&&JSON.stringify(w[0].body)===JSON.stringify({location:'Tempest',period:TM})&&
+         w[1].t==='inventory_count_log'&&w[1].body.action==='start'&&w[1].body.by_name==='Maria'&&w[1].body.count_id===T.inventory_counts[T.inventory_counts.length-1].id, JSON.stringify(w.map(function(x){return x.body;})));
+      var bar=document.querySelector('.stock-countbar');
+      ok('start: the bar now says it is open, and nothing is counted', !!bar&&/count is open — 0 of 10 counted/.test(bar.textContent), bar&&bar.textContent);
+      ok('start: no Start buttons while one is open', !btn(bar,'Start '+mlabel(TM))&&!btn(bar,'Start '+mlabel(LM)));
+      ok('start: the title names the month', byId('sheetTitle').textContent===mlabel(TM)+' count', byId('sheetTitle').textContent);
+      var wm=all('.stock-countbar button').filter(function(b){return /Wrong month/.test(b.textContent);})[0];
+      ok('start: before anything is counted, the month can be changed', !!wm&&wm.textContent.indexOf(mlabel(LM))>-1);
+      if(wm)wm.click();
+    });
+    tick();tick();
+    step(function(){
+      var w=writes().slice(3);
+      ok('start: changing to a month that already has a count is refused, and said so', w.length===1&&w[0].m==='PATCH'&&JSON.stringify(w[0].body)===JSON.stringify({period:LM})&&/There is already/.test(toast()), JSON.stringify(w));
+      ok('start: ...and the count keeps its month', byId('sheetTitle').textContent===mlabel(TM)+' count');
+      byId('mgrSwitch').click();
+    });
+    step(function(){
+      ok('start: out of manager mode, staff can count straight away', inputs().length>0&&inputs().every(function(i){return !i.disabled;})&&byId('whoName').textContent==='Maria');
+    });
+  }
+
   if(document.readyState==='complete')setTimeout(run,0);
   else window.addEventListener('load',function(){setTimeout(run,0);});
 })();
@@ -929,8 +1254,13 @@ def build_page():
     marker = "<script>\nvar SB="
     if marker not in src:
         sys.exit("check_inventory: could not find the page script in " + PAGE)
+    import datetime
+    today = datetime.date.today()
+    last = (today.replace(day=1) - datetime.timedelta(days=1)).replace(day=1)
     fixtures = {"places": PLACES, "items": ITEMS, "orphan": ORPHAN, "leftOff": LEFT_OFF,
-                "guide": GUIDE, "costs": COSTS}
+                "guide": GUIDE, "costs": COSTS, "staff": STAFF, "openCount": OPEN_COUNT,
+                "lines": LINES, "countScens": COUNT_SCENARIOS,
+                "thisMonth": today.replace(day=1).isoformat(), "lastMonth": last.isoformat()}
     src = src.replace(marker, HARNESS.replace("__FIXTURES__", json.dumps(fixtures)) + marker, 1)
 
     # 3. no network, ever: the webfont links would otherwise leave the machine.
