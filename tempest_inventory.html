@@ -51,6 +51,28 @@
   /* No count is open, so a box is locked: dashed edge on the press fill.
      The edge stays --edge (3:1), so the box is still plainly a box. */
   .stock-input:disabled{background:var(--press);border-style:dashed;opacity:1}
+  /* The most-scanned state during a count: which boxes are still EMPTY.
+     Filled reads by weight and fill, as .count-input.filled does. */
+  .stock-input.filled{border:1.5px solid var(--ink);background:var(--press);font-weight:600}
+  .stock-input:focus{border-color:var(--tomato);box-shadow:0 0 0 2px rgba(232,93,58,.2)}
+
+  /* A row's save state sits under its name, so the column of boxes never
+     shifts. Saved is ink and weight; an error is the danger red and says
+     what to do — never a hue standing in for words. */
+  .stock-state{font-size:0.78rem;margin-top:3px;color:var(--grey)}
+  .stock-state.saved{color:var(--ink);font-weight:600}
+  .stock-state.invalid{color:var(--danger);font-weight:600}
+  button.stock-state.failed{display:block;width:100%;min-height:44px;margin-top:6px;padding:8px 10px;text-align:left;background:transparent;border:1px solid var(--danger);border-radius:6px;color:var(--danger);font-family:var(--font);font-size:0.85rem;font-weight:600;cursor:pointer}
+
+  /* Who is counting: picked once, shown always, changed in one tap. The
+     select is restated at 16px — .name-bar select is 0.95rem (#135). */
+  .name-bar select.stock-name{font-size:16px}
+  .stock-who{flex:1;font-weight:600}
+  .name-bar .mgr-edit-btn{flex-shrink:0}
+
+  /* manager mode: the month's count, at the top of set-up */
+  .stock-countbar{padding:12px 18px;border-bottom:1px solid var(--hair);font-size:0.9rem;line-height:1.4}
+  .stock-countbar-btns{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
 
   /* Manager mode is set-up, not counting: the boxes give way to the
      row's controls, and the grip leads the row. */
@@ -98,10 +120,16 @@
   </div>
 </div>
 <div class="date-bar">
-  <div class="date-display">Count sheet</div>
+  <div class="date-display" id="sheetTitle">Count sheet</div>
   <div class="date-sub" id="sheetSummary"></div>
 </div>
-<div class="intro" id="introBar">Preview — counting isn't switched on yet, so nothing typed here saves. Walk the kitchen with it and check every item is in the right place, in the right order.</div>
+<div class="name-bar" id="nameBar" style="display:none">
+  <label for="countedBy" id="whoLabel">Counted by</label>
+  <select class="stock-name" id="countedBy" onchange="pickWho(this.value)"><option value="">Pick your name…</option></select>
+  <span class="stock-who" id="whoName" style="display:none"></span>
+  <button type="button" class="mgr-edit-btn" id="whoChange" style="display:none" onclick="changeWho()">Change</button>
+</div>
+<div class="intro" id="introBar">Loading…</div>
 <div id="appBody"><div class="loading"><div class="spinner"></div><p>Loading the count sheet…</p></div></div>
 
 <!-- Manager PIN modal -->
@@ -168,6 +196,12 @@ var SB='https://sxppuyarecqkgkrsrefc.supabase.co',SK='eyJhbGciOiJIUzI1NiIsInR5cC
 var LOCATION='Tempest';
 var places=[],items=[],packs={},guide=null,leftOff=null,st=null;
 var loading=false,loadSeq=0;
+/* the month's count: the open one, its saved lines by inventory_item_id, the
+   staff list, who is counting on this device, and what has been typed here
+   and not yet confirmed (local[id] = {full, loose, state, msg, timer, inflight}) */
+var count=null,lines={},staff=[],local={};
+var WHO_KEY='boxkitchen_inv_who',SAVE_DELAY=1200;
+var who='';try{who=sessionStorage.getItem(WHO_KEY)||'';}catch(e){}
 var MANAGER_PIN='4316',mgr=false,busy=false,showLeftOff=false,sortables=[],pick=null,nameCtx=null;
 var GRIP='<svg width="10" height="16" viewBox="0 0 10 16" fill="currentColor"><circle cx="2" cy="2" r="1.4"/><circle cx="8" cy="2" r="1.4"/><circle cx="2" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="2" cy="14" r="1.4"/><circle cx="8" cy="14" r="1.4"/></svg>';
 
@@ -178,9 +212,10 @@ var API_TIMEOUT=15000;
 /* A load of the whole sheet gets 60s, so slow-but-working wifi still opens it. */
 var LOAD_TIMEOUT=60000;
 /* status 0 = no answer at all (network error or timeout). One callback per
-   request, whichever of load/error/timeout comes first. `ms` overrides. */
-function api(m,t,q,d,cb,ms){var x=new XMLHttpRequest(),fired=false;function fire(r,s){if(fired)return;fired=true;if(cb)cb(r,s);}
-  x.open(m,SB+'/rest/v1/'+t+(q?'?'+q:''));x.timeout=ms||(m==='GET'?LOAD_TIMEOUT:API_TIMEOUT);x.setRequestHeader('apikey',SK);x.setRequestHeader('Authorization','Bearer '+SK);if(d){x.setRequestHeader('Content-Type','application/json');x.setRequestHeader('Prefer','return=representation');}
+   request, whichever of load/error/timeout comes first. `ms` overrides the
+   timeout; `pf` the Prefer header (a count line is saved as an upsert). */
+function api(m,t,q,d,cb,ms,pf){var x=new XMLHttpRequest(),fired=false;function fire(r,s){if(fired)return;fired=true;if(cb)cb(r,s);}
+  x.open(m,SB+'/rest/v1/'+t+(q?'?'+q:''));x.timeout=ms||(m==='GET'?LOAD_TIMEOUT:API_TIMEOUT);x.setRequestHeader('apikey',SK);x.setRequestHeader('Authorization','Bearer '+SK);if(d){x.setRequestHeader('Content-Type','application/json');x.setRequestHeader('Prefer',pf||'return=representation');}
   x.onload=function(){var r=null;try{r=JSON.parse(x.responseText);}catch(e){}fire(r,x.status);};x.onerror=function(){fire(null,0);};x.ontimeout=function(){fire(null,0);};x.send(d?JSON.stringify(d):null);}
 
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
@@ -199,24 +234,41 @@ function showToast(msg,type){
    One failure fails the whole sheet. Manager mode adds two reads — the order
    guide and the left-off list — which staff never ask for.
    opt.quiet keeps the sheet on screen while it reloads (after a manager
-   write); opt.force supersedes a load already in flight. */
+   write); opt.force supersedes a load already in flight.
+   The open count is read with everything else; its lines need its id, so
+   they are read once it lands. Nothing is drawn until they have too. */
 function loadAll(opt){
   opt=opt||{};
   if(loading&&!opt.force)return;
   var seq=++loadSeq,withSetup=mgr;
   loading=true;
   if(!opt.quiet)document.getElementById('appBody').innerHTML='<div class="loading"><div class="spinner"></div><p>Loading the count sheet…</p></div>';
-  var got={},need=withSetup?5:3,failed=false;
+  var got={},need=withSetup?7:5,failed=false;
+  function fail(){failed=true;loading=false;loadFailed();}
+  function done(){
+    loading=false;
+    places=got.places;items=got.items;packs=packMap(got.packs);staff=got.staff;
+    if(withSetup){guide=got.guide;leftOff=got.leftOff;}
+    var c=got.counts[0]||null;
+    if(!count||!c||count.id!==c.id)local={};   // typed values belong to one count
+    count=c;lines={};
+    var ls=got.lines||[];for(var i=0;i<ls.length;i++)lines[ls[i].inventory_item_id]=ls[i];
+    render();
+  }
   function land(key){return function(r,s){
     if(seq!==loadSeq||failed)return;
-    if(!(s>=200&&s<300)||!Array.isArray(r)){failed=true;loading=false;loadFailed();return;}
+    if(!(s>=200&&s<300)||!Array.isArray(r))return fail();
     got[key]=r;
     if(--need)return;
-    loading=false;
-    places=got.places;items=got.items;packs=packMap(got.packs);
-    if(withSetup){guide=got.guide;leftOff=got.leftOff;}
-    render();
+    if(!got.counts.length)return done();
+    api('GET','inventory_count_lines','location=eq.'+LOCATION+'&count_id=eq.'+got.counts[0].id+'&select=id,inventory_item_id,full_qty,loose_qty,pack_qty_snap,pack_unit_snap,counted_by,updated_at',null,function(r2,s2){
+      if(seq!==loadSeq||failed)return;
+      if(!(s2>=200&&s2<300)||!Array.isArray(r2))return fail();
+      got.lines=r2;done();
+    });
   };}
+  api('GET','inventory_counts','location=eq.'+LOCATION+'&status=eq.open&select=id,period,status',null,land('counts'));
+  api('GET','staff','location=eq.'+LOCATION+'&active=eq.true&select=name&order=shift.asc,sort_order.asc.nullslast,name.asc',null,land('staff'));
   api('GET','inventory_places','location=eq.'+LOCATION+'&active=eq.true&select=id,label,sort_order&order=sort_order.asc,id.asc',null,land('places'));
   api('GET','inventory_items','location=eq.'+LOCATION+'&active=eq.true&select=id,order_item_id,place_id,sort_order,order_items(name,vendor,unit,active)&order=sort_order.asc,id.asc',null,land('items'));
   /* Pack sizes only. This page never asks for a price, so no dollar figure
@@ -255,8 +307,11 @@ function itemName(it){return (it.order_items&&it.order_items.name)||'(unknown it
 function render(){
   destroySortables();
   var body=document.getElementById('appBody');
+  renderWho();
+  document.getElementById('sheetTitle').textContent=count?monthLabel(count.period)+' count':'Count sheet';
   if(!mgr&&(!places.length||!items.length)){
     document.getElementById('sheetSummary').textContent='';
+    document.getElementById('introBar').textContent='Nothing to count yet.';
     body.innerHTML='<div class="empty">No places or items are set up for the count yet.</div>';
     return;
   }
@@ -272,55 +327,97 @@ function render(){
   }
   var h='';
   if(mgr){
+    h+=countBarHtml();
     h+='<div class="mgr-add-bar"><button class="mgr-add-btn" onclick="openPlaces()">Places — reorder, rename, add</button></div>';
     h+=newItemsHtml();
   }
   for(var i=0;i<places.length;i++){
     var p=places[i],rows=byPlace[p.id];
-    h+=placeHead(p.label,rows.length);
+    h+=placeHead(p.label,rows,p.id);
     if(!rows.length)h+='<div class="stock-none">Nothing is stored here yet.</div>';
     h+='<div class="stock-place-body" data-place-id="'+p.id+'">';
     for(var j=0;j<rows.length;j++)h+=rowHtml(rows[j],p.label,placesOf);
     h+='</div>';
   }
   if(orphans.length){
-    h+=placeHead('Not in an active place',orphans.length);
+    h+=placeHead('Not in an active place',orphans,'');
     for(var j=0;j<orphans.length;j++)h+=rowHtml(orphans[j],'',placesOf);
   }
   if(mgr)h+=leftOffHtml();
   body.innerHTML=mgr?'<div class="manager-mode">'+h+'</div>':h;
-  document.getElementById('sheetSummary').textContent=nItems+' items · '+places.length+' places';
+  var packs_=nPacked+' of '+nItems+' items have a pack size in Recipe Costing, so they get Full and Loose boxes; the rest are counted in order-guide units until they have one.';
   document.getElementById('introBar').textContent=mgr
     ?'Manager set-up. Drag the grip to put a place’s items in shelf order. Move sends an item to another place, or counts it in a second one. Remove stops counting it there. Nothing here changes the order guide.'
-    :'Preview — counting isn’t switched on yet, so nothing typed here saves. Walk the kitchen with it and check every item is in the right place, in the right order. '
-     +nPacked+' of '+nItems+' items have a pack size in Recipe Costing, so they get Full and Loose boxes; the rest are counted in order-guide units until they have one.';
+    :!count?'No count is open yet — a manager starts the month’s count from Manager mode. '+packs_
+    :!who?'Pick your name to start counting.'
+    :'Count each place in order. A box saves itself a moment after you stop typing, and ✓ means it is saved. Leave a box empty if you have not counted it; type 0 if there is none.';
+  updateProgress(nItems);
   if(mgr)initSortables();
   if(document.getElementById('placesModal').classList.contains('show'))renderPlaces();
 }
 
-function placeHead(label,n){
+/* A place heading: during a count, how many of its rows are counted (saved,
+   not merely typed); otherwise how many items it holds. */
+function placeHead(label,rows,pid){
+  return '<div class="cat-header stock-place-hd"'+(pid!==''?' data-place-id="'+pid+'"':' data-orphans="1"')+'><div class="cat-label">'+esc(label)+'</div>'
+    +'<div class="stock-place-n">'+headCount(rows)+'</div></div>';
+}
+/* the set-up lists' headings: always a plain count, never "counted" */
+function setupHead(label,n){
   return '<div class="cat-header stock-place-hd"><div class="cat-label">'+esc(label)+'</div>'
     +'<div class="stock-place-n">'+n+' item'+(n===1?'':'s')+'</div></div>';
+}
+function headCount(rows){
+  if(!count)return rows.length+' item'+(rows.length===1?'':'s');
+  var n=0;for(var i=0;i<rows.length;i++)if(isCounted(rows[i].id))n++;
+  return n+' of '+rows.length+' counted';
+}
+function isCounted(id){var l=lines[id];return !!l&&(l.full_qty!=null||l.loose_qty!=null);}
+function updateProgress(nItems){
+  var hs=document.querySelectorAll('.stock-place-hd[data-place-id],.stock-place-hd[data-orphans]'),done=0;
+  for(var i=0;i<hs.length;i++){
+    var pid=hs[i].getAttribute('data-place-id'),rows=[];
+    for(var k=0;k<items.length;k++){var it=items[k];
+      if(pid?String(it.place_id)===pid:!placeById(it.place_id))rows.push(it);}
+    hs[i].querySelector('.stock-place-n').textContent=headCount(rows);
+  }
+  for(var k=0;k<items.length;k++)if(isCounted(items[k].id))done++;
+  if(nItems==null){var d={};nItems=0;for(var k=0;k<items.length;k++)if(!d[items[k].order_item_id]){d[items[k].order_item_id]=1;nItems++;}}
+  document.getElementById('sheetSummary').textContent=count?done+' of '+items.length+' counted':nItems+' items · '+places.length+' places';
 }
 
 /* Which boxes an item gets (docs/inventory-guide.md, "Which boxes an item gets"):
    a pack of more than 1 -> Full x pack, and Loose in pack units;
    a pack of exactly 1   -> one box in the pack unit;
-   no pack yet           -> one box in the order-guide unit. */
+   no pack yet           -> one box in the order-guide unit.
+   A row already counted keeps the boxes it was counted in — the pack it
+   was counted against is on the line — so "7 loose" never changes meaning
+   because the price list changed mid-count. */
+function specFor(it){
+  var l=lines[it.id];
+  if(l&&(l.full_qty!=null||l.loose_qty!=null)){
+    var q=num(l.pack_qty_snap);
+    return {two:q>1,snapQty:q,snapUnit:l.pack_unit_snap||null,unit:l.pack_unit_snap||'units'};
+  }
+  var pk=packs[it.order_item_id],g=it.order_items||{};
+  if(pk)return {two:pk.qty>1,snapQty:pk.qty,snapUnit:pk.unit,unit:pk.unit};
+  return {two:false,snapQty:null,snapUnit:g.unit||null,unit:g.unit||'units'};
+}
+function canCount(){return !!count&&!!who&&!mgr;}
+
 function rowHtml(it,here,placesOf){
-  var g=it.order_items||{},name=itemName(it),pk=packs[it.order_item_id];
+  var g=it.order_items||{},name=itemName(it),sp=specFor(it);
   var sub=[];
   if(g.vendor)sub.push(esc(g.vendor));
   var also=(placesOf[it.order_item_id]||[]).filter(function(l){return l!==here;});
   if(also.length)sub.push('also in '+esc(also.join(', ')));
   if(g.active===false)sub.push('no longer on the order guide');
   var boxes;
-  if(pk&&pk.qty>1){
-    boxes=box(it,'full','Full','× '+pk.qty+' '+pk.unit,'Full packs of '+name)
-         +box(it,'loose','Loose',pk.unit,'Loose '+pk.unit+' of '+name);
+  if(sp.two){
+    boxes=box(it,'full','Full','× '+sp.snapQty+' '+sp.unit,'Full packs of '+name)
+         +box(it,'loose','Loose',sp.unit,'Loose '+sp.unit+' of '+name);
   }else{
-    var u=pk?pk.unit:(g.unit||'units');
-    boxes=box(it,'full','',u,name+', in '+u);
+    boxes=box(it,'full','',sp.unit,name+', in '+sp.unit);
   }
   // grips only in manager mode, and only in a real place - an orphan has no list to sort in
   var grip=(mgr&&here)?'<div class="drag-handle" aria-label="Drag to reorder '+esc(name)+'">'+GRIP+'</div>':'';
@@ -329,15 +426,147 @@ function rowHtml(it,here,placesOf){
       +'<button class="mgr-retire-btn" onclick="removeRow('+it.id+')" aria-label="Stop counting '+esc(name)+(here?' in '+esc(here):'')+'">Remove</button></div>':'';
   return '<div class="count-row stock-row" data-id="'+it.id+'">'+grip
     +'<div class="count-info"><div class="count-name">'+esc(name)+'</div>'
-    +(sub.length?'<div class="count-par">'+sub.join(' · ')+'</div>':'')+'</div>'
+    +(sub.length?'<div class="count-par">'+sub.join(' · ')+'</div>':'')
+    +'<div class="stock-state-slot">'+stateHtml(it.id)+'</div></div>'
     +'<div class="stock-boxes">'+boxes+'</div>'+acts+'</div>';
 }
 
+/* A box shows what was typed here and not yet confirmed, else what is saved. */
+function boxValue(id,part){
+  var L=local[id];if(L)return L[part]||'';
+  var l=lines[id];if(!l)return '';
+  return fmtQty(part==='full'?l.full_qty:l.loose_qty);
+}
 function box(it,part,label,unit,aria){
+  var v=count?boxValue(it.id,part):'';
   return '<label class="stock-box">'+(label?'<span class="stock-lbl">'+label+'</span>':'')
-    +'<input class="stock-input" type="text" inputmode="decimal" autocomplete="off" disabled'
-    +' data-item-id="'+it.id+'" data-part="'+part+'" aria-label="'+esc(aria)+'">'
+    +'<input class="stock-input'+(v!==''?' filled':'')+'" type="text" inputmode="decimal" autocomplete="off"'+(canCount()?'':' disabled')
+    +' value="'+esc(v)+'" data-item-id="'+it.id+'" data-part="'+part+'" aria-label="'+esc(aria)+'"'
+    +' oninput="onBox(this)" onchange="saveSoon('+it.id+',0)">'
     +'<span class="stock-unit">'+esc(unit)+'</span></label>';
+}
+
+/* A row's state, in words: saved (and by whom), saving, not saved (and what
+   to do), or not a number. Nothing at all for a row nobody has counted. */
+function stateHtml(id){
+  if(!count)return '';
+  var L=local[id];
+  if(L&&L.state==='saving')return '<div class="stock-state">Saving…</div>';
+  if(L&&L.state==='invalid')return '<div class="stock-state invalid">Numbers only — like 2 or 1.5</div>';
+  if(L&&L.state==='failed')return '<button type="button" class="stock-state failed" onclick="saveRow('+id+')">Not saved — '+esc(L.msg)+'. Tap to try again</button>';
+  if(L&&L.state==='dirty')return '<div class="stock-state">Not saved yet</div>';
+  var l=lines[id];
+  if(l&&(l.full_qty!=null||l.loose_qty!=null))return '<div class="stock-state saved">✓ Counted'+(l.counted_by?' by '+esc(l.counted_by):'')+'</div>';
+  return '';
+}
+function rowEl(id){return document.querySelector('.stock-row[data-id="'+id+'"]');}
+function paintRow(id){
+  var r=rowEl(id);if(!r)return;
+  var slot=r.querySelector('.stock-state-slot');if(slot)slot.innerHTML=stateHtml(id);
+  var ins=r.querySelectorAll('.stock-input');
+  for(var i=0;i<ins.length;i++){
+    // a saved value comes back from the table: show it, unless someone is typing in that box
+    if(!local[id]&&document.activeElement!==ins[i])ins[i].value=boxValue(id,ins[i].getAttribute('data-part'));
+    ins[i].classList.toggle('filled',ins[i].value!=='');
+  }
+}
+
+/* ── COUNTING ──
+   A row saves itself a moment after typing stops (or at once when the box
+   loses focus), as an UPSERT on (count_id, inventory_item_id): a retry after
+   a lost answer updates the same line and can never add a second. One
+   request per row at a time; an edit made while one is in flight is sent
+   when it lands. ✓ appears only when the table has answered with the row. */
+function fmtQty(n){return n==null?'':String(+n);}
+/* '' -> null (blank); a non-negative number -> it; anything else -> undefined */
+function parseQty(v){
+  var t=String(v==null?'':v).trim().replace(',','.');
+  if(t==='')return null;
+  if(!/^(\d+\.?\d*|\.\d+)$/.test(t))return undefined;
+  return parseFloat(t);
+}
+function numEq(a,b){return (a==null&&b==null)||(a!=null&&b!=null&&Number(a)===Number(b));}
+
+function onBox(el){
+  var id=parseInt(el.getAttribute('data-item-id'),10),r=rowEl(id),L=local[id];
+  if(!L){
+    L=local[id]={full:'',loose:''};
+    var ins=r?r.querySelectorAll('.stock-input'):[];
+    for(var i=0;i<ins.length;i++)L[ins[i].getAttribute('data-part')]=ins[i].value;
+  }
+  L[el.getAttribute('data-part')]=el.value;
+  L.by=who;L.state='dirty';
+  el.classList.toggle('filled',el.value!=='');
+  var slot=r&&r.querySelector('.stock-state-slot');if(slot)slot.innerHTML=stateHtml(id);
+  saveSoon(id,SAVE_DELAY);
+}
+function saveSoon(id,ms){
+  var L=local[id];if(!L||L.state!=='dirty')return;
+  clearTimeout(L.timer);L.timer=setTimeout(function(){saveRow(id);},ms);
+}
+function saveRow(id){
+  var L=local[id];if(!L||!count)return;
+  clearTimeout(L.timer);L.timer=null;
+  if(L.inflight)return;                 // sent again when this one lands
+  var by=L.by||who;if(!by)return;
+  var it=itemById(id);if(!it)return;
+  var sp=specFor(it),f=parseQty(L.full),l=sp.two?parseQty(L.loose):null;
+  if(f===undefined||l===undefined){L.state='invalid';paintRow(id);return;}
+  // blank vs zero: both blank = not counted; one blank beside a filled box = 0
+  if(sp.two&&(f!==null||l!==null)){if(f===null)f=0;if(l===null)l=0;}
+  var line=lines[id];
+  if(!line&&f===null&&l===null){delete local[id];paintRow(id);return;}   // nothing to save, nothing to clear
+  if(line&&numEq(line.full_qty,f)&&numEq(line.loose_qty,l)){delete local[id];paintRow(id);return;}
+  L.inflight=true;L.state='saving';paintRow(id);
+  var cid=count.id;
+  var body={location:LOCATION,count_id:cid,inventory_item_id:id,full_qty:f,loose_qty:l,
+            pack_qty_snap:sp.snapQty,pack_unit_snap:sp.snapUnit,counted_by:by,updated_at:new Date().toISOString()};
+  api('POST','inventory_count_lines','on_conflict=count_id,inventory_item_id',body,function(r,s){
+    L.inflight=false;
+    var row=Array.isArray(r)&&r.length===1?r[0]:null;
+    if(s>=200&&s<300&&row&&row.inventory_item_id===id&&row.count_id===cid&&numEq(row.full_qty,f)&&numEq(row.loose_qty,l)){
+      if(count&&count.id===cid)lines[id]=row;
+      var nf=parseQty(L.full),nl=sp.two?parseQty(L.loose):null;
+      if(sp.two&&(nf!==null||nl!==null)){if(nf===null)nf=0;if(nl===null)nl=0;}
+      if(local[id]===L&&numEq(nf,f)&&numEq(nl,l))delete local[id];   // nothing typed since: the table has it
+      else if(local[id]===L){L.state='dirty';saveRow(id);}           // typed while it was saving: send that too
+    }else{
+      L.state='failed';
+      L.msg=s===0?'no answer from the server':(s===401||s===403)?'the count may have been closed':(s>=200&&s<300)?'the server did not confirm it':'the server refused it';
+      if(s===401||s===403)loadAll({quiet:true,force:true});
+    }
+    paintRow(id);updateProgress();
+  },null,'resolution=merge-duplicates,return=representation');
+}
+
+/* ── who is counting: picked once, kept while the page is open ── */
+function renderWho(){
+  var bar=document.getElementById('nameBar'),show=!!count||mgr;
+  bar.style.display=show?'':'none';
+  if(!show)return;
+  var sel=document.getElementById('countedBy'),h='<option value="">Pick your name…</option>',seen={};
+  for(var i=0;i<staff.length;i++){
+    var n=staff[i].name;
+    if(!n||seen[n])continue;              // one entry per person, not one per shift
+    seen[n]=1;h+='<option value="'+esc(n)+'">'+esc(n)+'</option>';
+  }
+  sel.innerHTML=h;sel.value='';
+  var has=!!who;
+  sel.style.display=has?'none':'';
+  document.getElementById('whoLabel').textContent=has?'Counting as':'Counted by';
+  var nm=document.getElementById('whoName');nm.style.display=has?'':'none';nm.textContent=who;
+  document.getElementById('whoChange').style.display=has?'':'none';
+}
+function pickWho(v){
+  who=v||'';
+  try{if(who)sessionStorage.setItem(WHO_KEY,who);else sessionStorage.removeItem(WHO_KEY);}catch(e){}
+  render();
+}
+/* Anything typed under the old name is sent under it before the name changes. */
+function changeWho(){
+  for(var id in local)if(local[id].state==='dirty')saveRow(parseInt(id,10));
+  pickWho('');
+  setTimeout(function(){var s=document.getElementById('countedBy');if(s)s.focus();},50);
 }
 
 /* ── MANAGER: what the count does not cover yet ──
@@ -350,7 +579,7 @@ function newItemsHtml(){
   var c=counted(),lo={},list=[];
   for(var i=0;i<leftOff.length;i++)lo[leftOff[i].order_item_id]=1;
   for(var i=0;i<guide.length;i++)if(!c[guide[i].id]&&!lo[guide[i].id])list.push(guide[i]);
-  var h=placeHead('New on the order guide',list.length);
+  var h=setupHead('New on the order guide',list.length);
   if(!list.length)return h+'<div class="stock-none">Nothing new — every order-guide item is counted or left off on purpose.</div>';
   h+='<div class="stock-new">';
   for(var i=0;i<list.length;i++){
@@ -371,7 +600,7 @@ function leftOffHtml(){
   var c=counted(),list=[];
   for(var i=0;i<leftOff.length;i++){var g=guideById(leftOff[i].order_item_id);if(g&&!c[g.id])list.push({lo:leftOff[i],g:g});}
   list.sort(function(a,b){return (a.g.vendor+a.g.category+a.g.name).localeCompare(b.g.vendor+b.g.category+b.g.name);});
-  var h=placeHead('Left off on purpose',list.length)
+  var h=setupHead('Left off on purpose',list.length)
     +'<div class="stock-none"><button class="link-btn" id="leftOffBtn" onclick="toggleLeftOff()" aria-expanded="'+showLeftOff+'">'+(showLeftOff?'Hide':'Show')+' the list</button></div>';
   if(!showLeftOff)return h;
   h+='<div class="stock-left">';
@@ -493,6 +722,59 @@ function leaveOff(oid){
   if(busy)return stillSaving();
   setBusy(true);
   api('POST','inventory_left_off',null,{location:LOCATION,order_item_id:oid},function(r,s){finish(outcome(r,s),'Left off the count');});
+}
+
+/* ── MANAGER: the month's count ── */
+function monthLabel(period){
+  var p=String(period).split('-'),mn=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  return mn[parseInt(p[1],10)-1]+' '+p[0];
+}
+function monthIso(offset){
+  var d=new Date(),m=new Date(d.getFullYear(),d.getMonth()+offset,1);
+  return m.getFullYear()+'-'+String(m.getMonth()+1).padStart(2,'0')+'-01';
+}
+function nCounted(){var n=0;for(var k=0;k<items.length;k++)if(isCounted(items[k].id))n++;return n;}
+function countBarHtml(){
+  if(count){
+    var n=nCounted(),h='<div class="stock-countbar"><strong>'+esc(monthLabel(count.period))+' count</strong> is open — '+n+' of '+items.length+' counted. Closing a month comes in a later update.';
+    if(!n){
+      var other=count.period===monthIso(0)?monthIso(-1):monthIso(0);
+      h+='<div class="stock-countbar-btns"><button class="mgr-edit-btn" onclick="switchMonth(\''+other+'\')">Wrong month? Make it '+esc(monthLabel(other))+'</button></div>';
+    }
+    return h+'</div>';
+  }
+  var a=monthIso(0),b=monthIso(-1);
+  return '<div class="stock-countbar">No count is open. Start the month’s count when you are ready — staff can count as soon as it starts.'
+    +'<div class="stock-countbar-btns"><button class="mgr-edit-btn" onclick="startCount(\''+a+'\')">Start '+esc(monthLabel(a))+'</button>'
+    +'<button class="mgr-edit-btn" onclick="startCount(\''+b+'\')">Start '+esc(monthLabel(b))+'</button></div></div>';
+}
+/* One open count at a time, and one count per month - both are unique keys
+   on the table, so a second phone starting one at the same moment gets a
+   409 and is told, never a second count. */
+function startCount(period){
+  if(busy)return stillSaving();
+  if(!who){showToast('Pick your name first','error');return;}
+  if(!confirm('Start the '+monthLabel(period)+' count? Staff can count as soon as it is open.'))return;
+  setBusy(true);
+  api('POST','inventory_counts',null,{location:LOCATION,period:period},function(r,s){
+    var o=outcome(r,s);
+    if(o==='conflict'){setBusy(false);showToast('There is already a '+monthLabel(period)+' count, or another count is open','error');loadAll({quiet:true,force:true});return;}
+    if(o!=='ok')return finish(o,'');
+    api('POST','inventory_count_log',null,{location:LOCATION,count_id:r[0].id,action:'start',by_name:who},function(){finish('ok',monthLabel(period)+' count started');});
+  });
+}
+/* A count started under the wrong month can be moved - but only before
+   anything has been counted in it. */
+function switchMonth(period){
+  if(busy)return stillSaving();
+  if(!count||nCounted())return;
+  if(!confirm('Make this the '+monthLabel(period)+' count instead?'))return;
+  setBusy(true);
+  api('PATCH','inventory_counts','id=eq.'+count.id,{period:period},function(r,s){
+    var o=outcome(r,s);
+    if(o==='conflict'){setBusy(false);showToast('There is already a '+monthLabel(period)+' count','error');loadAll({quiet:true,force:true});return;}
+    finish(o,'Now the '+monthLabel(period)+' count');
+  });
 }
 
 /* ── drag to reorder (manager mode), as on Orders, Prep and Line ──
@@ -668,6 +950,14 @@ document.getElementById('nameInput').addEventListener('keydown',function(e){if(e
     if(e.target!==this)return;
     if(id==='pinModal')closePin();else if(id==='pickModal')closePick();else if(id==='placesModal')closePlaces();else closeName();
   });
+});
+
+/* A phone or tablet that comes back to the page picks up what others have
+   counted meanwhile - unless someone is typing in a box right now. */
+document.addEventListener('visibilitychange',function(){
+  if(document.hidden||loading||busy)return;
+  var a=document.activeElement;if(a&&a.classList&&a.classList.contains('stock-input'))return;
+  loadAll({quiet:true,force:true});
 });
 
 loadAll();

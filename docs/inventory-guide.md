@@ -3,8 +3,8 @@
 Status: **plan v1, approved by Stephen 2026-10-06** with one change: Tempest's real storage
 places, in walking order (see "Decisions"). **Slice 0 is closed** — the tables are live and
 seeded. **Slice 1 is live** — merged as `a82d60b` (PR #158), unlinked, and walked by Stephen
-on 2026-10-07. **Slice 2 is built** on branch `inventory-slice2`, with its one table live: see
-"Slice 2 as built". Every decision below was made by Stephen, in the interview that produced
+on 2026-10-07. **Slice 2 is live** — merged as `29eedf0` (PR #160) and hand-tested by Stephen
+on an iPhone on 2026-10-07. **Slice 3 is built** on branch `inventory-slice3`: see "Slice 3 as built". Every decision below was made by Stephen, in the interview that produced
 this document or as each slice began. Worktree `~/Developer/boxkitchen-inventory`.
 
 Target file: a new page, `tempest_inventory.html`, copied from `tempest_meat.html` as its
@@ -327,7 +327,11 @@ a new guide item appears under "Not on the count" without any set-up.
 >   "Slice 2 as built") — so that the 56 deliberate omissions are never "new", and a genuinely
 >   new item cannot get lost among them.
 >
-> **BUILT 2026-10-07** on `inventory-slice2` — see "Slice 2 as built".
+> **SHIPPED.** Merged to `main` as `29eedf0` (PR #160, squashed) on 2026-10-07. **Hand-tested by
+> Stephen on an iPhone the same day** — scrolling by the names, dragging by the grip ("✓ Order
+> saved", and the order held after reopening), Move, and switching manager mode off: "everything
+> worked correctly and looks good." That closes the "drag with a finger" item left open in
+> "Slice 2 as built".
 
 ### Slice 3 — Counting saves
 
@@ -345,6 +349,16 @@ The first slice that writes count data.
 **Done when:** a save in flight cannot double-fire; a retry after a dropped response leaves
 exactly one row; blank and zero are stored differently; the harness proves all three without
 touching the database.
+
+> **Decided by Stephen as the slice began (2026-10-07):** counting happens on the kitchen
+> tablet and sometimes phones, and the name should be asked for "only if someone leaves the
+> page". Built that way — kept in `sessionStorage` while the page is open, so it survives iOS
+> reloading a background tab — plus, for the shared tablet, the name always on screen
+> ("Counting as Maria") with a one-tap **Change**. No idle timeout: re-asking every time a phone
+> locks inside a freezer would cost more than it saves. And the hand test is **the real October
+> count**: Stephen starts it, counts two items for real, and clears them — no made-up data.
+>
+> **BUILT 2026-10-07** on `inventory-slice3` — see "Slice 3 as built".
 
 ### Slice 4 — Nothing typed is lost
 
@@ -582,6 +596,82 @@ verified read-only with the anon key: 56 left off, 198 counted, 0 both, **0 new*
   inside them overflows and that every picker button is a 48px target; their look on a phone
   is the hand test's.
 - Print — Slice 5.
+
+---
+
+## Slice 3 as built
+
+`tempest_inventory.html` (counting added), `scripts/check_inventory.py` (six scenarios added;
+the stub learned the count tables, the staff list and the upsert), and this document. **No
+SQL** — Slice 0's tables already had everything, including the open-only rule. **No shared
+file touched.**
+
+### What it does
+
+- **Two more reads on every load**: the open count (`status=eq.open`, at most one by the
+  table's own index) and the active staff list; then, if a count is open, **its** lines
+  (`count_id=eq.<id>`). Nothing is drawn until all have landed. On live data today, with no
+  count open: all five reads answer 200, and every box stays locked.
+- **A Manager can start the month's count** — this month or last month, named in the
+  question. One write, then a log line saying who. The table refuses a second open count and
+  a second count for a month (unique keys), and the page says so in words. Until anything
+  is counted, a count started under the wrong month can be moved ("Wrong month? Make it
+  September 2026"); after that the button goes, and the page refuses even if asked.
+- **Who is counting**: a name from the active staff list (once each, not once per shift),
+  kept while the page is open, always shown, changed in one tap. **Change** first sends
+  anything typed but not yet saved, under the name it was typed under. No name, no boxes.
+- **Each row saves itself** 1.2 s after typing stops, or at once when the box loses focus,
+  as an **upsert on `(count_id, inventory_item_id)`** — `on_conflict` with
+  `Prefer: resolution=merge-duplicates`. A retry after a lost answer updates the same line
+  and cannot add a second. **One request per row at a time**; an edit made while one is in
+  flight is sent when it lands, so the table always ends on the newest value.
+- **✓ only for a confirmed row**: a 2xx carrying exactly one row, for this item and this
+  count, with the values that were sent. Anything else is "Not saved — …" in words, as a 44px
+  button that retries: *no answer from the server*, *the server did not confirm it*, *the
+  server refused it*, or *the count may have been closed* (which also re-reads the sheet).
+- **Blank is not zero**: both boxes blank = not counted; one blank beside a filled box = 0;
+  `0` typed is a count. Clearing a saved row sends blanks — nothing is deleted. Typing and
+  erasing before a save sends nothing; retyping the saved value sends nothing. Words are
+  refused in words ("Numbers only — like 2 or 1.5"); a comma is read as a decimal point.
+- **A row keeps the pack it was counted against**: once counted, its boxes come from the
+  line's `pack_qty_snap` / `pack_unit_snap`, not today's price list, so "4 loose" cannot
+  change meaning mid-count. Each save records the pack the boxes showed.
+- **Progress counts only what is saved**: each place "12 of 53 counted", the bar "45 of 216
+  counted". A typed-but-unconfirmed number does not count.
+- **A refresh never wipes a typed number**: the sheet re-reads when a phone comes back to the
+  page (others' counts appear), but not while someone is typing, and a re-draw keeps every
+  unsaved value in its box.
+
+### Proved
+
+- `check_inventory.py`: **288 assertions, 22 scenarios, clean** — slices 1–2's sixteen and six
+  more (start, count, inflight, countlost, countclosed, who). The stub enforces the upsert, the
+  unique keys and the open-only RLS rule, answering 403 for a closed count as PostgREST does.
+- **It fails when it should**: fifteen deliberate breaks in throwaway copies. **Fourteen
+  caught** — a plain POST instead of the upsert; no in-flight guard; a blank partner not
+  zeroed; today's pack instead of the counted one; a tick on any 2xx (missed at first — the
+  stub never answered 2xx without a row; the case was added); `0` read as blank; no name
+  needed; Change dropping typed values; names not de-duplicated; lines of every count read;
+  a start with no log; a closed count not re-read; a refresh wiping typed values; a month
+  changed after counting. **One correctly not caught**: treating "no answer" as success
+  changes nothing, because with no answer there is no row to confirm.
+- `check_styling.py`: clean, 11 pages, **86 inputs** (the name box is new, at 16px), register
+  unchanged at 75.
+- **Live data, read-only, with every write blocked** in the page before it could leave: five
+  reads, all 200; no count open; 220 boxes, all locked.
+
+### Not proved, and known
+
+- **On a real phone, against the live table** — the hand test: the real October count.
+- **The log line is best-effort.** If the count is created but the log write fails, the count
+  stands and nothing says who started it. Slice 7's close and reopen must not be built that
+  way: a reopen that is not recorded is the failure Stephen asked to prevent.
+- **Remove during an open count** retires a row whose line may hold a count; that number then
+  stops showing and stops counting. Slice 6 (values) and Slice 7 (close) must decide what a
+  line of a retired row means — most likely: still counted, shown under "Not in an active
+  place" until the month closes.
+- Typed numbers live only in the page: a closed tab, or a count closed underneath, loses
+  them. That is Slice 4.
 
 ---
 
