@@ -2,9 +2,10 @@
 
 Status: **plan v1, approved by Stephen 2026-10-06** with one change: Tempest's real storage
 places, in walking order (see "Decisions"). **Slice 0 is closed** — the tables are live and
-seeded. **Slice 1 is built** on the branch, not merged: see "Slice 1 as built". Every decision below was made
-by Stephen in the interview that produced this document. Branch `inventory-guide`, in the
-worktree `~/Developer/boxkitchen-inventory`.
+seeded. **Slice 1 is live** — merged as `a82d60b` (PR #158), unlinked, and walked by Stephen
+on 2026-10-07. **Slice 2 is built** on branch `inventory-slice2`, with its one table live: see
+"Slice 2 as built". Every decision below was made by Stephen, in the interview that produced
+this document or as each slice began. Worktree `~/Developer/boxkitchen-inventory`.
 
 Target file: a new page, `tempest_inventory.html`, copied from `tempest_meat.html` as its
 template. At the very end, and only then: the tile in `index.html`, `CLAUDE.md`, and
@@ -299,8 +300,10 @@ The page exists, and writes nothing.
 harness proves the page makes **no request but GET**, and that the runtime-built boxes compute
 to ≥16px — the measurement `check_styling.py` cannot make.
 
-> **BUILT 2026-10-06** on `inventory-guide`, not yet merged — see "Slice 1 as built" below.
-> The walk-through is still to do.
+> **SHIPPED.** Merged to `main` as `a82d60b` (PR #158, squashed) on 2026-10-06, live at
+> `tempest_inventory.html` with no tile linking to it. **Walked by Stephen on 2026-10-07**:
+> "I think it all looks good for now." Stephen asked for drag handles to move things quickly —
+> already this plan's Slice 2 — "does not need to happen today". See "Slice 1 as built".
 
 ### Slice 2 — Set-up (manager)
 
@@ -313,6 +316,18 @@ to ≥16px — the measurement `check_styling.py` cannot make.
 
 **Done when:** every action writes only in manager mode; the harness asserts each payload;
 a new guide item appears under "Not on the count" without any set-up.
+
+> **Decided by Stephen as the slice began (2026-10-07):**
+> - **Drag to reorder within a place; a Move button to change place.** Not drag between places:
+>   on a phone, that means scrolling a 61-item list while holding a row, with nothing to
+>   confirm where it landed.
+> - **A "New items" list, not one list of everything uncounted.** Each new guide item stays
+>   listed until a manager gives it a place or taps "Don't count". That needs to remember what
+>   was left off on purpose — one new table, `inventory_left_off`, SQL Stephen ran (see
+>   "Slice 2 as built") — so that the 56 deliberate omissions are never "new", and a genuinely
+>   new item cannot get lost among them.
+>
+> **BUILT 2026-10-07** on `inventory-slice2` — see "Slice 2 as built".
 
 ### Slice 3 — Counting saves
 
@@ -410,8 +425,11 @@ incomplete whenever it should be; the page never writes to any `flash_*` table.
   page uses — no rule changes, but the banners are how the next person tells a shared
   component from a private one. As of Slice 1: DATE / NAME / INTRO BARS (`.date-bar`,
   `.intro`), CATEGORY HEADER (`.cat-header`), COUNT ROWS (`.count-row` and family), and the
-  section holding `.link-btn` (Try again). HEADER, EMPTY / LOADING and TOAST already say
-  every page. Re-check the list against the page at the time; later slices add to it.
+  section holding `.link-btn` (Try again). Slice 2 adds MANAGER-ONLY CONTROLS
+  (`.row-mgr-actions`, `.mgr-retire-btn`, `.mgr-add-bar`), DRAG TO REORDER (`.drag-handle`)
+  and the SEGMENTED TOGGLE (`.mode-toggle` in the place picker). HEADER, EMPTY / LOADING,
+  MODAL, TOAST and MANAGER MODE already say every page or every tool page. Re-check the list
+  against the page at the time; later slices add to it.
 
 ---
 
@@ -481,6 +499,89 @@ The page is reachable only by its address; no tile links to it yet.
 2026-10-06. That looks like a typo — possibly a price typed into the pack-size box. Because the
 price list is shared, the count sheet faithfully asks for "Full × 1210.58 oz" plus loose ounces.
 Fix it in Recipe Costing; nothing here needs to change.
+---
+
+## Slice 2 as built
+
+`tempest_inventory.html` (manager set-up added), `scripts/check_inventory.py` (rewritten
+around a stateful stub), `docs/inventory-guide-slice2.sql` (new; Stephen ran it),
+`.github/workflows/inventory-guard.yml` (now also watches `vendor/**`, since the page loads
+SortableJS). **No shared file touched.**
+
+### The table — `docs/inventory-guide-slice2.sql`, run 2026-10-07
+
+`inventory_left_off` (`location, order_item_id, active, created_at`; one active row per item
+per location; RLS as Slice 0, no delete). Seeded with the **56** active guide items not on the
+count on 2026-10-07 — the 48 on Paper Goods, Cleaning, Equipment and Bar, and the 8 marked Not
+counted — **listed by id**, not "whatever is unplaced", so nothing new could slip in as left
+off. Its check refuses (and keeps nothing) unless exactly 56 are left off, none is also
+counted, and every active guide item is now either counted or left off. Proved first on a
+throwaway Postgres with Slice 0 applied: 8 of 8, including that a guide item added before
+the run makes it refuse. Stephen's run returned `inventory_left_off 56, inventory_items 216`;
+verified read-only with the anon key: 56 left off, 198 counted, 0 both, **0 new**.
+
+### What it does
+
+- **A Manager switch** (the same PIN and `sessionStorage` key as Meat and Portion). The PIN
+  box is restated qualified, so it renders at the 1.4rem `kitchen.css` intended rather than
+  losing to `.modal input[type="tel"]` at 15.2px. Unlocking reads two more tables — the order
+  guide and the left-off list — which staff never ask for; neither is asked for a price.
+- **Manager mode is set-up, not counting**: the boxes give way to a grip, **Move** and
+  **Remove** on every row.
+- **Drag** reorders within a place: one SortableJS list per place, grabbed only by
+  `.drag-handle`, no shared group, so a row cannot be dropped into another place. A drop
+  renumbers that place 10, 20, 30 … and PATCHes only the rows whose number changed. Any
+  failure re-reads the sheet, since some PATCHes may have landed.
+- **Move** opens a place picker: *Move it* (one PATCH of `place_id` and `sort_order`, to the
+  bottom of the new place) or *Also count it* (a POST of a second row). Places where the item
+  is already counted are shown and disabled, never silently offered.
+- **Remove** asks first. In a second place it retires just that row. In its **last** place it
+  records the item as left off **first**, then retires the row — and if the record fails, it
+  does not retire: an item is never in neither list.
+- **New on the order guide** heads manager mode: every active guide item neither counted nor
+  left off, with **Add** (the picker) and **Don't count**. On live data today it reads "Nothing
+  new — every order-guide item is counted or left off on purpose."
+- **Left off on purpose**, collapsed, with **Count it** — which adds the count row first and
+  only then undoes the left-off record, for the same reason.
+- **Places** — reorder (▲▼, renumbering), rename, retire (only when empty, and the page itself
+  refuses even if the button were live), and add (at the end of the walk). A name already in
+  use is refused before any write, ignoring case and spacing; a retired place's name, which
+  the table still holds, comes back as a plain message rather than a failure. Controls that
+  cannot be used are dashed and faint, not merely inert.
+- **One write at a time.** While a write is in flight every other action says "Still saving"
+  and the drag lists are locked. **Every write ends in a fresh read** (kept on screen, no
+  spinner), so the screen shows what the table holds — including after a lost answer, which is
+  reported as "No answer", never as saved.
+
+### Proved
+
+- `check_inventory.py`: **208 assertions, 16 scenarios, clean** — slice 1's seven and nine
+  more (mgr, drag, dragfail, move, remove, newitems, places, busy, lost). The stub is stateful
+  and enforces the real unique keys with 409s, so "after the re-read" checks mean something.
+- **It fails when it should**: nineteen deliberate breaks, each in a throwaway copy, each
+  caught — no busy guard; retire-before-record; drag between places; no re-read after a write;
+  no answer reported as saved; Count it undoing before adding; staff seeing controls; drag
+  not locked while saving; drag saving every row; retiring a full place; a case-sensitive name
+  check; left-off items shown as new; staff reading the guide; any PIN unlocking; a 15.2px PIN
+  box; moving to its own place; a new place first instead of last; an orphan given a grip; and
+  disabled controls drawn like live ones. Two of these were **missed on the first pass** —
+  Count it's failure path and the page's own retire refusal — and the tests were added.
+- `check_styling.py`: clean, 11 pages, **85 inputs** measured (the PIN and place-name boxes
+  are new, both ≥16px), register unchanged at 75.
+- **Live data, read-only, manager mode** at 390px: 0 new, ten places, 56 left off, 216 rows
+  each with a grip, ten drag lists, nothing past the edge. Nothing was clicked.
+
+### Not proved
+
+- **Drag with a finger.** The harness fires SortableJS's own `onEnd` after moving the row; it
+  cannot hold a touch. `touch-action` is on `.drag-handle` only (the shared rule), as the
+  review checklist requires — but whether a cook can scroll the sheet in manager mode, and
+  drag by the grip, is for Stephen's hand test on an iPhone.
+- **The pop-ups at a true 390px.** Headless Chrome lays out fixed elements against a 500px
+  viewport (the costing doc's trap 3), so screenshots crop them. The harness proves nothing
+  inside them overflows and that every picker button is a 48px target; their look on a phone
+  is the hand test's.
+- Print — Slice 5.
 
 ---
 
@@ -491,6 +592,25 @@ Fix it in Recipe Costing; nothing here needs to change.
   `inventory_places` / `inventory_items` tables could serve it, but nothing here assumes so.
 - **House-made prep** (sauces, dressings, portioned proteins). Valuing them needs recipe
   costing (B4.3). The tables allow it later; nothing here builds toward a guess.
+
+  **Stephen, 2026-10-07:** "we will need to add a 'prepared items' section to cost out all the
+  prep to maintain a proper and accurate inventory … that is something that we can link
+  through recipe costing once both pages are fully built. We have time, I just need to start
+  thinking about what that looks like." Unvalued prep on the shelves at month-end makes the
+  month's true food cost read high, so it belongs in the count. A first sketch, offered and
+  not yet decided:
+
+  - **Counted in the same walk**, under a *Prepared* group in each place — the aioli in the
+    prep cooler is counted standing at the prep cooler, not on a second trip.
+  - **Counted by container** — quart, 1/6 pan, portion — with the same full-and-partial idea.
+  - **Listed from the recipe library** (each recipe has a yield), or the prep lists, or both.
+  - **Valued at recipe cost per yield unit** from Recipe Costing (B4.3): the link Stephen
+    described, and the piece that has to exist first.
+  - **One schema change**: `inventory_items` requires `order_item_id` today, so a prepared
+    item needs a recipe link instead (one or the other, never both).
+
+  Stephen's to decide when it starts: which prep counts; the container units; whether a
+  partly-used container counts; where the list comes from.
 - **Ordering help** — on-hand vs par. The order guide keeps par.
 - **Writing to the price list.** Missing prices are fixed in Recipe Costing, which has four
   slices of safety around that write path. Inventory gets a link, not a second door.
