@@ -1408,6 +1408,8 @@ RUNNER = r"""
          getComputedStyle($('pickFilter')).fontSize);
     });
     step(function(){
+      /* Stephen, 2026-10-07: half-gallons are bought by the half-gallon */
+      ok('ok: the unit list offers 1/2 gal', [].some.call($('unitList').options,function(o){return o.value==='1/2 gal';}));
       ok('ok: nothing picked on open', pickId===null);
       ok('ok: chooser shown, no chosen row', $('pickChosen').style.display==='none');
       ok('ok: unpriced linked row is reachable', !!rowFor('Birite','Distilled white vinegar'));
