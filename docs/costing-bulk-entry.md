@@ -7,6 +7,10 @@ region on any page, `api()` has a timeout on this page only, a write that lands 
 later one wins at the table, a retry for missing price-history rows, and the focus ring
 clipped on the shared toggles across six pages (see m72).
 
+**Unit list: "1/2 gal" added** (Stephen, 2026-10-07) — a suggestion in the Unit box's list,
+between "gal" and "qt". The box stays free text. 1 assertion (651 → 652), proved by removing
+the option.
+
 **Slice 6 shipped** — merged to `main` as `e14bf61` (PR #157, squashed) after two review
 rounds, with both rounds' findings (m77–m85) fixed in the PR; check_costing.py **651**,
 clean. **Phone-tested by Stephen on his iPhone on 2026-10-06**: an edit opened from the main
