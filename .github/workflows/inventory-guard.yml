@@ -6,10 +6,10 @@ name: inventory guard
 
 on:
   pull_request:
-    paths: ['tempest_inventory.html', 'assets/**', 'scripts/check_inventory.py']
+    paths: ['tempest_inventory.html', 'assets/**', 'vendor/**', 'scripts/check_inventory.py']
   push:
     branches: [main]
-    paths: ['tempest_inventory.html', 'assets/**', 'scripts/check_inventory.py']
+    paths: ['tempest_inventory.html', 'assets/**', 'vendor/**', 'scripts/check_inventory.py']
 
 jobs:
   check:
