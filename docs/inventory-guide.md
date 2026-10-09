@@ -4,7 +4,9 @@ Status: **plan v1, approved by Stephen 2026-10-06** with one change: Tempest's r
 places, in walking order (see "Decisions"). **Slice 0 is closed** — the tables are live and
 seeded. **Slice 1 is live** — merged as `a82d60b` (PR #158), unlinked, and walked by Stephen
 on 2026-10-07. **Slice 2 is live** — merged as `29eedf0` (PR #160) and hand-tested by Stephen
-on an iPhone on 2026-10-07. **Slice 3 is built** on branch `inventory-slice3`: see "Slice 3 as built". Every decision below was made by Stephen, in the interview that produced
+on an iPhone on 2026-10-07. **Slice 3 is live** — merged as `59fe0ca` (PR #162) and hand-tested
+by Stephen on 2026-10-08 on the real October count, **which is open** for month-end. **Slice 4
+is built** on branch `inventory-slice4`: see "Slice 4 as built". Every decision below was made by Stephen, in the interview that produced
 this document or as each slice began. Worktree `~/Developer/boxkitchen-inventory`.
 
 Target file: a new page, `tempest_inventory.html`, copied from `tempest_meat.html` as its
@@ -358,7 +360,13 @@ touching the database.
 > locks inside a freezer would cost more than it saves. And the hand test is **the real October
 > count**: Stephen starts it, counts two items for real, and clears them — no made-up data.
 >
-> **BUILT 2026-10-07** on `inventory-slice3` — see "Slice 3 as built".
+> **SHIPPED.** Merged to `main` as `59fe0ca` (PR #162, squashed) on 2026-10-08. **Hand-tested by
+> Stephen the same day, on the real October count**: started it in manager mode, counted two
+> items for real ("✓ Counted by …" appeared, and the heading moved), closed and reopened the
+> page (both numbers were still there), and cleared them — "no confusion". Verified read-only
+> afterwards: `inventory_counts` id 1, 2026-10-01, **open**; one `start` log row with a name; two
+> lines, both cleared to blanks, each with the unit it was counted in; no duplicates. **The
+> October count stays open for month-end.** See "Slice 3 as built".
 
 ### Slice 4 — Nothing typed is lost
 
@@ -372,6 +380,9 @@ Coolers and freezers are where the signal dies.
 
 **Done when:** with the network cut in the harness, typed counts survive a reload and go
 through when it returns; nothing is ever shown ✓ that the database did not confirm.
+
+> **BUILT 2026-10-08** on `inventory-slice4` — see "Slice 4 as built". Nothing in it needed a
+> new decision from Stephen: every rule above was already in the approved plan.
 
 **After this slice, a real count is safe to run.**
 
@@ -672,6 +683,83 @@ file touched.**
   place" until the month closes.
 - Typed numbers live only in the page: a closed tab, or a count closed underneath, loses
   them. That is Slice 4.
+
+---
+
+## Slice 4 as built
+
+`tempest_inventory.html` (kept-on-device, retry, the header line, the leave guard) and
+`scripts/check_inventory.py` (five scenarios added; the stub can cut the network, and a
+scenario can **reload the page for real** and carry its results across). **No SQL. No shared
+file touched.**
+
+### What it does
+
+- **On the device before it is sent.** Every keystroke writes the row's typed values — and
+  who typed them, and when — to `localStorage`, one key per count
+  (`boxkitchen_inv_pending_<count id>`), before any request. A row leaves the device only
+  when the table has confirmed it. `localStorage`, not `sessionStorage`: it survives the tab
+  closing, which is the point.
+- **No answer is not an error.** A save with no answer (or a 5xx) leaves the row
+  "Waiting for signal — kept on this device": no tick, no red. Refusals (4xx) stay red with
+  their reason, as in Slice 3; a closed count still re-reads the sheet.
+- **It sends itself.** A retry is a **fresh read first**, then the send — the read proves
+  the signal is back and shows what the table now holds. It fires when the phone reports it
+  is back online, when the page comes back to the front, every 20 seconds while anything is
+  waiting, from **Try now**, and when the page is next opened on that device.
+- **Reconcile, don't overwrite.** Before sending a kept value the page compares it with the
+  freshly read line: already there (a lost answer that had landed) → simply confirmed, never
+  sent twice; counted on another device **after** this was typed → theirs stays, and the row
+  says so ("✓ Counted by Jose — newer than the 3 typed here earlier, which was not saved");
+  otherwise → sent. To make that comparison honest, `updated_at` is now **when the count was
+  typed**, not when it arrived.
+- **Sent under the name it was typed under**, even if whoever opens the page next has not
+  picked a name.
+- **The header says what this device holds** — a highlighter line in the sticky header,
+  visible wherever you scroll: "3 counts waiting for signal — kept on this device, and sent by
+  themselves when it comes back." with **Try now**. Rows that need a person ("see the rows
+  marked in red") are counted there too.
+- **Counts kept for a count that is no longer open** (an orphan — the month was closed, or
+  another count opened) are **never sent and never shown in this count's boxes**. The header
+  names them ("2 counts typed on this device for the September 2026 count were never saved,
+  and that count is no longer open") with **Forget them**, which asks first.
+- **Leaving asks first.** The Home link asks ("3 counts are not saved yet. They stay on this
+  device and send the next time this page is open here. Leave anyway?"); closing the tab asks
+  where the browser allows it (iOS Safari mostly does not — which is fine, because nothing is
+  lost either way).
+- **Offline, the sheet stays.** A refresh with no signal used to replace the sheet with "Could
+  not load"; a quiet re-read that fails now keeps the sheet and every waiting number on screen,
+  says "No signal — showing what was last loaded", and tries again.
+
+### Proved
+
+- `check_inventory.py`: **323 assertions, 27 scenarios, clean** (about 15 seconds). The five new
+  ones: **offline** (no signal; three rows waiting; the header line; nothing in the table; the
+  leave question; then a **real page reload** with the signal back and no name picked — all
+  three sent by themselves, under the name typed, stamped with when they were typed, the
+  device emptied), **comeback** (a refresh with no signal keeps the sheet; the "online" event
+  sends; with no event, the 20-second timer does), **newer** (a real reload after another
+  device counted the row later: nothing sent over it, and the row says whose stands),
+  **orphaned** (kept values for a closed September count shown, never sent, forgotten on
+  request), **leave**. Slice 3's *countlost* now proves that Try now re-reads first, so a
+  value that had landed is confirmed **without being sent again**.
+- **It fails when it should**: fourteen deliberate breaks. **Thirteen caught** — not kept
+  before sending; no answer shown as a red error; nothing restored on load; sent over a newer
+  count; stamped when sent; an offline refresh wiping the sheet; no "online" listener; no retry
+  timer; orphans sent as this count; leaving never asking; no header line; kept values sent
+  under the current name; the device forgetting before the table confirmed. **One correctly
+  not caught**: removing the re-read's "already landed" check changes nothing, because the
+  save itself refuses to send a value the table already holds.
+- `check_styling.py`: clean, 11 pages, 86 inputs, register unchanged at 75.
+
+### Not proved
+
+- **On a real phone in Airplane Mode** — Stephen's hand test.
+- **Two devices clocked minutes apart.** "Newer" compares the two devices' clocks. Phones
+  and tablets set their clocks from the network, so they agree to within seconds; a device
+  with a hand-set clock could lose or win a tie it should not.
+- **Storage refused** (a private window, a full disk): the page carries on without keeping
+  values, as before this slice. It does not say so.
 
 ---
 

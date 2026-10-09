@@ -70,6 +70,17 @@
   .stock-who{flex:1;font-weight:600}
   .name-bar .mgr-edit-btn{flex-shrink:0}
 
+  /* A row typed here but not yet in the table: it is kept on this device
+     and sent when the signal comes back. Grey words, not an alarm - it is
+     handling itself. */
+  .stock-state.waiting{color:var(--ink);font-weight:600}
+  /* The header's own line for what this device is holding. The yellow is
+     the highlighter behind ink text, never the text itself. */
+  .stock-pending{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:2px;padding:8px 10px;background:var(--yellow);color:var(--ink);border-radius:6px;font-size:0.85rem;font-weight:600;line-height:1.3}
+  .stock-pending .link-btn{flex-shrink:0;background:var(--paper)}
+  .stock-pending-msg + .stock-pending-msg{margin-top:6px}
+  @media print{.stock-pending{display:none !important}}
+
   /* manager mode: the month's count, at the top of set-up */
   .stock-countbar{padding:12px 18px;border-bottom:1px solid var(--hair);font-size:0.9rem;line-height:1.4}
   .stock-countbar-btns{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
@@ -114,10 +125,11 @@
 <body>
 <div class="header">
   <div class="header-row">
-    <a class="home-link" href="index.html">← Home</a>
+    <a class="home-link" href="index.html" onclick="return leaveOk()">← Home</a>
     <h1>Tempest <span>Inventory</span></h1>
     <div class="mgr-toggle"><span>Manager</span><div class="mgr-switch" id="mgrSwitch" role="switch" aria-checked="false" aria-label="Manager mode" tabindex="0" onclick="toggleMgr()"><div class="knob"></div></div></div>
   </div>
+  <div class="stock-pending" id="pendingBar" role="status" aria-live="polite" style="display:none"><div id="pendingText"></div><div id="pendingBtns"></div></div>
 </div>
 <div class="date-bar">
   <div class="date-display" id="sheetTitle">Count sheet</div>
@@ -201,6 +213,11 @@ var loading=false,loadSeq=0;
    and not yet confirmed (local[id] = {full, loose, state, msg, timer, inflight}) */
 var count=null,lines={},staff=[],local={};
 var WHO_KEY='boxkitchen_inv_who',SAVE_DELAY=1200;
+/* Slice 4: everything typed and not yet confirmed is also kept on this device,
+   one key per count, so a closed tab or a dead signal loses nothing. notes[id]
+   says what happened to a kept value that a newer count overtook; orphans are
+   values kept for a count that is no longer open. */
+var PEND_PREFIX='boxkitchen_inv_pending_',RETRY_MS=20000,retryTimer=null,notes={},orphans=[];
 var who='';try{who=sessionStorage.getItem(WHO_KEY)||'';}catch(e){}
 var MANAGER_PIN='4316',mgr=false,busy=false,showLeftOff=false,sortables=[],pick=null,nameCtx=null;
 var GRIP='<svg width="10" height="16" viewBox="0 0 10 16" fill="currentColor"><circle cx="2" cy="2" r="1.4"/><circle cx="8" cy="2" r="1.4"/><circle cx="2" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="2" cy="14" r="1.4"/><circle cx="8" cy="14" r="1.4"/></svg>';
@@ -244,16 +261,23 @@ function loadAll(opt){
   loading=true;
   if(!opt.quiet)document.getElementById('appBody').innerHTML='<div class="loading"><div class="spinner"></div><p>Loading the count sheet…</p></div>';
   var got={},need=withSetup?7:5,failed=false;
-  function fail(){failed=true;loading=false;loadFailed();}
+  function fail(){
+    failed=true;loading=false;
+    // a quiet re-read that fails keeps the sheet on screen: offline, it is all you have
+    if(opt.quiet&&(places.length||items.length)){showToast('No signal — showing what was last loaded','error');scheduleRetry();updatePendingBar();return;}
+    loadFailed();
+  }
   function done(){
     loading=false;
     places=got.places;items=got.items;packs=packMap(got.packs);staff=got.staff;
     if(withSetup){guide=got.guide;leftOff=got.leftOff;}
     var c=got.counts[0]||null;
-    if(!count||!c||count.id!==c.id)local={};   // typed values belong to one count
+    if(!count||!c||count.id!==c.id){local={};notes={};}   // typed values belong to one count
     count=c;lines={};
     var ls=got.lines||[];for(var i=0;i<ls.length;i++)lines[ls[i].inventory_item_id]=ls[i];
+    restorePending();
     render();
+    sendPending();
   }
   function land(key){return function(r,s){
     if(seq!==loadSeq||failed)return;
@@ -352,6 +376,7 @@ function render(){
     :!who?'Pick your name to start counting.'
     :'Count each place in order. A box saves itself a moment after you stop typing, and ✓ means it is saved. Leave a box empty if you have not counted it; type 0 if there is none.';
   updateProgress(nItems);
+  updatePendingBar();
   if(mgr)initSortables();
   if(document.getElementById('placesModal').classList.contains('show'))renderPlaces();
 }
@@ -455,8 +480,10 @@ function stateHtml(id){
   if(L&&L.state==='invalid')return '<div class="stock-state invalid">Numbers only — like 2 or 1.5</div>';
   if(L&&L.state==='failed')return '<button type="button" class="stock-state failed" onclick="saveRow('+id+')">Not saved — '+esc(L.msg)+'. Tap to try again</button>';
   if(L&&L.state==='dirty')return '<div class="stock-state">Not saved yet</div>';
-  var l=lines[id];
-  if(l&&(l.full_qty!=null||l.loose_qty!=null))return '<div class="stock-state saved">✓ Counted'+(l.counted_by?' by '+esc(l.counted_by):'')+'</div>';
+  if(L&&L.state==='waiting')return '<div class="stock-state waiting">Waiting for signal — kept on this device</div>';
+  var l=lines[id],note=notes[id]?' — '+esc(notes[id]):'';
+  if(l&&(l.full_qty!=null||l.loose_qty!=null))return '<div class="stock-state saved">✓ Counted'+(l.counted_by?' by '+esc(l.counted_by):'')+note+'</div>';
+  if(note)return '<div class="stock-state saved">✓ Cleared'+(l&&l.counted_by?' by '+esc(l.counted_by):'')+note+'</div>';
   return '';
 }
 function rowEl(id){return document.querySelector('.stock-row[data-id="'+id+'"]');}
@@ -469,6 +496,7 @@ function paintRow(id){
     if(!local[id]&&document.activeElement!==ins[i])ins[i].value=boxValue(id,ins[i].getAttribute('data-part'));
     ins[i].classList.toggle('filled',ins[i].value!=='');
   }
+  updatePendingBar();
 }
 
 /* ── COUNTING ──
@@ -495,7 +523,9 @@ function onBox(el){
     for(var i=0;i<ins.length;i++)L[ins[i].getAttribute('data-part')]=ins[i].value;
   }
   L[el.getAttribute('data-part')]=el.value;
-  L.by=who;L.state='dirty';
+  L.by=who;L.at=Date.now();L.state='dirty';
+  delete notes[id];
+  storeWrite();                         // on the device before anything is sent
   el.classList.toggle('filled',el.value!=='');
   var slot=r&&r.querySelector('.stock-state-slot');if(slot)slot.innerHTML=stateHtml(id);
   saveSoon(id,SAVE_DELAY);
@@ -504,40 +534,151 @@ function saveSoon(id,ms){
   var L=local[id];if(!L||L.state!=='dirty')return;
   clearTimeout(L.timer);L.timer=setTimeout(function(){saveRow(id);},ms);
 }
+/* What a kept value means, as numbers: {f, l} (blank partner = 0), or
+   {bad:true} for words. */
+function valuesOf(it,L){
+  var sp=specFor(it),f=parseQty(L.full),l=sp.two?parseQty(L.loose):null;
+  if(f===undefined||l===undefined)return {bad:true,sp:sp};
+  // blank vs zero: both blank = not counted; one blank beside a filled box = 0
+  if(sp.two&&(f!==null||l!==null)){if(f===null)f=0;if(l===null)l=0;}
+  return {f:f,l:l,sp:sp};
+}
+/* the table has it (or it no longer applies): stop keeping it */
+function settle(id){delete local[id];storeWrite();}
 function saveRow(id){
   var L=local[id];if(!L||!count)return;
   clearTimeout(L.timer);L.timer=null;
   if(L.inflight)return;                 // sent again when this one lands
   var by=L.by||who;if(!by)return;
-  var it=itemById(id);if(!it)return;
-  var sp=specFor(it),f=parseQty(L.full),l=sp.two?parseQty(L.loose):null;
-  if(f===undefined||l===undefined){L.state='invalid';paintRow(id);return;}
-  // blank vs zero: both blank = not counted; one blank beside a filled box = 0
-  if(sp.two&&(f!==null||l!==null)){if(f===null)f=0;if(l===null)l=0;}
-  var line=lines[id];
-  if(!line&&f===null&&l===null){delete local[id];paintRow(id);return;}   // nothing to save, nothing to clear
-  if(line&&numEq(line.full_qty,f)&&numEq(line.loose_qty,l)){delete local[id];paintRow(id);return;}
+  var it=itemById(id);if(!it){settle(id);return;}   // the row was removed from the count
+  var v=valuesOf(it,L),sp=v.sp;
+  if(v.bad){L.state='invalid';paintRow(id);return;}
+  var f=v.f,l=v.l,line=lines[id];
+  if(!line&&f===null&&l===null){settle(id);paintRow(id);return;}   // nothing to save, nothing to clear
+  if(line&&numEq(line.full_qty,f)&&numEq(line.loose_qty,l)){settle(id);paintRow(id);return;}
   L.inflight=true;L.state='saving';paintRow(id);
   var cid=count.id;
+  // updated_at is when it was TYPED, so a value kept offline cannot pass for newer than it is
   var body={location:LOCATION,count_id:cid,inventory_item_id:id,full_qty:f,loose_qty:l,
-            pack_qty_snap:sp.snapQty,pack_unit_snap:sp.snapUnit,counted_by:by,updated_at:new Date().toISOString()};
+            pack_qty_snap:sp.snapQty,pack_unit_snap:sp.snapUnit,counted_by:by,updated_at:new Date(L.at||Date.now()).toISOString()};
   api('POST','inventory_count_lines','on_conflict=count_id,inventory_item_id',body,function(r,s){
     L.inflight=false;
     var row=Array.isArray(r)&&r.length===1?r[0]:null;
     if(s>=200&&s<300&&row&&row.inventory_item_id===id&&row.count_id===cid&&numEq(row.full_qty,f)&&numEq(row.loose_qty,l)){
       if(count&&count.id===cid)lines[id]=row;
-      var nf=parseQty(L.full),nl=sp.two?parseQty(L.loose):null;
-      if(sp.two&&(nf!==null||nl!==null)){if(nf===null)nf=0;if(nl===null)nl=0;}
-      if(local[id]===L&&numEq(nf,f)&&numEq(nl,l))delete local[id];   // nothing typed since: the table has it
-      else if(local[id]===L){L.state='dirty';saveRow(id);}           // typed while it was saving: send that too
+      var nv=valuesOf(it,L);
+      if(local[id]===L&&!nv.bad&&numEq(nv.f,f)&&numEq(nv.l,l))settle(id);   // nothing typed since: the table has it
+      else if(local[id]===L){L.state='dirty';saveRow(id);}                 // typed while it was saving: send that too
+    }else if(s===0||s>=500){
+      // no answer, or a server hiccup: kept on the device, sent again by itself
+      L.state='waiting';scheduleRetry();
     }else{
       L.state='failed';
-      L.msg=s===0?'no answer from the server':(s===401||s===403)?'the count may have been closed':(s>=200&&s<300)?'the server did not confirm it':'the server refused it';
+      L.msg=(s===401||s===403)?'the count may have been closed':(s>=200&&s<300)?'the server did not confirm it':'the server refused it';
       if(s===401||s===403)loadAll({quiet:true,force:true});
     }
     paintRow(id);updateProgress();
   },null,'resolution=merge-duplicates,return=representation');
 }
+
+/* ── kept on this device ──
+   One localStorage key per count. Written on every keystroke, before any
+   request; cleared row by row only when the table has confirmed it. */
+function storeWrite(){
+  if(!count)return;
+  try{
+    var rows={},n=0;
+    for(var id in local){var L=local[id];rows[id]={full:L.full,loose:L.loose,by:L.by||'',at:L.at||Date.now()};n++;}
+    if(n)localStorage.setItem(PEND_PREFIX+count.id,JSON.stringify({period:count.period,rows:rows}));
+    else localStorage.removeItem(PEND_PREFIX+count.id);
+  }catch(e){}
+  updatePendingBar();
+}
+/* On load: what this device kept for the open count comes back as "waiting";
+   what it kept for any other count is an orphan - shown, never sent. */
+function restorePending(){
+  orphans=[];
+  try{
+    for(var i=0;i<localStorage.length;i++){
+      var k=localStorage.key(i);if(!k||k.indexOf(PEND_PREFIX)!==0)continue;
+      var cid=parseInt(k.slice(PEND_PREFIX.length),10),v=JSON.parse(localStorage.getItem(k)||'null');
+      if(!v||!v.rows)continue;
+      if(count&&cid===count.id){
+        for(var id in v.rows){
+          id=parseInt(id,10);
+          if(local[id]||!itemById(id))continue;     // what is in memory is newer; a removed row is moot
+          var R=v.rows[id];local[id]={full:R.full||'',loose:R.loose||'',by:R.by||'',at:R.at||0,state:'waiting'};
+        }
+      }else{
+        var n=0;for(var x in v.rows)n++;
+        if(n)orphans.push({key:k,period:v.period,n:n});
+      }
+    }
+  }catch(e){}
+  storeWrite();
+}
+/* Send what is waiting - but first look at the table: if the value already
+   landed (a lost answer), it is simply confirmed; if someone counted the row
+   AFTER this was typed, theirs is newer and stays, and the row says so. */
+function sendPending(){
+  if(!count)return;
+  for(var k in local){
+    var id=parseInt(k,10),L=local[id];
+    if(L.state!=='waiting'||L.inflight)continue;
+    var it=itemById(id);if(!it){settle(id);continue;}
+    var v=valuesOf(it,L),line=lines[id];
+    if(v.bad){L.state='invalid';paintRow(id);continue;}
+    if(line&&numEq(line.full_qty,v.f)&&numEq(line.loose_qty,v.l)){settle(id);paintRow(id);continue;}
+    if(line&&Date.parse(line.updated_at)>(L.at||0)){
+      notes[id]='newer than the '+keptText(it,L)+' typed here earlier, which was not saved';
+      settle(id);paintRow(id);continue;
+    }
+    saveRow(id);
+  }
+  updateProgress();
+}
+function keptText(it,L){var v=valuesOf(it,L);if(v.f===null&&v.l===null)return 'blank';return v.sp.two?fmtQty(v.f)+' + '+fmtQty(v.l)+' loose':fmtQty(v.f);}
+function hasWaiting(){for(var id in local)if(local[id].state==='waiting')return true;return false;}
+function scheduleRetry(){
+  if(retryTimer)return;
+  retryTimer=setTimeout(function(){retryTimer=null;retryPending();},RETRY_MS);
+}
+/* A retry is a fresh read first (it also proves the signal is back), then
+   sendPending() from the read's done(). */
+function retryPending(){
+  if(!hasWaiting())return;
+  if(loading||busy){scheduleRetry();return;}
+  loadAll({quiet:true,force:true});
+  scheduleRetry();
+}
+function retryNow(){clearTimeout(retryTimer);retryTimer=null;retryPending();}
+function forgetOrphans(){
+  var n=0;for(var i=0;i<orphans.length;i++)n+=orphans[i].n;
+  if(!confirm('Forget '+n+' count'+(n===1?'':'s')+' typed on this device for a count that is no longer open? They were never saved, and cannot be.'))return;
+  try{for(var i=0;i<orphans.length;i++)localStorage.removeItem(orphans[i].key);}catch(e){}
+  orphans=[];updatePendingBar();
+}
+function unsavedCounts(){var c={n:0,w:0,bad:0};for(var id in local){c.n++;var st=local[id].state;if(st==='waiting')c.w++;else if(st==='failed'||st==='invalid')c.bad++;}return c;}
+function updatePendingBar(){
+  var bar=document.getElementById('pendingBar');if(!bar)return;
+  var c=unsavedCounts(),msgs=[],btns='';
+  function cs(n){return n+' count'+(n===1?'':'s');}
+  if(c.w){msgs.push(cs(c.w)+' waiting for signal — kept on this device, and sent by '+(c.w===1?'itself':'themselves')+' when it comes back.');btns+='<button type="button" class="link-btn" onclick="retryNow()">Try now</button>';}
+  if(c.bad)msgs.push(cs(c.bad)+' not saved — see the rows marked in red.');
+  var on=0,per='';for(var i=0;i<orphans.length;i++){on+=orphans[i].n;per=orphans[i].period;}
+  if(on){msgs.push(cs(on)+' typed on this device for '+(orphans.length===1&&per?'the '+monthLabel(per):'a')+' count were never saved, and that count is no longer open.');btns+='<button type="button" class="link-btn" onclick="forgetOrphans()">Forget them</button>';}
+  bar.style.display=msgs.length?'':'none';
+  document.getElementById('pendingText').innerHTML=msgs.map(function(m){return '<div class="stock-pending-msg">'+esc(m)+'</div>';}).join('');
+  document.getElementById('pendingBtns').innerHTML=btns;
+}
+/* Leaving with anything unsaved asks first. Nothing is lost if they go: it is
+   kept here, and sent the next time this page is open on this device. */
+function leaveOk(){
+  var n=unsavedCounts().n;if(!n)return true;
+  return confirm(n+' count'+(n===1?' is':'s are')+' not saved yet. '+(n===1?'It stays':'They stay')+' on this device and '+(n===1?'sends':'send')+' the next time this page is open here. Leave anyway?');
+}
+window.onbeforeunload=function(e){if(unsavedCounts().n){e.preventDefault();e.returnValue='';return '';}};
+window.addEventListener('online',retryNow);
 
 /* ── who is counting: picked once, kept while the page is open ── */
 function renderWho(){

@@ -63,7 +63,9 @@ SCENARIOS = (
     # slice 2 - set-up, manager
     "mgr", "drag", "dragfail", "move", "remove", "newitems", "places", "busy", "lost",
     # slice 3 - counting saves
-    "start", "count", "inflight", "countlost", "countclosed", "who")
+    "start", "count", "inflight", "countlost", "countclosed", "who",
+    # slice 4 - nothing typed is lost
+    "offline", "comeback", "newer", "orphaned", "leave")
 
 
 def find_chrome():
@@ -179,7 +181,8 @@ LINES = [
     line(902, 101, 1, 4, 40, "lb", "Maria"),           # Ginger: counted against a 40 lb pack,
                                                        # which the price list has since made 30
 ]
-COUNT_SCENARIOS = ["count", "inflight", "countlost", "countclosed", "who"]
+COUNT_SCENARIOS = ["count", "inflight", "countlost", "countclosed", "who",
+                   "offline", "comeback", "newer", "orphaned", "leave"]
 
 # ------------------------------------------------------------ page surgery --
 
@@ -191,6 +194,8 @@ HARNESS = r"""
 (function(){
   var SCEN=(location.hash||'#ok').slice(1);
   var FX=__FIXTURES__;
+  /* a scenario can reload the page for real; its phase survives in sessionStorage */
+  var PH=parseInt(sessionStorage.getItem('h_phase')||'0',10);
   var reqs=[], deferred=[], hung=[];
   /* the tables, stateful: a write changes what the next read returns */
   var T={
@@ -206,9 +211,14 @@ HARNESS = r"""
   };
   /* 'start': last month already has a (closed) count, so starting it again must be refused */
   if(SCEN==='start')T.inventory_counts.push({id:6,location:'Tempest',period:FX.lastMonth,status:'closed'});
+  /* 'newer': after the reload, another device has counted Cilantro AFTER it was typed here */
+  if(SCEN==='newer'&&PH===1)T.inventory_count_lines.push({id:950,location:'Tempest',count_id:7,inventory_item_id:102,full_qty:5,loose_qty:null,
+    pack_qty_snap:null,pack_unit_snap:'BU',counted_by:'Jose',updated_at:new Date(Date.now()+60000).toISOString()});
+  /* 'orphaned': this device kept two counts for a September count that is no longer open */
+  if(SCEN==='orphaned'&&PH===0)localStorage.setItem('boxkitchen_inv_pending_3',JSON.stringify({period:'2026-09-01',rows:{'101':{full:'2',loose:'',by:'Ana',at:1},'201':{full:'4',loose:'',by:'Ana',at:2}}}));
   if(SCEN==='empty')T.inventory_places=[];
   var nextId=5000;
-  window.__h={scen:SCEN,reqs:reqs,fails:[],log:[],tables:T,fx:FX,confirmMsgs:[],confirmReturn:true,
+  window.__h={scen:SCEN,phase:PH,offline:false,reqs:reqs,fails:[],log:[],tables:T,fx:FX,confirmMsgs:[],confirmReturn:true,
     /* per-table read plans, consumed in order: 'err' = no answer (onerror),
        'e500' = the server says no, 'hang' = nothing until timeoutAll() */
     next:{inventory_places:[],inventory_items:[],ingredient_costs:[],order_items:[],inventory_left_off:[]},
@@ -315,6 +325,8 @@ HARNESS = r"""
     var self=this,parsed=null;
     if(b){try{parsed=JSON.parse(b);}catch(e){}}
     reqs.push({m:this._m,u:this._u,t:table(this._u),body:parsed,timeout:this.timeout,prefer:this._h.Prefer||''});
+    /* no signal: nothing reaches the table, and nothing answers */
+    if(window.__h.offline){setTimeout(function(){if(self.onerror)self.onerror();},0);return;}
     var r=route(this._m,this._u,parsed);
     if(r.hang){hung.push(self);return;}
     var deliver=function(res){
@@ -374,14 +386,22 @@ RUNNER = r"""
   var steps=[];
   function step(fn){steps.push(fn);}
   function tick(){step(function(){});}
+  var carry=JSON.parse(sessionStorage.getItem('h_carry')||'{"fails":[],"log":[]}');
+  function reloadPage(){
+    sessionStorage.setItem('h_carry',JSON.stringify({fails:carry.fails.concat(F),log:carry.log.concat(H.log)}));
+    sessionStorage.setItem('h_phase',String(H.phase+1));
+    window.onbeforeunload=null;location.reload();
+    return 'stop';
+  }
   function run(){
     if(!steps.length){
       var out=document.createElement('div');out.id='harnessResults';
-      out.textContent=JSON.stringify({scen:H.scen,fails:F,log:H.log});
+      out.textContent=JSON.stringify({scen:H.scen,fails:carry.fails.concat(F),log:carry.log.concat(H.log)});
       document.body.appendChild(out);return;
     }
     var fn=steps.shift(),wait=0;
     try{wait=fn();}catch(e){F.push('threw in step: '+(e&&e.message));}
+    if(wait==='stop')return;
     setTimeout(run,typeof wait==='number'?wait:0);
   }
 
@@ -1117,28 +1137,28 @@ RUNNER = r"""
     });
     tick();
     step(function(){
-      var c=rowNamed('Vegetable cooler','Cilantro'),b=c.querySelector('button.stock-state');
-      ok('countlost: no answer is not a tick - it says so, and how to fix it', !!b&&/Not saved — no answer from the server\. Tap to try again/.test(b.textContent), state(c));
-      ok('countlost: ...in the error colour, as a 44px button', !!b&&getComputedStyle(b).color==='rgb(180, 35, 24)'&&b.getBoundingClientRect().height>=44);
+      var c=rowNamed('Vegetable cooler','Cilantro');
+      ok('countlost: no answer is not a tick - it waits, kept on this device', state(c)==='Waiting for signal — kept on this device', state(c));
+      ok('countlost: ...the header says what is waiting, and offers Try now', visible(byId('pendingBar'))&&/1 count waiting for signal/.test(byId('pendingText').textContent)&&!!btn(byId('pendingBar'),'Try now'), byId('pendingText').textContent);
       ok('countlost: ...and it is not counted in the summary, though the table has it', byId('sheetSummary').textContent==='2 of 10 counted'&&serverLines(102).length===1);
       ok('countlost: the typed value stays in the box', inputIn(c,'full').value==='3');
-      b.click();
+      btn(byId('pendingBar'),'Try now').click();
     });
-    tick();
+    tick();tick();tick();
     step(function(){
-      ok('countlost: tapping retries, and the table still has ONE line for it', lineWrites().length===2&&serverLines(102).length===1&&serverLines(102)[0].full_qty===3);
-      ok('countlost: ...now ticked', state(rowNamed('Vegetable cooler','Cilantro'))==='✓ Counted by Maria');
+      ok('countlost: Try now re-reads first - it had landed, so it is confirmed WITHOUT sending it again', lineWrites().length===1&&serverLines(102).length===1&&serverLines(102)[0].full_qty===3, lineWrites().length);
+      ok('countlost: ...now ticked, and the header line is gone', state(rowNamed('Vegetable cooler','Cilantro'))==='✓ Counted by Maria'&&!visible(byId('pendingBar')));
       H.nextWrite.push('drop');   // lost before the table
       var t=rowNamed('Vegetable cooler','Tom <b>bold</b> & co');typeIn(t,'full','2');leave(t,'full');
     });
     tick();
     step(function(){
-      ok('countlost: lost before it landed - not saved, nothing in the table', /Not saved/.test(state(rowNamed('Vegetable cooler','Tom <b>bold</b> & co')))&&serverLines(104).length===0);
-      rowNamed('Vegetable cooler','Tom <b>bold</b> & co').querySelector('button.stock-state').click();
+      ok('countlost: lost before it landed - waiting, nothing in the table', /Waiting for signal/.test(state(rowNamed('Vegetable cooler','Tom <b>bold</b> & co')))&&serverLines(104).length===0);
+      btn(byId('pendingBar'),'Try now').click();
     });
-    tick();
+    tick();tick();tick();
     step(function(){
-      ok('countlost: the retry saves it, once', serverLines(104).length===1&&serverLines(104)[0].full_qty===2&&state(rowNamed('Vegetable cooler','Tom <b>bold</b> & co'))==='✓ Counted by Maria');
+      ok('countlost: the retry finds it missing and sends it - once', serverLines(104).length===1&&serverLines(104)[0].full_qty===2&&state(rowNamed('Vegetable cooler','Tom <b>bold</b> & co'))==='✓ Counted by Maria');
       H.nextWrite.push('empty');   // a success code, but no row in the answer
       var l=rowNamed('Vegetable cooler','Long unit thing');typeIn(l,'full','1');leave(l,'full');
     });
@@ -1232,6 +1252,144 @@ RUNNER = r"""
     });
   }
 
+
+  /* ============================== slice 4 ============================== */
+  function kept(){var v=null;try{v=JSON.parse(localStorage.getItem('boxkitchen_inv_pending_7')||'null');}catch(e){}return v;}
+  function keptIds(){var v=kept();return v?Object.keys(v.rows).sort():[];}
+
+  if(H.scen==='offline'){
+    if(H.phase===0){
+      step(function(){ pickName('Maria'); });
+      step(function(){
+        H.offline=true;   // into the freezer
+        var c=rowNamed('Vegetable cooler','Cilantro');typeIn(c,'full','3');
+        ok('offline: a typed number is on the device before anything is sent', JSON.stringify(keptIds())==='["102"]'&&kept().rows['102'].full==='3'&&kept().rows['102'].by==='Maria'&&kept().rows['102'].at>0, JSON.stringify(kept()));
+        leave(c,'full');
+        var g=rowNamed('Vegetable cooler','Ginger');typeIn(g,'full','2');typeIn(g,'loose','');leave(g,'full');
+        var t=rowNamed('Vegetable cooler','Tom <b>bold</b> & co');typeIn(t,'full','0');leave(t,'full');
+      });
+      tick();tick();
+      step(function(){
+        var names=['Cilantro','Ginger','Tom <b>bold</b> & co'];
+        ok('offline: with no signal, each row says it is waiting - no tick, no red', names.every(function(n){return state(rowNamed('Vegetable cooler',n))==='Waiting for signal — kept on this device';}), names.map(function(n){return state(rowNamed('Vegetable cooler',n));}).join(' | '));
+        ok('offline: the header counts them, on screen wherever you scroll', visible(byId('pendingBar'))&&/3 counts waiting for signal/.test(byId('pendingText').textContent)&&getComputedStyle(document.querySelector('.header')).position==='sticky', byId('pendingText').textContent);
+        ok('offline: ...highlighted, not alarmed: ink on the yellow', getComputedStyle(byId('pendingBar')).backgroundColor==='rgb(255, 230, 0)'&&getComputedStyle(byId('pendingBar')).color==='rgb(18, 18, 18)');
+        ok('offline: all three are kept on the device', JSON.stringify(keptIds())==='["101","102","104"]', JSON.stringify(keptIds()));
+        ok('offline: none reached the table', serverLines(102).length===0&&serverLines(104).length===0&&serverLines(101)[0].full_qty===1);
+        ok('offline: the summary does not count what is not saved', byId('sheetSummary').textContent==='2 of 10 counted', byId('sheetSummary').textContent);
+        H.confirmReturn=false;
+        var home=document.querySelector('.home-link'),ev=new MouseEvent('click',{bubbles:true,cancelable:true});
+        home.dispatchEvent(ev);
+        ok('offline: leaving asks first, saying they are kept here', /3 counts are not saved yet\. They stay on this device and send the next time this page is open here/.test(H.confirmMsgs[H.confirmMsgs.length-1]||''), H.confirmMsgs[H.confirmMsgs.length-1]);
+        ok('offline: ...and staying means staying', ev.defaultPrevented&&/inventory_under_test/.test(location.pathname));
+        H.carryAt=kept().rows['102'].at;sessionStorage.setItem('h_at',String(H.carryAt));
+        sessionStorage.removeItem('boxkitchen_inv_who');   // whoever opens it next has not picked a name
+        return reloadPage();   // close it, and open it again - with the signal back
+      });
+    }else{
+      tick();tick();tick();tick();
+      step(function(){
+        var at=parseInt(sessionStorage.getItem('h_at'),10);
+        ok('offline: after a real reload, the kept counts are sent by themselves', serverLines(102).length===1&&serverLines(102)[0].full_qty===3&&serverLines(104).length===1&&serverLines(104)[0].full_qty===0, JSON.stringify(serverLines()));
+        ok('offline: ...with the blank-beside-filled rule and the counted pack', serverLines(101)[0].full_qty===2&&serverLines(101)[0].loose_qty===0&&serverLines(101)[0].pack_qty_snap===40);
+        ok('offline: ...under the name they were typed under, though nobody has picked a name since', serverLines(102)[0].counted_by==='Maria'&&serverLines(104)[0].counted_by==='Maria'&&visible(byId('countedBy'))&&!visible(byId('whoName')));
+        ok('offline: ...stamped with when they were TYPED, not when they arrived', Date.parse(serverLines(102)[0].updated_at)===at, serverLines(102)[0].updated_at+' vs '+at);
+        ok('offline: ...and ticked', state(rowNamed('Vegetable cooler','Cilantro'))==='✓ Counted by Maria'&&state(rowNamed('Vegetable cooler','Ginger'))==='✓ Counted by Maria');
+        ok('offline: the device lets go only of what the table confirmed - all of it', kept()===null&&!visible(byId('pendingBar')), JSON.stringify(kept()));
+        ok('offline: one line per row, never two', serverLines(102).length===1&&serverLines(101).length===1);
+      });
+    }
+  }
+
+  if(H.scen==='comeback'){
+    step(function(){ pickName('Maria'); });
+    step(function(){
+      H.offline=true;
+      var c=rowNamed('Vegetable cooler','Cilantro');typeIn(c,'full','3');leave(c,'full');
+    });
+    tick();
+    step(function(){
+      ok('comeback: waiting', state(rowNamed('Vegetable cooler','Cilantro'))==='Waiting for signal — kept on this device');
+      loadAll({quiet:true,force:true});   // the sheet tries to refresh, still with no signal
+    });
+    tick();tick();
+    step(function(){
+      ok('comeback: a refresh with no signal keeps the sheet on screen', all('.stock-row').length===10&&/No signal/.test(toast()), toast());
+      ok('comeback: ...and the waiting count with it', state(rowNamed('Vegetable cooler','Cilantro'))==='Waiting for signal — kept on this device'&&inputIn(rowNamed('Vegetable cooler','Cilantro'),'full').value==='3');
+      H.offline=false;
+      window.dispatchEvent(new Event('online'));   // the phone says the signal is back
+    });
+    tick();tick();tick();tick();
+    step(function(){
+      ok('comeback: the signal coming back sends it, untouched', serverLines(102).length===1&&serverLines(102)[0].full_qty===3&&state(rowNamed('Vegetable cooler','Cilantro'))==='✓ Counted by Maria');
+      H.offline=true;
+      var t=rowNamed('Vegetable cooler','Tom <b>bold</b> & co');typeIn(t,'full','4');leave(t,'full');
+    });
+    tick();
+    step(function(){ H.offline=false; return 21000; });   // no 'online' event this time: the timer has to do it
+    tick();tick();tick();
+    step(function(){
+      ok('comeback: even with no "online" event, it is retried within 20 seconds', serverLines(104).length===1&&serverLines(104)[0].full_qty===4&&state(rowNamed('Vegetable cooler','Tom <b>bold</b> & co'))==='✓ Counted by Maria', JSON.stringify(serverLines(104)));
+      ok('comeback: nothing left waiting', kept()===null&&!visible(byId('pendingBar')));
+    });
+  }
+
+  if(H.scen==='newer'){
+    if(H.phase===0){
+      step(function(){ pickName('Maria'); });
+      step(function(){
+        H.offline=true;
+        var c=rowNamed('Vegetable cooler','Cilantro');typeIn(c,'full','3');leave(c,'full');
+      });
+      tick();
+      step(function(){ return reloadPage(); });   // meanwhile, Jose counts Cilantro on another device
+    }else{
+      tick();tick();tick();
+      step(function(){
+        var c=rowNamed('Vegetable cooler','Cilantro');
+        ok('newer: a count made elsewhere AFTER this one was typed stays - this one is not sent over it', serverLines(102).length===1&&serverLines(102)[0].full_qty===5&&serverLines(102)[0].counted_by==='Jose'&&lineWrites().length===0, JSON.stringify(serverLines(102)));
+        ok('newer: the row says whose count stands, and what happened to the one typed here', state(c)==='✓ Counted by Jose — newer than the 3 typed here earlier, which was not saved', state(c));
+        ok('newer: the box shows the count that stands', inputIn(c,'full').value==='5');
+        ok('newer: the device lets go of it', kept()===null);
+      });
+    }
+  }
+
+  if(H.scen==='orphaned'){
+    step(function(){
+      ok('orphaned: counts kept for a count that is no longer open are shown, with the month', visible(byId('pendingBar'))&&/2 counts typed on this device for the September 2026 count were never saved, and that count is no longer open/.test(byId('pendingText').textContent), byId('pendingText').textContent);
+      ok('orphaned: ...and never sent anywhere', lineWrites().length===0);
+      ok('orphaned: ...nor shown in this count’s boxes', inputIn(rowNamed('Vegetable cooler','Ginger'),'full').value==='1'&&inputIn(rowNamed('Dry storage','Mayo'),'full').value==='3');
+      H.confirmReturn=false;btn(byId('pendingBar'),'Forget them').click();
+      ok('orphaned: Forget asks first', /Forget 2 counts/.test(H.confirmMsgs[0]||'')&&!!localStorage.getItem('boxkitchen_inv_pending_3'), H.confirmMsgs[0]);
+      H.confirmReturn=true;btn(byId('pendingBar'),'Forget them').click();
+      ok('orphaned: ...then lets them go', !localStorage.getItem('boxkitchen_inv_pending_3')&&!visible(byId('pendingBar')));
+    });
+  }
+
+  if(H.scen==='leave'){
+    step(function(){
+      var home=document.querySelector('.home-link'),ev=new MouseEvent('click',{bubbles:true,cancelable:true});
+      ev.preventDefault=ev.preventDefault;   // a real click; the page's own answer decides
+      H.n=H.confirmMsgs.length;
+      var allowed=leaveOk();
+      ok('leave: with nothing unsaved, Home does not ask', allowed===true&&H.confirmMsgs.length===H.n);
+      pickName('Maria');
+    });
+    step(function(){
+      var t=rowNamed('Vegetable cooler','Cilantro');typeIn(t,'full','6');   // typed; the pause has not passed
+      H.confirmReturn=false;
+      ok('leave: with something typed and not yet saved, Home asks', leaveOk()===false&&/1 count is not saved yet\. It stays on this device/.test(H.confirmMsgs[H.confirmMsgs.length-1]), H.confirmMsgs[H.confirmMsgs.length-1]);
+      var e={defaultPrevented:false,returnValue:null,preventDefault:function(){this.defaultPrevented=true;}};
+      window.onbeforeunload(e);
+      ok('leave: closing the tab asks too (where the browser allows it)', e.defaultPrevented===true);
+      return 1400;
+    });
+    step(function(){
+      ok('leave: once saved, nothing to ask about', leaveOk()===true&&state(rowNamed('Vegetable cooler','Cilantro'))==='✓ Counted by Maria');
+    });
+  }
+
   if(document.readyState==='complete')setTimeout(run,0);
   else window.addEventListener('load',function(){setTimeout(run,0);});
 })();
@@ -1289,7 +1447,7 @@ def run_scenario(chrome, path, scen):
              "--disable-default-apps", "--disable-sync",
              "--host-resolver-rules=MAP * ~NOTFOUND",
              "--user-data-dir=" + os.path.join(os.path.dirname(path), "cd-" + scen),
-             "--virtual-time-budget=8000", "--dump-dom", url],
+             "--virtual-time-budget=60000", "--dump-dom", url],
             stdout=fo, stderr=fe)
         deadline = time.time() + 120
         m = None
