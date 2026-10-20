@@ -7,7 +7,8 @@ on 2026-10-07. **Slice 2 is live** — merged as `29eedf0` (PR #160) and hand-te
 on an iPhone on 2026-10-07. **Slice 3 is live** — merged as `59fe0ca` (PR #162) and hand-tested
 by Stephen on 2026-10-08 on the real October count, **which is open** for month-end. **Slice 4
 is live** — merged as `bac6eb8` (PR #163) and hand-tested in Airplane Mode on 2026-10-20. **A
-real count is now safe to run.** **Slice 5 is built** on branch `inventory-slice5`: see "Slice 5
+real count is now safe to run.** **Slice 5 is live** — merged as `6d85f4f` (PR #164) and checked
+in iOS print preview on 2026-10-20. **Slice 6 is built** on branch `inventory-slice6`: see "Slice 6
 as built". Every decision below was made by Stephen, in the interview that produced
 this document or as each slice began. Worktree `~/Developer/boxkitchen-inventory`.
 
@@ -408,7 +409,11 @@ with background graphics off, and nothing manager-only prints.
 > and **each place starts its own page**, with its own "Counted by" and date line, so places
 > can be handed out.
 >
-> **BUILT 2026-10-20** on `inventory-slice5` — see "Slice 5 as built".
+> **SHIPPED.** Merged to `main` as `6d85f4f` (PR #164, squashed) on 2026-10-20. **Checked by
+> Stephen the same day in the iOS print preview** (no printer to hand): 15 pages there — iOS's
+> margins and scale run larger than desktop Chrome's 12 — "everything was clear", nothing cut
+> off, and scaling down to fit is fine. **A paper print on Tempest's printer is still
+> untested**; worth one page before October 31. See "Slice 5 as built".
 
 ### Slice 6 — Dollar values (manager)
 
@@ -420,6 +425,14 @@ with background graphics off, and nothing manager-only prints.
 
 **Done when:** no unvalued line contributes $0 to a total; every unvalued line has its reason;
 staff mode shows no dollar figure anywhere, including in the page source's rendered HTML.
+
+> **Decided by Stephen as the slice began (2026-10-20):** a line counted and then **removed from
+> the sheet still counts** — the stock was on the shelf — and is **listed** under "Counted, then
+> removed from the sheet" so it never vanishes silently. (Where values appear was left
+> unanswered; built as the recommended **Values tab in manager mode**, so no counting screen
+> ever shows money. Easy to change.)
+>
+> **BUILT 2026-10-20** on `inventory-slice6` — see "Slice 6 as built".
 
 ### Slice 7 — Close the month (manager)
 
@@ -839,6 +852,68 @@ and keeps rows and headings from splitting.
 - **Three items were added to the order guide on 2026-10-20** — Jack Cheese (3097), Dino Kale,
   Redbor Kale — and are under **New on the order guide** in manager mode. They need a place
   (or **Don't count**) before October 31: this is the case Slice 2's list was built for.
+
+---
+
+## Slice 6 as built
+
+`tempest_inventory.html` (manager tabs, one price read, the valuation, the Values tab) and
+`scripts/check_inventory.py` (a *values* scenario; the stub embeds a line's row, as PostgREST
+does). **No SQL. No shared file touched.**
+
+### What it does
+
+- **Prices are read only behind the PIN** — one more manager-only read,
+  `ingredient_costs … select=order_item_id,pack_qty,pack_unit,pack_price`. Staff's read is
+  unchanged: pack sizes only. A manager's read of the lines also embeds each line's row
+  (`inventory_items(order_item_id,place_id,active,order_items(name,vendor,unit))`), so a row
+  removed after it was counted can still be named and valued.
+- **Manager mode has two tabs**: *Set-up* (Slice 2's screen) and *Values*. Money appears on the
+  Values tab and nowhere else; leaving manager mode from either tab leaves none behind.
+- **The valuation** is exactly "How a line is valued": `full × pack_price + loose × pack_price
+  ÷ pack_qty`, against the pack the line was **counted against** (its snapshot). Not valued —
+  never $0 — for **no price** (no active priced row), **pack changed** (the price list's pack is
+  no longer the snapshot), or **counted in order units** that are not the price list's unit.
+  Order units that do match value at the unit price; units compare ignoring case and spaces.
+- **The total says what it leaves out**: "$101.50 · October 2026 count · valued at today's
+  prices · 3 of 6 counted rows valued · 3 not valued (1 no price, 1 pack changed, 1 counted in
+  order units) · 4 of 9 not counted yet". "Not valued" is the yellow highlighter, not red.
+- **Not valued — and why**: every unvalued line, grouped by reason, each reason in words (and
+  what Recipe Costing now says, for a changed pack), with **Add prices in Recipe Costing**.
+- **Each place** carries its subtotal and how many it could not value; then **Counted, then
+  removed from the sheet** and **Not in an active place**, each with theirs. Rows show what was
+  counted in its own units ("1 × 40 lb + 4 lb", "2 CS") and its value, or *not valued* and why.
+- **Live while open**: price an item in Recipe Costing, come back to the page (or refresh), and
+  it values.
+
+### Proved
+
+- `check_inventory.py`: **371 assertions, 29 scenarios, clean.** *values* checks: staff never
+  read a price nor see a `$`; behind the PIN, one price read; the lines arrive with their rows;
+  the tabs; the set-up screen shows no money; **the total to the cent** ($101.50 = 3 × $9.25 +
+  2 × $31 + 1 × $31 ÷ 4 + 2 × $12 ÷ 6); the leaves-out line and its highlighter; every unvalued
+  row under its reason, with the price list's current pack; the Recipe Costing link; each
+  subtotal; the removed row in the total and listed; no unvalued row showing a `$`; matching
+  order units valuing case-blind; an uncounted row not appearing at all; nothing written; a price
+  arriving and the total moving to $106.00; and no `$` left after leaving manager mode — from
+  Set-up, and from the Values tab.
+- **It fails when it should**: nine deliberate breaks, **all nine caught** — no price counted
+  as $0; a pack change ignored; units compared case-sensitively; removed rows left out; staff
+  reading prices; loose units at the full-pack price; values shown outside manager mode; matching
+  order units never valuing; the reasons not listed.
+- `check_styling.py`: clean, 11 pages, 86 inputs, register unchanged at 75.
+- **Live data, read-only, every write blocked, Values tab open**: every read 200, including the
+  price read and the lines-with-rows read; "$0.00 · 0 of 0 counted rows valued · 216 of 216 not
+  counted yet" — true, since the October count is empty.
+
+### Not proved, and known
+
+- **Values on a real count** — October's numbers will be the first. Expect most of the total
+  "not valued" until Recipe Costing has the big-money items priced.
+- **"Today's prices"** is the point: while the count is open, values move with the price list.
+  Slice 7 freezes them at close.
+- **Printing the Values tab** is not designed or tested; the print rules hide the set-up bar and
+  tabs, so it prints as a plain list.
 
 ---
 
