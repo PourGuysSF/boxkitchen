@@ -6,7 +6,9 @@ seeded. **Slice 1 is live** — merged as `a82d60b` (PR #158), unlinked, and wal
 on 2026-10-07. **Slice 2 is live** — merged as `29eedf0` (PR #160) and hand-tested by Stephen
 on an iPhone on 2026-10-07. **Slice 3 is live** — merged as `59fe0ca` (PR #162) and hand-tested
 by Stephen on 2026-10-08 on the real October count, **which is open** for month-end. **Slice 4
-is built** on branch `inventory-slice4`: see "Slice 4 as built". Every decision below was made by Stephen, in the interview that produced
+is live** — merged as `bac6eb8` (PR #163) and hand-tested in Airplane Mode on 2026-10-20. **A
+real count is now safe to run.** **Slice 5 is built** on branch `inventory-slice5`: see "Slice 5
+as built". Every decision below was made by Stephen, in the interview that produced
 this document or as each slice began. Worktree `~/Developer/boxkitchen-inventory`.
 
 Target file: a new page, `tempest_inventory.html`, copied from `tempest_meat.html` as its
@@ -381,8 +383,13 @@ Coolers and freezers are where the signal dies.
 **Done when:** with the network cut in the harness, typed counts survive a reload and go
 through when it returns; nothing is ever shown ✓ that the database did not confirm.
 
-> **BUILT 2026-10-08** on `inventory-slice4` — see "Slice 4 as built". Nothing in it needed a
-> new decision from Stephen: every rule above was already in the approved plan.
+> **SHIPPED.** Merged to `main` as `bac6eb8` (PR #163, squashed) on 2026-10-09. **Hand-tested by
+> Stephen in Airplane Mode on 2026-10-20**: "waiting showed, both got the check by themselves."
+> Verified read-only: saves at 18:44 UTC on two rows (one new line, one existing), one line
+> each, then both cleared. (A first report that day came before any save existed in the table;
+> the table, not the report, is what closes a hand test.) Nothing in the slice needed a new
+> decision from Stephen: every rule above was already in the approved plan. See "Slice 4 as
+> built".
 
 **After this slice, a real count is safe to run.**
 
@@ -395,6 +402,13 @@ ever.
 
 **Done when:** a print preview of every place fits the page width, the boxes are visible
 with background graphics off, and nothing manager-only prints.
+
+> **Decided by Stephen as the slice began (2026-10-20):** a sheet printed mid-count shows **the
+> numbers counted so far** (a blank sheet before anything is counted is just the clean form),
+> and **each place starts its own page**, with its own "Counted by" and date line, so places
+> can be handed out.
+>
+> **BUILT 2026-10-20** on `inventory-slice5` — see "Slice 5 as built".
 
 ### Slice 6 — Dollar values (manager)
 
@@ -760,6 +774,71 @@ file touched.**
   with a hand-set clock could lose or win a tie it should not.
 - **Storage refused** (a private window, a full disk): the page carries on without keeping
   values, as before this slice. It does not say so.
+
+---
+
+## Slice 5 as built
+
+`tempest_inventory.html` (a Print button, print-only sign lines, one section per place, and
+one `@media print` block) and `scripts/check_inventory.py` (a *print* scenario). **No SQL. No
+shared file touched** — `kitchen.css`'s own print block already turns the tokens black and
+white, hides `.link-btn`, `.home-link`, `.mgr-toggle`, `.drag-handle`, modals and the toast,
+and keeps rows and headings from splitting.
+
+### What it does
+
+- **Print**, in the date bar, for everyone. It lets go of the box being typed in and sends
+  anything typed but not yet sent — not after the 1.2 s pause — then opens the browser's
+  print. On iOS that is the usual print sheet.
+- **Each place with items starts its own page**, headed by its name and a printed-only line:
+  "October 2026 count — Counted by ______ · Date ______". An empty place (today, the Line) is
+  left off paper. A long place runs on to the next page under its own heading.
+- **Boxes are drawn as boxes** — a solid 1.5px edge — because backgrounds do not print. A
+  saved number prints bold in its box, with "✓ Counted by …".
+- **An unsaved number says so on paper too**: "Waiting for signal — kept on this device", or
+  "Not saved — …". Saved and unsaved must never look the same; the first PDF showed that they
+  did (an unsaved Mayo printed exactly like a counted one), and that is why.
+- **Nothing manager-only and nothing screen-only prints**: the name bar, the intro, the
+  waiting bar, Print itself, set-up (the count bar, Places, New, Left off), row controls,
+  grips. Printed in manager mode, the boxes come back.
+- **Tighter on paper than on screen** — a pen does not need a 44px target: one line per item
+  with the vendor beside the name, 24px boxes. That took the live sheet from 20 pages to **12**.
+- No colour is restated for paper; no price is on the page to print.
+
+### Proved
+
+- `check_inventory.py`: **348 assertions, 28 scenarios, clean.** The *print* scenario reads the
+  page's own `@media print` rules through the CSSOM — what the browser will apply — and checks
+  each hidden element, the page break, the sign line, the solid box edge, that no print rule
+  hides a row's state, and that no colour is restated; plus the Print button, the sign lines
+  (hidden on screen), the page-break classes, the set-up wrapper, Print sending a typed value
+  at once, and the date bar at 390px and 320px.
+- **It fails when it should**: eight deliberate breaks, **all eight caught** (one only after
+  the test learned that the CSSOM rewrites `#000` as `rgb(0, 0, 0)`).
+- **Real PDFs, by hand** (headless Chrome `--print-to-pdf`, backgrounds off, US Letter), read
+  page by page: the sample sheet mid-count (3 pages), the same in manager mode (3 pages), and
+  the **live sheet, read-only with every write blocked: 12 pages, every one of the 9 places
+  with items starting a page with its sign line, and none of** Manager, Move, Remove, Places,
+  Try now, Pick your name, Counting as, Print, `$`, New, Left off, "Nothing is stored here
+  yet", Start.
+- `check_styling.py`: clean, 11 pages, 86 inputs, register unchanged at 75.
+
+### Not proved
+
+- **A paper print from an iPad or iPhone**, through AirPrint, on Tempest's printer — Stephen's
+  hand test. Browsers differ a little in margins and in how they honour a page break.
+- A place's continuation pages do not repeat its name (browsers repeat headings only for
+  tables). Staple a place's pages together.
+
+### Found while building — for the order guide and set-up, before the October count
+
+- **Two order-guide items are named "empty place"** (#268, Cooks Produce, Fruit, EA; #269,
+  Cooks Produce, Peppers, BSKT) — renamed on the order guide, still active, so still on the
+  count sheet in the vegetable cooler. A manager should either rename them on the Orders page
+  or **Remove** them from the count, so nobody is asked to count an "empty place".
+- **Three items were added to the order guide on 2026-10-20** — Jack Cheese (3097), Dino Kale,
+  Redbor Kale — and are under **New on the order guide** in manager mode. They need a place
+  (or **Don't count**) before October 31: this is the case Slice 2's list was built for.
 
 ---
 
