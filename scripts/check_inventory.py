@@ -67,7 +67,9 @@ SCENARIOS = (
     # slice 4 - nothing typed is lost
     "offline", "comeback", "newer", "orphaned", "leave",
     # slice 5 - the paper backup
-    "print")
+    "print",
+    # slice 6 - dollar values
+    "values")
 
 
 def find_chrome():
@@ -184,7 +186,7 @@ LINES = [
                                                        # which the price list has since made 30
 ]
 COUNT_SCENARIOS = ["count", "inflight", "countlost", "countclosed", "who",
-                   "offline", "comeback", "newer", "orphaned", "leave", "print"]
+                   "offline", "comeback", "newer", "orphaned", "leave", "print", "values"]
 
 # ------------------------------------------------------------ page surgery --
 
@@ -216,6 +218,17 @@ HARNESS = r"""
   /* 'newer': after the reload, another device has counted Cilantro AFTER it was typed here */
   if(SCEN==='newer'&&PH===1)T.inventory_count_lines.push({id:950,location:'Tempest',count_id:7,inventory_item_id:102,full_qty:5,loose_qty:null,
     pack_qty_snap:null,pack_unit_snap:'BU',counted_by:'Jose',updated_at:new Date(Date.now()+60000).toISOString()});
+  /* 'values': a priced count. Mayo (counted 3 Each @ $9.25) is then removed from the sheet;
+     Tom (counted 2 EA, no pack) is priced per 'ea' (6 ea = $12) - order units that match;
+     vinegar is a two-box count against 4 GAL @ $31; Cilantro has no active price; Long unit
+     was counted in CS but is priced per bunch; Ginger was counted against 40 lb, priced at 30 lb. */
+  if(SCEN==='values'){
+    T.inventory_items.forEach(function(r){if(r.id===201)r.active=false;});
+    T.ingredient_costs.push({location:'Tempest',order_item_id:64,pack_qty:6,pack_unit:'ea',pack_price:12,active:true});
+    [[102,3,null,null,'BU'],[103,2,null,null,'CS'],[104,2,null,null,'EA'],[202,2,1,4,'GAL']].forEach(function(x,i){
+      T.inventory_count_lines.push({id:960+i,location:'Tempest',count_id:7,inventory_item_id:x[0],full_qty:x[1],loose_qty:x[2],pack_qty_snap:x[3],pack_unit_snap:x[4],counted_by:'Maria',updated_at:'2026-10-07T18:00:00Z'});
+    });
+  }
   /* 'orphaned': this device kept two counts for a September count that is no longer open */
   if(SCEN==='orphaned'&&PH===0)localStorage.setItem('boxkitchen_inv_pending_3',JSON.stringify({period:'2026-09-01',rows:{'101':{full:'2',loose:'',by:'Ana',at:1},'201':{full:'4',loose:'',by:'Ana',at:2}}}));
   if(SCEN==='empty')T.inventory_places=[];
@@ -250,6 +263,10 @@ HARNESS = r"""
     }).map(clone);
     if(t==='inventory_items')rows.forEach(function(r){var g=guideRow(r.order_item_id);
       r.order_items=g?{name:g.name,vendor:g.vendor,unit:g.unit,active:g.active}:null;});
+    if(t==='inventory_count_lines'&&/inventory_items\(/.test(q.select||''))rows.forEach(function(r){
+      var ii=null;for(var i=0;i<T.inventory_items.length;i++)if(T.inventory_items[i].id===r.inventory_item_id)ii=T.inventory_items[i];
+      var g=ii&&guideRow(ii.order_item_id);
+      r.inventory_items=ii?{order_item_id:ii.order_item_id,place_id:ii.place_id,active:ii.active,order_items:g?{name:g.name,vendor:g.vendor,unit:g.unit}:null}:null;});
     if(t==='inventory_places'||t==='inventory_items')rows.sort(function(a,b){return a.sort_order-b.sort_order||a.id-b.id;});
     return rows;
   }
@@ -1461,6 +1478,72 @@ RUNNER = r"""
         ok('print: at '+w+'px the date bar holds its title, count and Print without running off', bar.scrollWidth<=bar.clientWidth+1&&b.right<=br.right+0.5&&b.left>=br.left-0.5);
         byId('mgrSwitch').click();
       });
+    });
+  }
+
+
+  /* ============================== slice 6 ============================== */
+  if(H.scen==='values'){
+    step(function(){
+      ok('values: staff never read a price', reads('ingredient_costs').every(function(r){return r.u.indexOf('price')<0;}));
+      ok('values: and see no dollar sign', document.body.innerText.indexOf('$')<0);
+    });
+    unlock();
+    step(function(){
+      var pr=reads('ingredient_costs').filter(function(r){return /pack_price/.test(r.u);});
+      ok('values: behind the PIN, one read asks for prices', pr.length===1&&/active=eq\.true/.test(pr[0].u), JSON.stringify(pr.map(function(r){return r.u;})));
+      var lr=reads('inventory_count_lines').slice(-1)[0]||{u:''};
+      ok('values: ...and the lines arrive with their row, removed or not', /inventory_items\(order_item_id,place_id,active,order_items\(name,vendor,unit\)\)/.test(lr.u), lr.u);
+      var tabs=all('.stock-tabs button').map(function(b){return b.textContent;});
+      ok('values: manager mode has Set-up and Values tabs, Set-up first', JSON.stringify(tabs)==='["Set-up","Values"]'&&document.querySelector('.stock-tabs button.active').textContent==='Set-up');
+      ok('values: the set-up screen still shows no money', document.body.innerText.indexOf('$')<0);
+      all('.stock-tabs button')[1].click();
+    });
+    step(function(){
+      var t=document.querySelector('.stock-total');
+      ok('values: the total, to the cent: 3 Mayo $27.75 + vinegar 2 × $31 + 1 GAL $7.75 + Tom 2 × $2', !!t&&t.querySelector('.stock-total-n').textContent==='$101.50', t&&t.textContent);
+      ok('values: ...saying what it leaves out', /3 of 6 counted rows valued/.test(t.textContent)&&/3 not valued/.test(t.textContent)&&/1 no price, 1 pack changed, 1 counted in order units/.test(t.textContent)&&/4 of 9 not counted yet/.test(t.textContent), t.textContent);
+      ok('values: ...in the highlighter, not red', getComputedStyle(t.querySelector('mark.stock-nv')).backgroundColor==='rgb(255, 230, 0)'&&getComputedStyle(t.querySelector('mark.stock-nv')).color==='rgb(18, 18, 18)');
+      var why=document.querySelector('.stock-nots');
+      ok('values: every unvalued row is listed, under its reason', !!why&&/No price in Recipe Costing yet\.\s*Cilantro/.test(why.textContent)&&/pack size changed[^]*Ginger[^]*counted 1 × 40 lb \+ 4 lb — Recipe Costing now: × 30 lb/.test(why.textContent)&&/order-guide units[^]*Long unit thing[^]*counted 2 CS — Recipe Costing now: × 12 bunch/.test(why.textContent), why&&why.textContent);
+      var link=document.querySelector('.stock-cost-link');
+      ok('values: missing prices link to Recipe Costing', !!link&&link.getAttribute('href')==='tempest_costing.html');
+      var heads=all('.stock-vhead').map(function(h){return h.textContent;});
+      ok('values: each place carries its subtotal, and how many it could not value', heads.indexOf('Vegetable cooler$4.00 · 3 not valued')>-1&&heads.indexOf('Dry storage$69.75')>-1, JSON.stringify(heads));
+      ok('values: an item counted and then removed stays in the total, listed by name', heads.indexOf('Counted, then removed from the sheet$27.75')>-1&&/Mayo/.test(all('.stock-vrow').map(function(r){return r.textContent;}).join('|')), JSON.stringify(heads));
+      var nv=all('.stock-vrow').filter(function(r){return r.querySelector('.stock-money.none');});
+      ok('values: no unvalued row shows a dollar figure - never $0', nv.length===3&&nv.every(function(r){return r.textContent.indexOf('$')<0&&/not valued/.test(r.textContent);}), nv.map(function(r){return r.textContent;}).join(' | '));
+      var tom=all('.stock-vrow').filter(function(r){return /^Tom/.test(r.textContent);})[0];
+      ok('values: order units that match the price list’s unit value, ignoring case', !!tom&&/\$4\.00/.test(tom.textContent)&&/counted 2 EA/.test(tom.textContent), tom&&tom.textContent);
+      ok('values: an uncounted row is not a value line at all', !all('.stock-vrow').some(function(r){return /Zero pack|Blank unit|Old flour/.test(r.textContent);}));
+      ok('values: nothing written', writes().length===0);
+      /* a price arrives in Recipe Costing: refresh, and it values */
+      T.ingredient_costs.push({location:'Tempest',order_item_id:171,pack_qty:1,pack_unit:'BU',pack_price:1.5,active:true});
+      loadAll({quiet:true,force:true});
+    });
+    tick();tick();
+    step(function(){
+      var t=document.querySelector('.stock-total');
+      ok('values: priced in Recipe Costing, refreshed - it values', !!t&&t.querySelector('.stock-total-n').textContent==='$106.00'&&/4 of 6 counted rows valued/.test(t.textContent), t&&t.textContent);
+      ok('values: ...and leaves the not-valued list', !/Cilantro/.test((document.querySelector('.stock-nots')||{}).textContent||''));
+      all('.stock-tabs button')[0].click();
+    });
+    step(function(){
+      ok('values: back on Set-up, the rows return and the money goes', all('.stock-place-body .drag-handle').length>0&&document.body.innerText.indexOf('$')<0);
+      byId('mgrSwitch').click();
+    });
+    step(function(){
+      ok('values: out of manager mode, no dollar sign anywhere - in the text or the HTML', document.body.innerText.indexOf('$')<0&&byId('appBody').innerHTML.indexOf('$')<0&&!document.querySelector('.stock-total,.stock-vrow,.stock-money'));
+      byId('mgrSwitch').click();   // back in (unlocked this session)...
+    });
+    tick();
+    step(function(){ all('.stock-tabs button')[1].click(); });
+    step(function(){
+      ok('values: (on the Values tab again)', !!document.querySelector('.stock-total'));
+      byId('mgrSwitch').click();   // ...and straight out again, from the Values tab
+    });
+    step(function(){
+      ok('values: leaving manager mode from the Values tab leaves no money behind', document.body.innerText.indexOf('$')<0&&byId('appBody').innerHTML.indexOf('$')<0&&inputs().length>0);
     });
   }
 

@@ -119,6 +119,24 @@
     button.stock-state.failed{border:none !important;padding:0;margin-top:1px;min-height:0;font-size:8.5pt}
   }
 
+  /* ── VALUES (manager, Slice 6) ── a total that says what it leaves out.
+     "Not valued" is the yellow highlighter behind ink, never red: it is
+     missing information, not an error, and never a $0. */
+  .stock-tabs{margin:0;border-top:1px solid var(--hair)}
+  .stock-total{padding:16px 18px;border-bottom:1px solid var(--ink)}
+  .stock-total-n{font-family:var(--font-display);font-size:2rem;font-weight:900;line-height:1.1;font-variant-numeric:tabular-nums}
+  .stock-total-of{font-family:var(--font-cond);font-size:14px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--grey);margin-top:2px}
+  .stock-total-line{font-size:0.9rem;margin-top:8px;line-height:1.45}
+  mark.stock-nv{background:var(--yellow);color:var(--ink);padding:0 3px;font-weight:600}
+  .stock-why{padding:10px 18px 12px;border-bottom:1px solid var(--hair)}
+  .stock-why-hd{font-weight:600;font-size:0.88rem;margin-bottom:6px}
+  .stock-why-row{font-size:0.88rem;padding:3px 0}
+  .stock-why-sub{color:var(--grey);font-size:0.8rem}
+  .stock-cost-link{display:inline-flex;align-items:center;margin-top:8px;text-decoration:none;color:var(--ink)}
+  .stock-money{flex-shrink:0;font-weight:600;font-variant-numeric:tabular-nums;text-align:right}
+  .stock-money.none{font-weight:400}
+  .stock-money-why{font-size:0.75rem;color:var(--grey);margin-top:2px}
+
   /* manager mode: the month's count, at the top of set-up */
   .stock-countbar{padding:12px 18px;border-bottom:1px solid var(--hair);font-size:0.9rem;line-height:1.4}
   .stock-countbar-btns{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
@@ -250,6 +268,9 @@ var loading=false,loadSeq=0;
    staff list, who is counting on this device, and what has been typed here
    and not yet confirmed (local[id] = {full, loose, state, msg, timer, inflight}) */
 var count=null,lines={},staff=[],local={};
+/* Slice 6, manager only: the price list WITH prices, every line of the count
+   (with its row, even a removed one), and which manager tab is showing */
+var prices=null,allLines=[],mview='setup';
 var WHO_KEY='boxkitchen_inv_who',SAVE_DELAY=1200;
 /* Slice 4: everything typed and not yet confirmed is also kept on this device,
    one key per count, so a closed tab or a dead signal loses nothing. notes[id]
@@ -298,7 +319,7 @@ function loadAll(opt){
   var seq=++loadSeq,withSetup=mgr;
   loading=true;
   if(!opt.quiet)document.getElementById('appBody').innerHTML='<div class="loading"><div class="spinner"></div><p>Loading the count sheet…</p></div>';
-  var got={},need=withSetup?7:5,failed=false;
+  var got={},need=withSetup?8:5,failed=false;
   function fail(){
     failed=true;loading=false;
     // a quiet re-read that fails keeps the sheet on screen: offline, it is all you have
@@ -308,11 +329,12 @@ function loadAll(opt){
   function done(){
     loading=false;
     places=got.places;items=got.items;packs=packMap(got.packs);staff=got.staff;
-    if(withSetup){guide=got.guide;leftOff=got.leftOff;}
+    if(withSetup){guide=got.guide;leftOff=got.leftOff;prices=priceMap(got.prices);}
     var c=got.counts[0]||null;
     if(!count||!c||count.id!==c.id){local={};notes={};}   // typed values belong to one count
     count=c;lines={};
     var ls=got.lines||[];for(var i=0;i<ls.length;i++)lines[ls[i].inventory_item_id]=ls[i];
+    allLines=ls;
     restorePending();
     render();
     sendPending();
@@ -323,7 +345,10 @@ function loadAll(opt){
     got[key]=r;
     if(--need)return;
     if(!got.counts.length)return done();
-    api('GET','inventory_count_lines','location=eq.'+LOCATION+'&count_id=eq.'+got.counts[0].id+'&select=id,inventory_item_id,full_qty,loose_qty,pack_qty_snap,pack_unit_snap,counted_by,updated_at',null,function(r2,s2){
+    // a manager's read also brings each line's row - active or not - so a row
+    // removed after it was counted can still be named and valued
+    api('GET','inventory_count_lines','location=eq.'+LOCATION+'&count_id=eq.'+got.counts[0].id+'&select=id,inventory_item_id,full_qty,loose_qty,pack_qty_snap,pack_unit_snap,counted_by,updated_at'
+        +(withSetup?',inventory_items(order_item_id,place_id,active,order_items(name,vendor,unit))':''),null,function(r2,s2){
       if(seq!==loadSeq||failed)return;
       if(!(s2>=200&&s2<300)||!Array.isArray(r2))return fail();
       got.lines=r2;done();
@@ -339,6 +364,8 @@ function loadAll(opt){
   if(withSetup){
     api('GET','order_items','location=eq.'+LOCATION+'&active=eq.true&select=id,name,vendor,category,unit&order=vendor.asc,sort_order.asc,id.asc',null,land('guide'));
     api('GET','inventory_left_off','location=eq.'+LOCATION+'&active=eq.true&select=id,order_item_id',null,land('leftOff'));
+    /* The only read that asks for a price - and only behind the PIN. */
+    api('GET','ingredient_costs','location=eq.'+LOCATION+'&active=eq.true&order_item_id=not.is.null&select=order_item_id,pack_qty,pack_unit,pack_price',null,land('prices'));
   }
 }
 
@@ -388,8 +415,15 @@ function render(){
     if(!distinct[oid]){distinct[oid]=1;nItems++;if(packs[oid])nPacked++;}
   }
   var h='';
+  if(mgr&&mview==='values'){
+    body.innerHTML='<div class="manager-mode"><div class="stock-setup">'+countBarHtml()+tabsHtml()+'</div>'+valuesHtml()+'</div>';
+    document.getElementById('introBar').textContent='Manager values. What each counted item is worth at Recipe Costing’s prices today — and, just as plainly, what is not valued yet, and why.';
+    updateProgress(nItems);updatePendingBar();
+    if(document.getElementById('placesModal').classList.contains('show'))renderPlaces();
+    return;
+  }
   if(mgr){
-    h+='<div class="stock-setup">'+countBarHtml()
+    h+='<div class="stock-setup">'+countBarHtml()+tabsHtml()
       +'<div class="mgr-add-bar"><button class="mgr-add-btn" onclick="openPlaces()">Places — reorder, rename, add</button></div>'
       +newItemsHtml()+'</div>';
   }
@@ -917,6 +951,107 @@ function leaveOff(oid){
   if(busy)return stillSaving();
   setBusy(true);
   api('POST','inventory_left_off',null,{location:LOCATION,order_item_id:oid},function(r,s){finish(outcome(r,s),'Left off the count');});
+}
+
+/* ── MANAGER: values (Slice 6) ──
+   docs/inventory-guide.md, "How a line is valued":
+     value = full × pack_price + loose × (pack_price ÷ pack_qty)
+   using the pack the line was COUNTED against. A line is not valued - never
+   $0 - when the item has no price; when the price list's pack is no longer
+   the one it was counted against; or when it was counted in order units
+   that are not the price list's unit. */
+function priceMap(rows){
+  var m={};
+  for(var i=0;i<(rows||[]).length;i++)m[rows[i].order_item_id]=rows[i];
+  return m;
+}
+function unitKey(u){return String(u==null?'':u).trim().toLowerCase();}
+function valueLine(l,pr){
+  if(l.full_qty==null&&l.loose_qty==null)return {counted:false};
+  var price=pr?num(pr.pack_price):null,pq=pr?num(pr.pack_qty):null,pu=pr?unitKey(pr.pack_unit):'';
+  if(!(price>0)||!(pq>0)||!pu)return {counted:true,value:null,why:'no price'};
+  var sq=num(l.pack_qty_snap),su=unitKey(l.pack_unit_snap),f=num(l.full_qty)||0,lo=num(l.loose_qty)||0;
+  if(sq!=null){
+    if(sq!==pq||su!==pu)return {counted:true,value:null,why:'pack changed',now:pr};
+    return {counted:true,value:f*price+lo*price/pq};
+  }
+  if(su&&su===pu)return {counted:true,value:f*price/pq};
+  return {counted:true,value:null,why:'order units',now:pr};
+}
+/* "2 × 40 lb + 7 lb", "3 Each", "2.5 CS" - what was counted, in its own units */
+function countedAs(l){
+  var sq=num(l.pack_qty_snap),u=l.pack_unit_snap||'';
+  if(sq>1)return fmtQty(num(l.full_qty)||0)+' × '+fmtQty(sq)+' '+u+' + '+fmtQty(num(l.loose_qty)||0)+' '+u;
+  return fmtQty(l.full_qty)+' '+u;
+}
+function money(n){return '$'+Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function tabsHtml(){
+  return '<div class="view-toggle stock-tabs" role="tablist">'
+    +'<button type="button" role="tab" aria-selected="'+(mview==='setup')+'" class="'+(mview==='setup'?'active':'')+'" onclick="setMview(\'setup\')">Set-up</button>'
+    +'<button type="button" role="tab" aria-selected="'+(mview==='values')+'" class="'+(mview==='values'?'active':'')+'" onclick="setMview(\'values\')">Values</button></div>';
+}
+function setMview(v){if(mview===v)return;mview=v;render();window.scrollTo(0,0);}
+var WHY={
+  'no price':'No price in Recipe Costing yet.',
+  'pack changed':'Recipe Costing’s pack size changed after this was counted. Recount it, or put the pack back.',
+  'order units':'Counted in order-guide units before it had a pack, and Recipe Costing prices it in a different unit. Recount it now that it has a pack.'
+};
+function valuesHtml(){
+  if(!count)return '<div class="empty">No count is open. Values appear once a month’s count has begun.</div>';
+  if(!prices)return '<div class="empty">Loading prices…</div>';
+  var groups={},order=[],total=0,valued=0,nots=[],counted=0,activeCounted=0;
+  function group(key,label){if(!groups[key]){groups[key]={label:label,rows:[],sum:0,nv:0};order.push(key);}return groups[key];}
+  for(var i=0;i<places.length;i++)group('p'+places[i].id,places[i].label);
+  for(var i=0;i<allLines.length;i++){
+    var l=allLines[i],it=itemById(l.inventory_item_id),emb=l.inventory_items||{},gi=(it&&it.order_items)||emb.order_items||{};
+    var oid=it?it.order_item_id:emb.order_item_id,v=valueLine(l,prices[oid]);
+    if(!v.counted)continue;
+    counted++;
+    var key,label;
+    if(!it){key='removed';label='Counted, then removed from the sheet';}
+    else if(!placeById(it.place_id)){key='orphan';label='Not in an active place';activeCounted++;}
+    else{key='p'+it.place_id;activeCounted++;}
+    var g=group(key,label);
+    var row={name:gi.name||'(unknown item)',vendor:gi.vendor||'',place:it&&placeById(it.place_id)?placeById(it.place_id).label:label,as:countedAs(l),v:v};
+    g.rows.push(row);
+    if(v.value!=null){g.sum+=v.value;total+=v.value;valued++;}
+    else{g.nv++;nots.push(row);}
+  }
+  var notCounted=items.length-activeCounted,by={};
+  for(var i=0;i<nots.length;i++)by[nots[i].v.why]=(by[nots[i].v.why]||0)+1;
+  var whyList=['no price','pack changed','order units'].filter(function(w){return by[w];}).map(function(w){return by[w]+' '+(w==='order units'?'counted in order units':w);});
+  var h='<div class="stock-total"><div class="stock-total-n">'+money(total)+'</div>'
+    +'<div class="stock-total-of">'+esc(monthLabel(count.period))+' count · valued at today’s prices</div>'
+    +'<div class="stock-total-line"><strong>'+valued+'</strong> of '+counted+' counted rows valued'
+    +(nots.length?' · <mark class="stock-nv">'+nots.length+' not valued</mark> ('+esc(whyList.join(', '))+')':'')
+    +' · '+notCounted+' of '+items.length+' not counted yet</div></div>';
+  if(nots.length){
+    h+='<div class="cat-header stock-place-hd"><div class="cat-label">Not valued — and why</div><div class="stock-place-n">'+nots.length+'</div></div><div class="stock-nots">';
+    ['no price','pack changed','order units'].forEach(function(w){
+      var rows=nots.filter(function(r){return r.v.why===w;});if(!rows.length)return;
+      h+='<div class="stock-why"><div class="stock-why-hd">'+esc(WHY[w])+'</div>';
+      for(var k=0;k<rows.length;k++){
+        var r=rows[k],now=r.v.now?' — Recipe Costing now: × '+fmtQty(num(r.v.now.pack_qty))+' '+esc(r.v.now.pack_unit||''):'';
+        h+='<div class="stock-why-row">'+esc(r.name)+' <span class="stock-why-sub">'+esc(r.place)+' · counted '+esc(r.as)+now+'</span></div>';
+      }
+      if(w==='no price')h+='<a class="link-btn stock-cost-link" href="tempest_costing.html">Add prices in Recipe Costing</a>';
+      h+='</div>';
+    });
+    h+='</div>';
+  }
+  for(var i=0;i<order.length;i++){
+    var g=groups[order[i]];if(!g.rows.length)continue;
+    h+='<div class="cat-header stock-place-hd stock-vhead"><div class="cat-label">'+esc(g.label)+'</div><div class="stock-place-n">'+money(g.sum)+(g.nv?' · '+g.nv+' not valued':'')+'</div></div>';
+    for(var k=0;k<g.rows.length;k++){
+      var r=g.rows[k];
+      h+='<div class="count-row stock-vrow"><div class="count-info"><div class="count-name">'+esc(r.name)+'</div>'
+        +'<div class="count-par">'+esc(r.vendor?r.vendor+' · ':'')+'counted '+esc(r.as)+'</div></div>'
+        +(r.v.value!=null?'<div class="stock-money">'+money(r.v.value)+'</div>':'<div class="stock-money none"><mark class="stock-nv">not valued</mark><div class="stock-money-why">'+esc(r.v.why)+'</div></div>')
+        +'</div>';
+    }
+  }
+  if(!counted)h+='<div class="empty">Nothing is counted yet.</div>';
+  return h;
 }
 
 /* ── MANAGER: the month's count ── */
