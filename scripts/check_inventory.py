@@ -65,7 +65,9 @@ SCENARIOS = (
     # slice 3 - counting saves
     "start", "count", "inflight", "countlost", "countclosed", "who",
     # slice 4 - nothing typed is lost
-    "offline", "comeback", "newer", "orphaned", "leave")
+    "offline", "comeback", "newer", "orphaned", "leave",
+    # slice 5 - the paper backup
+    "print")
 
 
 def find_chrome():
@@ -182,7 +184,7 @@ LINES = [
                                                        # which the price list has since made 30
 ]
 COUNT_SCENARIOS = ["count", "inflight", "countlost", "countclosed", "who",
-                   "offline", "comeback", "newer", "orphaned", "leave"]
+                   "offline", "comeback", "newer", "orphaned", "leave", "print"]
 
 # ------------------------------------------------------------ page surgery --
 
@@ -343,6 +345,7 @@ HARNESS = r"""
   window.__h.timeoutAll=function(){var d=hung.slice();hung.length=0;for(var i=0;i<d.length;i++)if(d[i].ontimeout)d[i].ontimeout();};
   window.__h.hungCount=function(){return hung.length;};
   window.confirm=function(msg){window.__h.confirmMsgs.push(String(msg));return window.__h.confirmReturn;};
+  window.__h.prints=0;window.print=function(){window.__h.prints++;window.__h.printFocus=document.activeElement&&document.activeElement.tagName;};
 })();
 </script>
 """
@@ -1387,6 +1390,77 @@ RUNNER = r"""
     });
     step(function(){
       ok('leave: once saved, nothing to ask about', leaveOk()===true&&state(rowNamed('Vegetable cooler','Cilantro'))==='✓ Counted by Maria');
+    });
+  }
+
+
+  /* ============================== slice 5 ============================== */
+  /* The page's own @media print rules, read through the CSSOM: what the
+     browser will actually apply on paper. (A PDF is checked by hand - see
+     "Slice 5 as built"; headless Chrome cannot switch a test page to print.) */
+  function printRules(){
+    var out=[];
+    for(var i=0;i<document.styleSheets.length;i++){
+      var sh=document.styleSheets[i];if(!sh.ownerNode||sh.ownerNode.tagName!=='STYLE')continue;
+      var rs;try{rs=sh.cssRules;}catch(e){continue;}
+      for(var j=0;j<rs.length;j++)if(rs[j].media&&/print/.test(rs[j].media.mediaText))
+        for(var k=0;k<rs[j].cssRules.length;k++)out.push(rs[j].cssRules[k]);
+    }
+    return out;
+  }
+  function printRule(sel,prop,val){return printRules().some(function(r){
+    return r.selectorText&&r.selectorText.split(',').map(function(x){return x.trim();}).indexOf(sel)>-1&&r.style.getPropertyValue(prop)===val;});}
+
+  if(H.scen==='print'){
+    step(function(){
+      var b=byId('printBtn');
+      ok('print: a Print button sits in the date bar, for everyone', !!b&&visible(b)&&b.closest('.date-bar')&&b.classList.contains('link-btn'));
+      ok('print: ...and it is itself hidden on paper (kitchen.css hides .link-btn)', b.classList.contains('stock-print-btn')&&printRule('.stock-print-btn','display','none'));
+      var signs=all('.stock-print-sign');
+      ok('print: every place with items starts with a "Counted by" line, the month on it', signs.length===3&&signs.every(function(x){return /^October 2026 count — Counted by _+ · Date _+$/.test(x.textContent);}), signs.map(function(x){return x.textContent;}).join(' | '));
+      ok('print: ...which the screen never shows', signs.every(function(x){return getComputedStyle(x).display==='none';}));
+      var secs=all('section.stock-place');
+      ok('print: each place is its own section, and every place with items after the first starts a page',
+         secs.length===4&&!secs[0].classList.contains('stock-pb')&&secs[1].classList.contains('stock-pb')&&secs[2].classList.contains('stock-pb'), secs.map(function(x){return x.className;}).join(' | '));
+      ok('print: an empty place is marked to be left off paper, and does not start a page', secs[3].classList.contains('stock-place-empty')&&!secs[3].classList.contains('stock-pb'));
+      ok('print: on paper, a page break before each later place', printRule('.stock-pb','break-before','page'));
+      ['.stock-pending','.name-bar','#introBar','.stock-setup','.stock-countbar','.row-mgr-actions','.stock-place-empty'].forEach(function(sel){
+        ok('print: '+sel+' does not print', printRule(sel,'display','none'));
+      });
+      ok('print: the sign line does', printRule('.stock-print-sign','display','block'));
+      /* the border is a shorthand with var() in it, which the CSSOM keeps as written */
+      var boxRule=printRules().filter(function(r){var sels=(r.selectorText||'').split(',').map(function(x){return x.trim();});return sels.indexOf('.stock-input')>-1&&sels.indexOf('.stock-input:disabled')>-1;})[0];
+      ok('print: boxes print as boxes - a solid edge, since backgrounds do not print', !!boxRule&&/solid/.test(boxRule.style.getPropertyValue('border'))&&boxRule.style.getPropertyPriority('border')==='important', boxRule&&boxRule.cssText);
+      ok('print: in manager mode the boxes come back for paper', printRule('.manager-mode .stock-boxes','display','flex'));
+      ok('print: no print rule hides a row’s state - an unsaved number must say so on paper', !printRules().some(function(r){return /stock-state/.test(r.selectorText||'')&&r.style.getPropertyValue('display')==='none';}));
+      /* the CSSOM rewrites #000 as rgb(0, 0, 0); a token stays var(--ink) */
+      var hard=printRules().filter(function(r){return /#[0-9a-f]{3,6}\b|rgba?\(/i.test(r.cssText);}).map(function(r){return r.cssText;});
+      ok('print: no colour is restated for paper - the tokens do it', hard.length===0, hard.join(' | '));
+      pickName('Maria');
+    });
+    step(function(){
+      var c=rowNamed('Vegetable cooler','Cilantro'),i=inputIn(c,'full');
+      i.focus();i.value='3';i.dispatchEvent(new Event('input',{bubbles:true}));
+      byId('printBtn').click();
+      return 100;   // well inside the 1.2 s pause: if it saved, Print sent it
+    });
+    tick();
+    step(function(){
+      ok('print: Print opens the browser’s print', H.prints===1, H.prints);
+      ok('print: ...after letting go of the box being typed in, and sending what it held at once', H.printFocus!=='INPUT'&&lineWrites().length===1&&lastBody()===body3(102,3,null,null,'BU','Maria'), H.printFocus+' / '+lastBody());
+    });
+    unlock();
+    step(function(){
+      ok('print: in manager mode the set-up is wrapped so paper leaves it out', all('.stock-setup').length===2&&!!document.querySelector('.stock-setup .stock-countbar')&&!!document.querySelector('.stock-setup .mgr-add-bar'));
+      ok('print: ...and the sign lines are still there', all('.stock-print-sign').length===3);
+    });
+    [390,320].forEach(function(w){
+      step(function(){ byId('mgrSwitch').click(); document.body.style.width=w+'px'; });
+      step(function(){
+        var bar=document.querySelector('.date-bar'),b=byId('printBtn').getBoundingClientRect(),br=bar.getBoundingClientRect();
+        ok('print: at '+w+'px the date bar holds its title, count and Print without running off', bar.scrollWidth<=bar.clientWidth+1&&b.right<=br.right+0.5&&b.left>=br.left-0.5);
+        byId('mgrSwitch').click();
+      });
     });
   }
 

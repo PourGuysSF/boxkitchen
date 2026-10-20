@@ -79,7 +79,45 @@
   .stock-pending{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:2px;padding:8px 10px;background:var(--yellow);color:var(--ink);border-radius:6px;font-size:0.85rem;font-weight:600;line-height:1.3}
   .stock-pending .link-btn{flex-shrink:0;background:var(--paper)}
   .stock-pending-msg + .stock-pending-msg{margin-top:6px}
-  @media print{.stock-pending{display:none !important}}
+
+  /* the date bar carries Print; on a narrow phone it wraps rather than crowds */
+  .date-bar{flex-wrap:wrap;gap:6px 12px}
+  .stock-datebar-r{display:flex;align-items:center;gap:10px;margin-left:auto}
+
+  /* ── PRINT — the paper backup (Slice 5) ──
+     Paper is what the kitchen falls back to. Each place starts its own page
+     with a "Counted by" line, so places can be handed out; boxes are drawn
+     as boxes, because backgrounds do not print; a number already counted
+     prints in its box. Nothing manager-only, and nothing that only makes
+     sense on a screen. A number typed here but not yet saved keeps its note
+     ("Waiting for signal…") on paper too: saved and unsaved must never look
+     the same. Rows are tighter than on screen - a pen does not need a 44px
+     target - so the sheet is about half as many pages. Colours are the
+     tokens, which kitchen.css's own print block turns black and white - so
+     no colour is restated here. */
+  .stock-print-sign{display:none}
+  @media print{
+    .stock-pending,.name-bar,#introBar,.stock-setup,.stock-countbar,.row-mgr-actions,
+    .stock-print-btn,.stock-place-empty{display:none !important}
+    .stock-pb{break-before:page;page-break-before:always}
+    .stock-print-sign{display:block;padding:6px 0 10px;font-size:11pt;border-bottom:1px solid var(--ink);break-after:avoid;page-break-after:avoid}
+    .manager-mode .stock-boxes{display:flex !important}
+    .manager-mode .count-row.stock-row{flex-wrap:wrap}
+    .stock-input,.stock-input:disabled,.stock-input.filled{background:var(--paper) !important;border:1.5px solid var(--ink) !important;border-radius:4px !important;color:var(--ink) !important;-webkit-text-fill-color:var(--ink);box-shadow:none !important}
+    .stock-input.filled{font-weight:700}
+    .date-bar,.cat-header,.count-row.stock-row{padding-left:0;padding-right:0}
+    .count-row.stock-row{min-height:0;padding-top:3px;padding-bottom:3px;row-gap:2px}
+    /* on paper the vendor sits beside the name: one line per item */
+    .stock-row .count-info{display:flex;flex-wrap:wrap;align-items:baseline;column-gap:8px}
+    .stock-row .count-par{margin-top:0}
+    .stock-state-slot{flex-basis:100%}
+    .count-name{font-size:10.5pt}
+    .count-par,.stock-state,.stock-unit,.stock-lbl{font-size:8.5pt}
+    .stock-state{margin-top:1px}
+    .stock-input,.stock-input:disabled,.stock-input.filled{min-height:0;height:24px;width:58px;padding:1px 4px;font-size:11pt}
+    /* a failed save prints as the words it says, not as a button */
+    button.stock-state.failed{border:none !important;padding:0;margin-top:1px;min-height:0;font-size:8.5pt}
+  }
 
   /* manager mode: the month's count, at the top of set-up */
   .stock-countbar{padding:12px 18px;border-bottom:1px solid var(--hair);font-size:0.9rem;line-height:1.4}
@@ -133,7 +171,7 @@
 </div>
 <div class="date-bar">
   <div class="date-display" id="sheetTitle">Count sheet</div>
-  <div class="date-sub" id="sheetSummary"></div>
+  <div class="stock-datebar-r"><span class="date-sub" id="sheetSummary"></span><button type="button" class="link-btn stock-print-btn" id="printBtn" onclick="printSheet()" aria-label="Print the count sheet">Print</button></div>
 </div>
 <div class="name-bar" id="nameBar" style="display:none">
   <label for="countedBy" id="whoLabel">Counted by</label>
@@ -351,23 +389,26 @@ function render(){
   }
   var h='';
   if(mgr){
-    h+=countBarHtml();
-    h+='<div class="mgr-add-bar"><button class="mgr-add-btn" onclick="openPlaces()">Places — reorder, rename, add</button></div>';
-    h+=newItemsHtml();
+    h+='<div class="stock-setup">'+countBarHtml()
+      +'<div class="mgr-add-bar"><button class="mgr-add-btn" onclick="openPlaces()">Places — reorder, rename, add</button></div>'
+      +newItemsHtml()+'</div>';
   }
+  var paged=false;
   for(var i=0;i<places.length;i++){
     var p=places[i],rows=byPlace[p.id];
-    h+=placeHead(p.label,rows,p.id);
-    if(!rows.length)h+='<div class="stock-none">Nothing is stored here yet.</div>';
+    h+='<section class="stock-place'+(rows.length?(paged?' stock-pb':''):' stock-place-empty')+'">'+placeHead(p.label,rows,p.id);
+    if(rows.length){paged=true;h+=printSign();}
+    else h+='<div class="stock-none">Nothing is stored here yet.</div>';
     h+='<div class="stock-place-body" data-place-id="'+p.id+'">';
     for(var j=0;j<rows.length;j++)h+=rowHtml(rows[j],p.label,placesOf);
-    h+='</div>';
+    h+='</div></section>';
   }
   if(orphans.length){
-    h+=placeHead('Not in an active place',orphans,'');
+    h+='<section class="stock-place'+(paged?' stock-pb':'')+'">'+placeHead('Not in an active place',orphans,'')+printSign();
     for(var j=0;j<orphans.length;j++)h+=rowHtml(orphans[j],'',placesOf);
+    h+='</section>';
   }
-  if(mgr)h+=leftOffHtml();
+  if(mgr)h+='<div class="stock-setup">'+leftOffHtml()+'</div>';
   body.innerHTML=mgr?'<div class="manager-mode">'+h+'</div>':h;
   var packs_=nPacked+' of '+nItems+' items have a pack size in Recipe Costing, so they get Full and Loose boxes; the rest are counted in order-guide units until they have one.';
   document.getElementById('introBar').textContent=mgr
@@ -386,6 +427,19 @@ function render(){
 function placeHead(label,rows,pid){
   return '<div class="cat-header stock-place-hd"'+(pid!==''?' data-place-id="'+pid+'"':' data-orphans="1"')+'><div class="cat-label">'+esc(label)+'</div>'
     +'<div class="stock-place-n">'+headCount(rows)+'</div></div>';
+}
+/* Printed only: the line each place's page starts with. */
+function printSign(){
+  return '<div class="stock-print-sign">'+esc(count?monthLabel(count.period)+' count':'Count sheet')
+    +' — Counted by ______________________ · Date ____________</div>';
+}
+/* Print what is on screen: the box being typed in is let go, and anything
+   typed but not yet sent is sent now rather than after the pause - so the
+   number is in its box, and on its way, before the page is laid out. */
+function printSheet(){
+  var a=document.activeElement;if(a&&a.blur)a.blur();
+  for(var id in local)if(local[id].state==='dirty')saveRow(parseInt(id,10));
+  setTimeout(function(){window.print();},50);
 }
 /* the set-up lists' headings: always a plain count, never "counted" */
 function setupHead(label,n){
