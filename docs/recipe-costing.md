@@ -1,6 +1,6 @@
 # Recipe Costing — what a batch costs (B4.3)
 
-Status: **plan v1, approved by Stephen 2026-11-02. Slice 0 is next.** No code written, no SQL run
+Status: **plan v1, approved by Stephen 2026-11-02. Slice 0 is closed (tables live, 0 rows); Slice 1 is next.** No app code written
 yet. It is built in a separate window: this plan is owned by the planning window, the build window
 records each slice "as built" here, and any change to the design goes back to the planner. Every
 decision in "Decisions" was Stephen's, in the interview that produced this document. The design
@@ -575,6 +575,15 @@ Slice 2 on, every piece of arithmetic goes into `assets/recipe-math.js`, never i
 
 **Done when:** the tables exist (confirmed read-only, 0 rows each), RLS matches the existing
 pattern, and the delete behaviour is proved.
+
+> **CLOSED 2026-11-02.** Stephen ran `docs/recipe-costing-slice0.sql` in the SQL Editor
+> (Database, production). Verified independently, read-only, through PostgREST with the site's
+> anon key: all four tables answer 200 with `content-range */0` — `recipe_lines`,
+> `ingredient_conversions`, `recipe_conversions`, `recipe_yields`, 0 rows each. Embedded reads
+> (`recipe_lines` → `ingredient_costs` and → `Recipes` via `recipe_lines_sub_recipe_id_fkey`;
+> `ingredient_conversions` → `ingredient_costs`; `recipe_yields` → `Recipes`) return 200, so
+> PostgREST picked up the foreign keys. No row has been written by a session. Slice 1 is next,
+> in a new build window.
 
 ### Slice 1 — The price list notices a rename *(`tempest_costing.html`)*
 
