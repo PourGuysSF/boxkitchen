@@ -1,0 +1,25 @@
+# The kit sheet is sorted at runtime from the live recipe text, and the page's
+# promise that it only ever reads cannot be tested against the live database.
+# check_kits.py drives the real page in headless Chrome against a stubbed
+# XMLHttpRequest, so it can run here.
+name: kits guard
+
+on:
+  pull_request:
+    paths: ['tempest_kits.html', 'assets/**', 'scripts/check_kits.py']
+  push:
+    branches: [main]
+    paths: ['tempest_kits.html', 'assets/**', 'scripts/check_kits.py']
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: browser-actions/setup-chrome@v1
+        id: chrome
+        with:
+          chrome-version: stable
+      - run: python3 scripts/check_kits.py
+        env:
+          CHROME: ${{ steps.chrome.outputs.chrome-path }}
