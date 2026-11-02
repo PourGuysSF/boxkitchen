@@ -1,7 +1,8 @@
 # Kits — what goes in each kit
 
 Status: **plan v1, approved by Stephen 2026-11-02**, with one change: the build is split into
-five small slices, so each can be checked before the next starts ("Slices"). Written from
+five small slices, so each can be checked before the next starts ("Slices"). **Slice 1 BUILT 2026-11-02** on
+`kits-slice1`, not pushed — see "Slice 1 as built". Written from
 Stephen's interview in the Kits window (2026-10-28 and 2026-11-02). Every decision below is
 Stephen's. **No code exists.** Saved on branch `kits` in worktree `~/Developer/boxkitchen-kits`
 (from `main` `967e482`), **not pushed**. Stephen sends it to the live site later.
@@ -288,6 +289,51 @@ the look is settled once, not eight times.
 - `check_styling.py` picks the page up by itself (`glob("*.html")`) and must run clean.
 - **Stephen opens it by its address on a phone and on the kitchen tablet** and says whether
   the sheet reads right in the kitchen before seven more kits are entered.
+
+### Slice 1 as built
+
+`tempest_kits.html` (new), `scripts/check_kits.py` (new), `.github/workflows/kits-guard.yml`
+(new, mirrors the inventory guard), and this section. **No shared file touched**:
+`kitchen.css`, `index.html`, `check_styling.py`, `CLAUDE.md` and `BUILD_PLAN.md` are as they
+were. The page is reachable only by its address; no tile links to it.
+
+**What it does**
+
+- One GET: `Recipes?id=in.(25)&location=eq.Tempest&select=id,name,status,ingredients`. The id
+  list is built from the kit list, so Slice 2 adds kits without touching the read.
+- `api()` is cut down to **GET only**: it takes no method and no body, so the page cannot
+  send a write. No PIN, no Manager switch, no inputs.
+- The sorting rule exactly as "How a recipe line finds its container". One reading made
+  explicit: **each keyword use claims one line** (the first unclaimed match, in recipe
+  order). A second matching line goes to "Not sorted yet", never quietly into the same
+  container. Kits that need two lines from one word list the keyword twice, as the plan does.
+- The sheet: kit name, "from <recipe>", numbered containers in bordered rings (CSS circles
+  holding the digit, so they print), the hotel pan step (counting only containers that are
+  not next to the pan), "Not in the kit" when the kit has any, and "Not sorted yet" at the
+  **top**, above the containers, in a 4px ink border, only when something is in it.
+- Phone header (`.header`), not the Recipe Database's desktop masthead, since this is a
+  phone page.
+
+**Two small things ahead of their slice**, because a blank screen breaks the spine:
+a failed load shows "Could not load the recipes" with **Try again**, and a missing or
+archived recipe shows "Recipe not found in the Recipe Database — tell a manager". Both are
+unguarded until Slice 3 adds their scenarios.
+
+**Proved**
+
+- `check_kits.py`: **65 assertions, 4 scenarios, clean** (ok, amount, renamed, headings).
+  Every scenario: exactly one request, a GET with no body and no write headers, to the one
+  URL above; no `fetch`/`sendBeacon`; no inputs on the page; every recipe line lands exactly
+  once. Then: today's text gives exactly the 5 containers with nothing unsorted; 2→3 cups
+  of yogurt stays in ⑤ and the old amount is gone; yogurt renamed to Skyr appears in "Not
+  sorted yet" (heavy border, tell-a-manager line), ⑤ disappears and the pan says 4;
+  headings and blank lines skipped, "Jalapeno" and a curly apostrophe still match.
+- **It fails when it should**, each in a throwaway copy: a POST instead of a GET (32
+  failures), accents not stripped (caught), heading lines not skipped (caught). Breaking
+  longest-first is **not** caught: Spicy Green Sauce has no overlapping keywords. That
+  proof is Slice 2's (red wine / red wine vinegar, butter / buttermilk).
+- `check_styling.py`: clean, 12 pages.
+- The fixture is recipe 25's live text from a read-only GET on 2026-11-02.
 
 ### Slice 2 — All 8 kits, the list, and the addresses
 
