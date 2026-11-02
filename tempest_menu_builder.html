@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<script>
+  // Site-password gate (same as every inner page): bounce to hub if not authed.
+  (function(){
+    var raw = localStorage.getItem('boxkitchen_auth');
+    var ts = raw ? parseInt(raw, 10) : 0;
+    var TTL = 30 * 24 * 60 * 60 * 1000; // 30 days
+    if (!ts || isNaN(ts) || (Date.now() - ts) > TTL) {
+      window.location.replace('index.html');
+    }
+  })();
+</script>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#fbfaf6">
+<title>Tempest Menu Builder</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=Playfair+Display:wght@700;900&display=swap">
+<link rel="stylesheet" href="assets/kitchen.css?v=2026-09-19">
+<style>
+  /* Menu Builder — page-level rules only. Every shared component (header,
+     toolbar, gate, modal, segmented toggle, list rows, toast) lives in
+     assets/kitchen.css and is reused by name, never renamed.
+     Slice 1 (docs/menu-builder.md): dishes and their status. No costs yet. */
+
+  /* stacked label/input pairs share one rhythm, as on Recipe Costing */
+  .modal{max-width:440px;max-height:88vh}
+  .modal h3{margin-bottom:4px}
+  .modal input,.modal select{margin-bottom:0}
+  .nb-label{margin:14px 0 7px}
+
+  /* used by: menu builder — the dish's text and number boxes.
+     Qualified to out-specify kitchen.css's .modal input[type="text"] (0,2,1),
+     which is 0.95rem = 15.2px and zooms iOS on focus (#135). Declaring 16px on
+     the bare class alone would lose the cascade and render at 15.2px. */
+  .modal input[type="text"].dish-input,.dish-input{width:100%;min-height:44px;margin:0;
+             padding:10px 12px;background:var(--paper);border:1px solid var(--edge);
+             border-radius:6px;color:var(--ink);font-family:var(--font);font-size:16px;
+             outline:none;-webkit-appearance:none;appearance:none}
+  .modal textarea.dish-notes,.dish-notes{font-size:16px;margin-bottom:0;border-color:var(--edge)}
+  .dish-input::placeholder,.dish-notes::placeholder{color:var(--grey)}
+  /* used by: menu builder — "Makes [1] plates", "[26] – [28] %": a box with
+     its words beside it */
+  .dish-inline{display:flex;align-items:center;gap:8px}
+  .dish-inline .dish-input{flex:0 0 84px;text-align:center}
+  .dish-inline span{font-size:0.95rem;color:var(--ink)}
+  /* a field that failed its check gets a heavier edge, never a colour of its own;
+     the words in .modal-err below it say what is wrong */
+  .dish-input.bad,.dish-notes.bad{border:2px solid var(--ink)}
+  .modal-err{margin:6px 0 0}
+  /* the status toggle sits in a modal that is already 440px wide */
+  #dStatus .filter-btn{padding:9px 4px;font-size:0.85rem}
+  /* used by: menu builder — the "Show dropped (N)" line at the foot of the list */
+  .dropped-bar{padding:14px 20px;border-bottom:1px solid var(--hair)}
+  /* the status word on a list row: ink and heavy, the way .uc carries a number */
+  .ing-row .uc{font-size:0.85rem;font-family:var(--font-cond);letter-spacing:.08em;text-transform:uppercase}
+  /* Restore sits on a row whose tap opens the dish; it is a button of its own */
+  .ing-row .link-btn.retire{margin-left:0}
+  /* while a write is in flight every control is locked: --faint text and a
+     dashed edge, never a hue (as Recipe Costing's Slice 4). Ids, not bare
+     classes, so .link-btn.retire.restore (0,3,0) cannot outrank it. */
+  #listBody .link-btn:disabled,#app .new-btn:disabled{color:var(--faint);background:transparent;border-color:var(--edge);border-style:dashed;cursor:default}
+  #listBody.is-saving .ing-row{cursor:default}
+  #dStatus .filter-btn:disabled{cursor:default}
+  @media print{
+    /* paper is the list: no buttons, no filter, no "Show dropped" control */
+    .dropped-bar .toggle{display:none !important}
+  }
+</style>
+</head>
+<body>
+
+<!-- PIN gate — the whole page is manager-only -->
+<div class="gate hide" id="gate">
+  <h2>Menu Builder</h2>
+  <p>Manager PIN required — draft dishes and what they cost.</p>
+  <input class="pin-input" type="tel" inputmode="numeric" pattern="[0-9]*" maxlength="4" id="gateInput" autocomplete="off">
+  <div class="gate-err" id="gateErr">Incorrect PIN</div>
+  <div class="gate-btns">
+    <a class="gate-btn back" href="index.html">← Home</a>
+    <button class="gate-btn go" onclick="submitGate()">Unlock</button>
+  </div>
+</div>
+
+<div id="app" style="display:none">
+<div class="header">
+  <div class="header-row">
+    <a class="home-link" href="index.html">← Home</a>
+    <h1>Tempest <span>Menu Builder</span></h1>
+    <div class="lock-tag">🔒 Manager</div>
+  </div>
+  <div class="toolbar">
+    <input class="pick-filter" id="filter" type="text" placeholder="Filter dishes…" autocomplete="off" oninput="render()">
+    <button class="new-btn" id="newBtn" onclick="openNew()">＋ New dish</button>
+  </div>
+  <div class="subrow">
+    <div class="count-tag" id="countTag">—</div>
+  </div>
+</div>
+
+<div class="intro">Draft dishes for R&amp;D. Each one moves Idea → Testing → Ready, or is dropped. What a dish costs comes in a later update.</div>
+
+<div id="listBody"><div class="loading"><div class="spinner"></div><p>Loading…</p></div></div>
+</div>
+
+<!-- New dish: the name only -->
+<div class="modal-bg" id="newModal">
+  <div class="modal">
+    <h3>New dish</h3>
+    <div class="msub">Starts as an Idea, making 1 plate, target 26–28%.</div>
+    <label class="nb-label" for="newName">Name</label>
+    <input class="dish-input" id="newName" type="text" placeholder="e.g. Winter Squash Melt" autocomplete="off">
+    <div class="modal-err" id="newErr"></div>
+    <div class="modal-btns" style="margin-top:18px">
+      <button class="modal-btn cancel" id="newCancel" onclick="closeNew()">Cancel</button>
+      <button class="modal-btn save" id="newSave" onclick="saveNew()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- One dish -->
+<div class="modal-bg" id="dishModal">
+  <div class="modal">
+    <h3 id="dTitle">Dish</h3>
+    <div class="msub">Draft dish · costs come later</div>
+
+    <label class="nb-label" for="dName">Name</label>
+    <input class="dish-input" id="dName" type="text" autocomplete="off" oninput="dishEdited()">
+    <div class="modal-err" id="eName"></div>
+
+    <div class="nb-label">Status</div>
+    <div class="filter-toggle" id="dStatus" role="group" aria-label="Status">
+      <button class="filter-btn" data-s="idea" onclick="pickStatus('idea')">Idea</button>
+      <button class="filter-btn" data-s="testing" onclick="pickStatus('testing')">Testing</button>
+      <button class="filter-btn" data-s="ready" onclick="pickStatus('ready')">Ready</button>
+      <button class="filter-btn" data-s="dropped" onclick="pickStatus('dropped')">Dropped</button>
+    </div>
+
+    <label class="nb-label" for="dPlates">Makes</label>
+    <div class="dish-inline">
+      <input class="dish-input" id="dPlates" type="text" inputmode="decimal" autocomplete="off" oninput="dishEdited()">
+      <span>plates</span>
+    </div>
+    <div class="modal-err" id="ePlates"></div>
+
+    <label class="nb-label" for="dPrice">Menu price ($)</label>
+    <div class="dish-inline">
+      <input class="dish-input" id="dPrice" type="text" inputmode="decimal" placeholder="none yet" autocomplete="off" oninput="dishEdited()">
+    </div>
+    <div class="modal-err" id="ePrice"></div>
+
+    <label class="nb-label" for="dLow">Target food cost</label>
+    <div class="dish-inline">
+      <input class="dish-input" id="dLow" type="text" inputmode="decimal" aria-label="Target low %" autocomplete="off" oninput="dishEdited()">
+      <span>–</span>
+      <input class="dish-input" id="dHigh" type="text" inputmode="decimal" aria-label="Target high %" autocomplete="off" oninput="dishEdited()">
+      <span>%</span>
+    </div>
+    <div class="modal-err" id="eTarget"></div>
+
+    <label class="nb-label" for="dNotes">Notes</label>
+    <textarea class="dish-notes" id="dNotes" rows="3" oninput="dishEdited()"></textarea>
+
+    <div class="modal-btns" style="margin-top:18px">
+      <button class="modal-btn cancel" id="dBack" onclick="closeDish()">← Menu</button>
+      <button class="modal-btn save" id="dSave" onclick="saveDish()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+var SB='https://sxppuyarecqkgkrsrefc.supabase.co',SK='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN4cHB1eWFyZWNxa2drcnNyZWZjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczOTA4MzAsImV4cCI6MjA5Mjk2NjgzMH0.GM8OfcR68_JjdPeQ3k7j6L3ulJFaeS1xnSLBcdtYXtU';
+var MANAGER_PIN='4316';
+var LOCATION='Tempest';
+var MGR_KEY='boxkitchen_mgr';
+/* The house target every new dish starts with (Stephen, 2026-11-02). */
+var TARGET_LOW=26,TARGET_HIGH=28;
+var STATUS_WORD={idea:'Idea',testing:'Testing',ready:'Ready',dropped:'Dropped'};
+var STATUS_RANK={ready:0,testing:1,idea:2,dropped:3};
+
+var drafts=[];          // menu_drafts rows, as the server last sent them
+var loaded=false,loadError=false;
+var showDropped=false;
+var busy=false;         // one write at a time, page-wide
+var curId=null;         // the dish open in the dish screen
+var dStatusPick=null;   // the status chosen on the dish screen, not yet saved
+var dishSnap=null;      // field values as last filled from the server
+var newId=null;         // the id a not-yet-confirmed new dish was sent with
+var st=null;
+
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+
+/* ---- the database ----
+   No answer within API_TIMEOUT is given up on. Giving up says nothing about
+   the TABLE - the write may still have landed - so a write that times out is
+   looked up by id, never reported failed (Recipe Costing, Slice 4).
+   status 0 = no answer at all. One callback per request. */
+var API_TIMEOUT=15000,LOAD_TIMEOUT=60000;
+function api(m,t,q,d,cb,ms,prefer){var x=new XMLHttpRequest(),fired=false;function fire(r,s){if(fired)return;fired=true;if(cb)cb(r,s);}
+  x.open(m,SB+'/rest/v1/'+t+(q?'?'+q:''));x.timeout=ms||(m==='GET'?LOAD_TIMEOUT:API_TIMEOUT);x.setRequestHeader('apikey',SK);x.setRequestHeader('Authorization','Bearer '+SK);if(d){x.setRequestHeader('Content-Type','application/json');x.setRequestHeader('Prefer',prefer||'return=representation');}
+  x.onload=function(){var r=null;try{r=JSON.parse(x.responseText);}catch(e){}fire(r,x.status);};x.onerror=function(){fire(null,0);};x.ontimeout=function(){fire(null,0);};x.send(d?JSON.stringify(d):null);}
+/* What a write's answer says about the table:
+     'ok' it landed, here is the row - 'no' the server answered and wrote
+     nothing - 'unknown' no answer, an unreadable one, a 409 or a 5xx (a
+     gateway 502/504 can come AFTER the commit): look before saying anything. */
+function answerOf(r,status){
+  if(Array.isArray(r)&&r.length)return 'ok';
+  if(status===409||status>=500)return 'unknown';
+  if(status>=400||Array.isArray(r))return 'no';
+  return 'unknown';
+}
+function lookUp(id,cb){api('GET','menu_drafts','id=eq.'+encodeURIComponent(id)+'&select=*',null,function(r){cb(Array.isArray(r)?r:null);},API_TIMEOUT);}
+
+/* The page names every new dish itself, so a retry after a lost answer
+   upserts the SAME row instead of making a second. */
+function newUuid(){
+  if(window.crypto&&crypto.randomUUID)return crypto.randomUUID();
+  var b=new Uint8Array(16);crypto.getRandomValues(b);
+  b[6]=(b[6]&15)|64;b[8]=(b[8]&63)|128;
+  var h='';for(var i=0;i<16;i++){h+=(b[i]+256).toString(16).slice(1);if(i===3||i===5||i===7||i===9)h+='-';}
+  return h;
+}
+
+/* ---- PIN gate ---- */
+function revealApp(){document.getElementById('gate').classList.add('hide');document.getElementById('app').style.display='';load();}
+function submitGate(){
+  var v=(document.getElementById('gateInput').value||'').trim();
+  if(v===MANAGER_PIN){try{sessionStorage.setItem(MGR_KEY,'1');}catch(e){}revealApp();}
+  else{document.getElementById('gateErr').classList.add('show');var inp=document.getElementById('gateInput');inp.value='';inp.focus();}
+}
+document.getElementById('gateInput').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();submitGate();}});
+function boot(){
+  var already=false;try{already=sessionStorage.getItem(MGR_KEY)==='1';}catch(e){}
+  if(already){revealApp();}
+  else{document.getElementById('gate').classList.remove('hide');setTimeout(function(){document.getElementById('gateInput').focus();},120);}
+}
+
+/* ---- load ---- */
+var loadGen=0;
+function load(){
+  var gen=++loadGen;loadError=false;
+  api('GET','menu_drafts','location=eq.'+LOCATION+'&select=*&order=name.asc',null,function(r){
+    if(gen!==loadGen)return;
+    if(Array.isArray(r)){drafts=r;loaded=true;}else{loadError=true;}
+    render();
+  });
+}
+function landRow(row){
+  for(var i=0;i<drafts.length;i++)if(drafts[i].id===row.id){drafts[i]=row;render();return;}
+  drafts.push(row);render();
+}
+function findDraft(id){for(var i=0;i<drafts.length;i++)if(drafts[i].id===id)return drafts[i];return null;}
+
+/* ---- the menu view ---- */
+function words(q){return String(q||'').toLowerCase().split(/\s+/).filter(Boolean);}
+function hasAll(hay,ws){hay=String(hay||'').toLowerCase();for(var i=0;i<ws.length;i++)if(hay.indexOf(ws[i])<0)return false;return true;}
+function money(n){return '$'+Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function byMenu(a,b){return (STATUS_RANK[a.status]-STATUS_RANK[b.status])||String(a.name).localeCompare(String(b.name),undefined,{sensitivity:'base'});}
+function plural(n,w){return n+' '+w+(n===1?'':'s');}
+function dishRow(d){
+  var dropped=d.status==='dropped';
+  var sub=(d.menu_price!=null?money(d.menu_price):'no menu price yet')+' · costs come later';
+  return '<div class="ing-row'+(dropped?' retired':'')+'" data-id="'+esc(d.id)+'" onclick="rowTap(this)">'+
+    '<div class="ing-main"><div class="ing-name">'+esc(d.name)+'</div><div class="ing-pack">'+esc(sub)+'</div></div>'+
+    (dropped?'<button class="link-btn retire restore" onclick="event.stopPropagation();restore(this.parentNode.getAttribute(\'data-id\'))"'+(busy?' disabled':'')+'>Restore</button>'
+            :'<div class="ing-cost"><div class="uc">'+STATUS_WORD[d.status]+'</div></div>')+
+  '</div>';
+}
+function render(){
+  var lb=document.getElementById('listBody'),tag=document.getElementById('countTag');
+  lb.classList.toggle('is-saving',busy);
+  if(loadError){
+    tag.textContent='—';
+    lb.innerHTML='<div class="empty">Could not load the dishes — check the connection.<br><br><button class="link-btn retire restore" onclick="load()">Retry</button></div>';
+    return;
+  }
+  if(!loaded)return;
+  var ws=words(document.getElementById('filter').value);
+  var live=drafts.filter(function(d){return d.status!=='dropped';});
+  var gone=drafts.filter(function(d){return d.status==='dropped';});
+  var shown=live.filter(function(d){return hasAll(d.name,ws);}).sort(byMenu);
+  var target=' · target '+TARGET_LOW+'–'+TARGET_HIGH+'%';
+  tag.innerHTML=(ws.length?'<b>'+shown.length+'</b> of '+plural(live.length,'draft'):'<b>'+live.length+'</b> '+(live.length===1?'draft':'drafts'))+target;
+  var h='';
+  if(!drafts.length)h='<div class="empty">No draft dishes yet.<br>Tap ＋ New dish to start one.</div>';
+  else if(!shown.length)h='<div class="empty">'+(live.length?'No dishes match “'+esc(document.getElementById('filter').value.trim())+'”.':'Every draft is dropped.')+'</div>';
+  for(var i=0;i<shown.length;i++)h+=dishRow(shown[i]);
+  if(gone.length){
+    h+='<div class="dropped-bar"><button class="toggle" id="droppedToggle" onclick="toggleDropped()">'+(showDropped?'Hide dropped':'Show dropped ('+gone.length+')')+'</button></div>';
+    if(showDropped){
+      var g=gone.filter(function(d){return hasAll(d.name,ws);}).sort(byMenu);
+      for(var j=0;j<g.length;j++)h+=dishRow(g[j]);
+    }
+  }
+  lb.innerHTML=h;
+}
+function toggleDropped(){showDropped=!showDropped;render();}
+function rowTap(el){if(busy)return;openDish(el.getAttribute('data-id'));}
+
+/* ---- one write at a time ---- */
+var LOCK_IDS=['newName','newCancel','newSave','dName','dPlates','dPrice','dLow','dHigh','dNotes','dBack','dSave','newBtn'];
+function setBusy(on){
+  busy=on;
+  for(var i=0;i<LOCK_IDS.length;i++)document.getElementById(LOCK_IDS[i]).disabled=on;
+  var sb=document.querySelectorAll('#dStatus .filter-btn');for(var k=0;k<sb.length;k++)sb[k].disabled=on;
+  document.getElementById('newSave').textContent=on?'Saving…':'Save';
+  document.getElementById('dSave').textContent=on?'Saving…':'Save';
+  render();
+}
+
+/* ---- numbers as typed ---- */
+/* '' -> null; a plain decimal -> a number; anything else -> NaN */
+function parseNum(s,strip){
+  s=String(s==null?'':s).trim();if(strip)s=s.replace(strip,'').trim();
+  if(s==='')return null;
+  if(!/^(\d+\.?\d*|\.\d+)$/.test(s))return NaN;
+  return parseFloat(s);
+}
+function numText(n){return n==null?'':String(Number(n));}
+function priceText(n){return n==null?'':Number(n).toFixed(2);}
+
+/* ---- new dish ---- */
+function openNew(){
+  if(busy)return;
+  newId=null;
+  var n=document.getElementById('newName');n.value='';n.classList.remove('bad');
+  showErr('newErr','');
+  document.getElementById('newModal').classList.add('show');
+  setTimeout(function(){n.focus();},60);
+}
+function closeNew(){if(busy)return;newId=null;document.getElementById('newModal').classList.remove('show');}
+document.getElementById('newName').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();saveNew();}});
+function saveNew(){
+  if(busy)return;
+  var inp=document.getElementById('newName'),name=inp.value.trim();
+  if(!name){inp.classList.add('bad');showErr('newErr','Give the dish a name.');return;}
+  inp.classList.remove('bad');showErr('newErr','');
+  /* the SAME id on every try until one is confirmed: a lost answer cannot make two dishes */
+  if(!newId)newId=newUuid();
+  var id=newId;
+  var body={id:id,location:LOCATION,name:name,status:'idea',makes_plates:1,target_low:TARGET_LOW,target_high:TARGET_HIGH};
+  setBusy(true);
+  function landed(row){
+    setBusy(false);newId=null;landRow(row);
+    document.getElementById('newModal').classList.remove('show');
+    showToast('Added '+row.name);openDish(row.id);
+  }
+  api('POST','menu_drafts','on_conflict=id',body,function(r,status){
+    var a=answerOf(r,status);
+    if(a==='ok')return landed(r[0]);
+    if(a==='no'){setBusy(false);return showToast('Could not add the dish — try again',true);}
+    /* no answer: ask the table whether it landed before offering a retry */
+    lookUp(id,function(rows){
+      if(rows&&rows.length)return landed(rows[0]);
+      setBusy(false);
+      if(rows)showToast('The dish did not save — tap Save to try again',true,LONG_TOAST);
+      else showToast('Could not confirm the dish saved — check the connection, then tap Save again',true,LONG_TOAST);
+    });
+  },null,'resolution=merge-duplicates,return=representation');
+}
+
+/* ---- one dish ---- */
+var DISH_FIELDS=['dName','dPlates','dPrice','dLow','dHigh','dNotes'];
+function fillDish(d){
+  document.getElementById('dTitle').textContent=d.name;
+  document.getElementById('dName').value=d.name;
+  document.getElementById('dPlates').value=numText(d.makes_plates);
+  document.getElementById('dPrice').value=priceText(d.menu_price);
+  document.getElementById('dLow').value=numText(d.target_low);
+  document.getElementById('dHigh').value=numText(d.target_high);
+  document.getElementById('dNotes').value=d.notes||'';
+  dStatusPick=d.status;syncStatus();
+  clearErrs();
+  dishSnap=snapDish();
+}
+function snapDish(){var s=DISH_FIELDS.map(function(f){return document.getElementById(f).value;});s.push(dStatusPick);return s.join('\u0001');}
+function dishDirty(){return curId!=null&&dishSnap!=null&&snapDish()!==dishSnap;}
+function dishEdited(){}
+function syncStatus(){
+  var b=document.querySelectorAll('#dStatus .filter-btn');
+  for(var i=0;i<b.length;i++){var on=b[i].getAttribute('data-s')===dStatusPick;b[i].classList.toggle('active',on);b[i].setAttribute('aria-pressed',on?'true':'false');}
+}
+function openDish(id){
+  var d=findDraft(id);if(!d)return;
+  curId=id;fillDish(d);
+  document.getElementById('dishModal').classList.add('show');
+}
+function closeDish(force){
+  if(busy)return;
+  if(!force&&dishDirty()&&!confirm('Leave without saving? Your changes to this dish will be lost.'))return;
+  curId=null;dishSnap=null;
+  document.getElementById('dishModal').classList.remove('show');
+}
+var DROP_ASK='Drop this dish? It will be hidden, not deleted. You can bring it back from "Show dropped".';
+function pickStatus(s){
+  if(busy||s===dStatusPick)return;
+  if(s==='dropped'){
+    var vals=readDish();if(!vals)return;
+    if(!confirm(DROP_ASK))return;
+    dStatusPick='dropped';syncStatus();
+    return saveDish();
+  }
+  dStatusPick=s;syncStatus();
+}
+function showErr(id,msg){var e=document.getElementById(id);e.textContent=msg;e.classList.toggle('show',!!msg);}
+function clearErrs(){['eName','ePlates','ePrice','eTarget'].forEach(function(e){showErr(e,'');});DISH_FIELDS.forEach(function(f){document.getElementById(f).classList.remove('bad');});}
+/* Every check runs before any write; each says in words what is wrong. null = not valid. */
+function readDish(){
+  clearErrs();
+  var bad=false;
+  function no(field,err,msg){bad=true;showErr(err,msg);[].concat(field).forEach(function(f){document.getElementById(f).classList.add('bad');});}
+  var name=document.getElementById('dName').value.trim();
+  var plates=parseNum(document.getElementById('dPlates').value);
+  var price=parseNum(document.getElementById('dPrice').value,/^\$/);
+  var low=parseNum(document.getElementById('dLow').value,/%$/);
+  var high=parseNum(document.getElementById('dHigh').value,/%$/);
+  if(!name)no('dName','eName','Give the dish a name.');
+  if(plates==null||isNaN(plates)||plates<=0)no('dPlates','ePlates','Makes must be a number more than 0, like 1 or 12.');
+  if(price!=null&&(isNaN(price)||price<=0))no('dPrice','ePrice','Leave the price blank, or type a price more than $0, like 14.00.');
+  if(low==null||high==null||isNaN(low)||isNaN(high)||!(low>0&&low<=high&&high<100))
+    no(['dLow','dHigh'],'eTarget','Target must be two numbers between 0 and 100, the lower one first, like 26 – 28.');
+  if(bad)return null;
+  return {name:name,makes_plates:plates,menu_price:price,target_low:low,target_high:high,notes:document.getElementById('dNotes').value.trim()||null};
+}
+function sameAsSent(row,b){
+  function n(a,c){return (a==null)===(c==null)&&(a==null||Math.abs(Number(a)-Number(c))<0.005);}
+  return row.name===b.name&&row.status===b.status&&n(row.makes_plates,b.makes_plates)&&n(row.menu_price,b.menu_price)&&
+         n(row.target_low,b.target_low)&&n(row.target_high,b.target_high)&&(row.notes||null)===(b.notes||null);
+}
+/* An edit PATCHes the one id and renders from the row the server sends back. */
+function patchDish(id,body,onLanded,label){
+  setBusy(true);
+  body.updated_at=new Date().toISOString();
+  function landed(row){setBusy(false);landRow(row);onLanded(row);}
+  api('PATCH','menu_drafts','id=eq.'+encodeURIComponent(id),body,function(r,status){
+    var a=answerOf(r,status);
+    if(a==='ok')return landed(r[0]);
+    if(a==='no'){setBusy(false);return showToast('Could not save '+label+' — try again',true);}
+    lookUp(id,function(rows){
+      var row=rows&&rows[0];
+      if(row&&sameAsSent(row,{name:body.name!=null?body.name:row.name,status:body.status,
+         makes_plates:'makes_plates' in body?body.makes_plates:row.makes_plates,menu_price:'menu_price' in body?body.menu_price:row.menu_price,
+         target_low:'target_low' in body?body.target_low:row.target_low,target_high:'target_high' in body?body.target_high:row.target_high,
+         notes:'notes' in body?body.notes:row.notes}))return landed(row);
+      setBusy(false);
+      if(rows)showToast(label+' did not save — tap again to retry',true,LONG_TOAST);
+      else showToast('Could not confirm '+label+' saved — check the connection, then try again',true,LONG_TOAST);
+    });
+  });
+}
+function saveDish(){
+  if(busy||curId==null)return;
+  var vals=readDish();if(!vals)return;
+  vals.status=dStatusPick;
+  var id=curId;
+  patchDish(id,vals,function(row){
+    if(curId!==id)return;
+    if(row.status==='dropped'){closeDish(true);showToast('Dropped '+row.name+' — find it under Show dropped');return;}
+    fillDish(row);showToast('Saved');
+  },'the dish');
+}
+function restore(id){
+  if(busy)return;
+  var d=findDraft(id);if(!d)return;
+  patchDish(id,{status:'idea'},function(row){showToast('Restored '+row.name+' as an Idea');},'the restore');
+}
+
+/* ---- toast ---- */
+var LONG_TOAST=6000;
+function showToast(msg,isErr,ms){var t=document.getElementById('toast');t.textContent=(isErr?'⚠ ':'✓ ')+msg;t.classList.toggle('error',!!isErr);t.classList.add('show');clearTimeout(st);st=setTimeout(function(){t.classList.remove('show');},ms||1600);}
+
+/* A stray tap outside a modal must not throw away what was typed. */
+document.getElementById('dishModal').addEventListener('click',function(e){if(e.target===this)closeDish();});
+document.getElementById('newModal').addEventListener('click',function(e){
+  if(e.target!==this||busy)return;
+  if(document.getElementById('newName').value.trim()&&!confirm('Discard this new dish?'))return;
+  closeNew();
+});
+window.onbeforeunload=function(e){if(dishDirty()||busy){e.preventDefault();e.returnValue='';return '';}};
+
+boot();
+</script>
+</body>
+</html>
