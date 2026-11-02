@@ -8,6 +8,8 @@ Slice 1's promises, on one kit (Spicy Green Sauce):
   - a changed amount stays in its container and shows the new amount;
   - a renamed ingredient goes to "Not sorted yet", and the box appears only then;
   - heading lines and blank lines are skipped; "jalapeno" and "jalapeño" both match;
+  - a keyword picks up exactly one line: a second "garlic" line goes to
+    "Not sorted yet" and nothing else moves;
   - the page sends no write request of any kind.
 
 None of that can be checked against the live database, so: load the REAL page,
@@ -39,7 +41,7 @@ CHROME_CANDIDATES = [
 ]
 PAGE = "tempest_kits.html"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SCENARIOS = ("ok", "amount", "renamed", "headings")
+SCENARIOS = ("ok", "amount", "renamed", "headings", "twogarlic")
 
 
 def find_chrome():
@@ -84,6 +86,8 @@ TEXTS = {
                 "10 each Garlic, smashed and rough chopped\n\n  \n2 Tbsp Lemon juice\n"
                 "2 cups Chef’s Greek yogurt",
 }
+# a second line matching "garlic": the keyword picks up one line only
+TEXTS["twogarlic"] = GREEN + "\n2 each garlic, minced"
 RECIPES = [
     {"id": 25, "location": "Tempest", "name": "Spicy Green Sauce", "status": "active"},
     # another location's row with the same id range must never be used
@@ -205,6 +209,13 @@ RUNNER = r"""
       var gy=b.filter(function(x){return x[0]==='Greek yogurt';})[0];
       ok('headings: a curly apostrophe does not stop a match', !!gy&&gy[1][0]==='2 cups Chef’s Greek yogurt', b);
       ok('headings: still 5 containers', b.length===5, b);
+    }
+    if(S==='twogarlic'){
+      var hv2=b.filter(function(x){return x[0]==='Herbs & veg';})[0];
+      ok('twogarlic: the original garlic line stays in container 2', !!hv2&&hv2[2]==='2'&&hv2[1].indexOf('10 each Garlic, smashed and rough chopped')>-1, b);
+      ok('twogarlic: the new line is not in a container', b.every(function(x){return x[1].indexOf('2 each garlic, minced')<0;}), b);
+      ok('twogarlic: the new line shows in "Not sorted yet", alone', !!un&&[].map.call(un.querySelectorAll('.kit-line'),txt).join('|')==='2 each garlic, minced', un&&txt(un));
+      ok('twogarlic: nothing else moves', JSON.stringify(b.map(function(x){return [x[0],x[1]];}))===JSON.stringify(E), b);
     }
     finish();
   }
