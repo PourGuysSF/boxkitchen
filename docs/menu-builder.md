@@ -378,6 +378,17 @@ because nothing in it depends on that plan. Slice 0 became **0a** (the dishes ta
 
 **Done when:** `menu_drafts` exists (confirmed read-only, 0 rows) and RLS matches the site's pattern.
 
+**As built — 2026-11-02.** `docs/menu-builder-slice0a.sql`, run by Stephen in the Supabase SQL
+editor; confirming select `menu_drafts, 0`; PostgREST read-only `content-range: */0`; `pg_policies`
+shows exactly select / insert / update. One addition to the ticket: Supabase's default privileges
+grant ALL on new tables, so the script `revoke all` then grants select / insert / update — delete is
+refused by the missing grant as well as the missing policy (Inventory's tables keep the default
+delete grant and rely on the policy alone). Proved first on a throwaway `pgserver` Postgres with
+Supabase-like roles and default privileges: same-id upsert twice → one row, updated; delete as
+`anon` refused; `status='done'`, plates 0, price 0, targets 30–26, target 100, blank and null name
+each refused. Gotcha: copying the SQL out of the terminal mangled a line (*syntax error near "st"*);
+hand Stephen SQL with `pbcopy < file`, never from scrollback.
+
 ### Slice 0b — The lines table *(no app code)* · waits on costing-plan approval
 
 - Re-check D1–D16 against the approved costing plan; update this document.
@@ -401,6 +412,32 @@ because nothing in it depends on that plan. Slice 0 became **0a** (the dishes ta
 
 **Done when:** a dish can be made, renamed, moved through every status, dropped and restored; a
 dropped response cannot make two dishes; nothing is ever deleted — all against a stubbed `api()`.
+
+**As built — 2026-11-02.** `tempest_menu_builder.html`, unlinked (no tile). Copied from
+`tempest_costing.html`'s head, gate and `api()` (which gained a `prefer` argument for the upsert).
+- **Screens:** the dish screen is a modal (`#dishModal`, *← Menu* closes it), so print hides it with
+  every other modal. List rows reuse `.ing-row` / `.ing-pack` / `.uc`; status toggle reuses
+  `.filter-toggle` / `.filter-btn`; filter reuses `.pick-filter`; errors reuse `.modal-err` (words)
+  plus a 2px ink edge on the bad box. New classes, each with a `used by:` banner: `.dish-input`
+  (qualified for 16px), `.dish-notes`, `.dish-inline`, `.dropped-bar`.
+- **Second line of a row** reads `$14.00 · costs come later` / `no menu price yet · costs come
+  later` (the ticket's wording, not the *—* above).
+- **Write path:** `newUuid()` (randomUUID, getRandomValues fallback) is kept across retries until a
+  create is confirmed; create = `POST ?on_conflict=id` with
+  `resolution=merge-duplicates,return=representation`; edits and Restore = `PATCH id=eq.<id>` with
+  `updated_at`, rendered from the returned row. `answerOf()` from costing: an `unknown` answer
+  (no answer, 409, 5xx) re-GETs by id — a create found is opened; an edit is accepted only if the
+  row matches what was sent. One write at a time page-wide (`busy`), every control disabled.
+- **Drop** validates the form first, asks once, then saves every field with `status:'dropped'` and
+  returns to the list.
+- **Proved:** `scripts/check_menu_builder.py` — 17 scenarios, 223 assertions, stubbed stateful
+  `menu_drafts` enforcing the table's checks and upsert rules; 16 guards removed one at a time in
+  throwaway copies, each caught. Double-tap tests call `saveNew()` / `saveDish()` directly too,
+  because a disabled button alone hid a missing busy guard. Phone width is simulated by narrowing
+  `#app` (headless Chrome's layout viewport is 500px whatever `--window-size` says).
+  `check_styling.py` clean, `FS_REGISTER` unchanged. Read-only render against live: 0 drafts, no
+  writes. CI: `.github/workflows/menu-builder-guard.yml`, copied from Kits'.
+- **Not yet:** Stephen's phone test and a read-back of his first real dish.
 
 ### Slice 2 — Lines from the price list · waits on the costing plan's Slice 3 (the math)
 
