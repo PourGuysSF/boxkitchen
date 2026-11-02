@@ -513,6 +513,26 @@ Slice 2 on, every piece of arithmetic goes into `assets/recipe-math.js`, never i
 - **Read-only, Stephen runs:** one query over `pg_policies`, `information_schema.columns` and
   `pg_constraint` for `Recipes` and `ingredient_costs` — to confirm `Recipes.id`'s type, whether
   `Recipes` has a delete policy, and the RLS pattern to mirror.
+
+  > **DONE 2026-11-02.** Stephen ran one read-only query over `pg_policies`, `pg_class`,
+  > `information_schema.columns`, `pg_constraint` and `pg_indexes` for `Recipes` and
+  > `ingredient_costs`, plus `version()`. It showed:
+  >
+  > - **PostgreSQL 17.6.**
+  > - **`Recipes.id` is `bigint` identity**, primary key `Recipes_pkey`. No other constraints,
+  >   no foreign keys. `location` is nullable with **no default** (all 55 rows read `Tempest`);
+  >   `status text not null default 'active'`.
+  > - **`Recipes` has a DELETE policy** (`Recipes delete`, `using (true)`), so hard delete from
+  >   the Recipe Database is live. The cascade and restrict rules under Tables are therefore
+  >   real paths, not theory. Its policies are for role `public`, with RLS on.
+  > - **`ingredient_costs.id` is `bigint` identity.** `location text not null default
+  >   'Tempest'`; `order_item_id` is a nullable FK to `order_items(id)`; the partial unique
+  >   index `ingredient_costs_one_active_per_order_item`. Policies `ic_sel` / `ic_ins` / `ic_upd`
+  >   are for **`anon` only** (with `using (true)` / `with check (true)`); no delete policy; RLS on.
+  > - **The pattern to mirror:** RLS on; separate SELECT / INSERT / UPDATE policies,
+  >   `using (true)` / `with check (true)`; no DELETE policy; `bigint` identity ids;
+  >   `location text not null default 'Tempest'`. Roles **`anon, authenticated`**, as the plan
+  >   says and as Inventory's newer tables do (a superset of `ingredient_costs`' `anon`).
 - **The SQL:** the four tables, keys, checks, foreign keys and RLS (select / insert / update for
   `anon, authenticated`; no delete) in one transaction, ending with a select confirming each table
   exists with 0 rows. Dollar-quoted text. Proved first against a throwaway local Postgres shaped
@@ -520,6 +540,36 @@ Slice 2 on, every piece of arithmetic goes into `assets/recipe-math.js`, never i
   line with two targets refused; a second conversion of one kind for one price row, or for one
   recipe, refused; delete refused; a recipe delete cascading to its lines, yield and conversions; a
   sub-recipe delete refused.
+
+  > **WRITTEN 2026-11-02, not yet run.** `docs/recipe-costing-slice0.sql` (copy at
+  > `~/Downloads/recipe_costing_setup.sql`). One transaction; a `do` block raises — undoing
+  > everything — unless all four tables have 0 rows, there are exactly 12 policies, and none is a
+  > delete policy. Choices the plan left open: `from_kind` is `volume`, `weight`, or the count
+  > word itself (`clove`); a yield's and a portion's amount and unit are both set or both empty;
+  > two extra indexes on `recipe_lines` (`ingredient_cost_id`, `sub_recipe_id`) for the
+  > "where is this used" lookups. `ingredient_cost_id` has no on-delete rule (price rows are
+  > never deleted; Postgres refuses it if one ever is).
+  >
+  > **Proved against a throwaway local Postgres 17** shaped like Supabase (`anon` and
+  > `authenticated` roles; `Recipes` and `ingredient_costs` with their columns, policies and the
+  > real 55 and 166 ids), the file sent as one message the way the SQL editor does — **41 of 41**:
+  > as `anon`, a line saved by upsert and a retry updating that one row; a duplicate line
+  > refused; a second identical line kept as occurrence 2; two targets, no target, skip with a
+  > target, no amount, a zero amount, a recipe inside itself, an unknown recipe and an unknown
+  > price row each refused; a sub-recipe line saved; a line dismissed by update; a second
+  > same-kind conversion refused for a price row and for a recipe, another kind allowed, a
+  > conversion upsert keeping one row; a second yield row and a yield without a unit refused;
+  > delete refused on all four tables, both without a grant and with Supabase's default delete
+  > grant (no policy → deletes nothing); `authenticated` can read; deleting a recipe used inside
+  > another refused; deleting a recipe cascading to its line, yield and conversion; exactly
+  > select / insert / update policies on each table. A copy with a check that cannot pass
+  > raised and left **no tables and no policies**; the real file then applied cleanly.
+  > Not proved: Supabase's own grants and PostgREST's schema reload, which only the real run
+  > shows — hence the read-only GETs after it.
+  >
+  > **To undo it**, if ever needed (Stephen runs it; it deletes the four tables and their data):
+  > `drop table public.recipe_lines, public.ingredient_conversions, public.recipe_conversions,
+  > public.recipe_yields;`
 - **Tidy-ups for Stephen, not blocking:** Bubu arare's pack (126.96 oz); ~~archiving Chicken and
   Dumpling #52~~ (done 2026-11-02; #19 stays, the one Kits uses); the three placeholder order items.
 
