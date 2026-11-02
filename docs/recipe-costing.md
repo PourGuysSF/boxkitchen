@@ -597,6 +597,27 @@ pattern, and the delete behaviour is proved.
 **Done when:** a renamed item is marked; editing it asks; an unrenamed item is untouched; proved
 against a stubbed `api()` in `check_costing.py`, with all of its existing assertions still passing.
 
+> **BUILT 2026-11-02, local commit, not pushed.** `tempest_costing.html`: `renamedFrom(it)`
+> returns the row's saved `name` when it differs from its order item's current name — ignoring
+> case and spacing, which do not make a different item; an off-guide row, or one whose order item
+> the page cannot resolve, is never called renamed. `render()` adds *renamed on the order guide —
+> priced as …* under the pack line, in a new page-only class `.ing-renamed` (the yellow
+> highlighter, as `.ing-pack.unset`; the words carry the meaning on paper). `saveItem()` asks
+> *This price was saved for X. Is it right for Y?* once, before the magnitude check, only when
+> the row stays on the same order item; No writes nothing and leaves the mark. Nothing writes on
+> load.
+>
+> **Proved** in `scripts/check_costing.py`, new scenario `renamed` (order item 169 renamed in
+> place; a row differing only by case and spacing): 26 of 26 — marked, named, current name
+> shown, yellow, on screen; case-only, unrenamed-linked and off-guide rows untouched; opening
+> asks nothing; saving asks once with both names; No writes nothing; Yes writes once with the
+> guide name and the mark clears; unmarked rows save without asking; no write on load. Four
+> deliberate breaks each caught (never marks: 13 fails; case-sensitive: 3; save doesn't ask: 8;
+> red fill: 1). `check_styling.py` clean. **Not clean:** the existing `provenance` scenario
+> fails 5 `m29` invoice-bar height checks — identically on the page before this change, so
+> pre-existing (likely layout under this Chrome), not caused by Slice 1; left for its own look.
+> Not yet done: Stephen's phone look at a marked row, and review/PR.
+
 ### Slice 2 — The recipes, read-only *(new page)*
 
 - `tempest_recipe_costing.html`, copied from `tempest_costing.html` (PIN gate, `api()` with its
