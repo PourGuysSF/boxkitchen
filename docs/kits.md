@@ -144,6 +144,11 @@ the page reads the recipe:
 - **Each line is claimed once.** A line nobody claims goes to "Not sorted yet". A keyword that
   finds nothing shows nothing (the recipe dropped that ingredient); a container left empty
   disappears and the numbers close up.
+- **Each keyword picks up exactly one recipe line**: the first line, in recipe order, that it
+  matches and that no other keyword has already picked up. If a recipe has two lines that
+  match one keyword, the kit must list that keyword twice (as Pork Belly does with salt and
+  Mac & Cheese with half & half), or the second line shows in "Not sorted yet". A keyword
+  never picks up more than one line.
 - **A recipe that is missing or archived** makes that kit say "Recipe not found in the Recipe
   Database — tell a manager", never an empty sheet.
 - **Recipes that fail to load** show a message and a Try again button.
@@ -303,10 +308,9 @@ were. The page is reachable only by its address; no tile links to it.
   list is built from the kit list, so Slice 2 adds kits without touching the read.
 - `api()` is cut down to **GET only**: it takes no method and no body, so the page cannot
   send a write. No PIN, no Manager switch, no inputs.
-- The sorting rule exactly as "How a recipe line finds its container". One reading made
-  explicit: **each keyword use claims one line** (the first unclaimed match, in recipe
-  order). A second matching line goes to "Not sorted yet", never quietly into the same
-  container. Kits that need two lines from one word list the keyword twice, as the plan does.
+- The sorting rule exactly as "How a recipe line finds its container", including "each
+  keyword picks up exactly one recipe line" (added to the plan from the planning window after
+  Slice 1 merged, with its guard scenario `twogarlic`).
 - The sheet: kit name, "from <recipe>", numbered containers in bordered rings (CSS circles
   holding the digit, so they print), the hotel pan step (counting only containers that are
   not next to the pan), "Not in the kit" when the kit has any, and "Not sorted yet" at the
@@ -321,15 +325,16 @@ unguarded until Slice 3 adds their scenarios.
 
 **Proved**
 
-- `check_kits.py`: **65 assertions, 4 scenarios, clean** (ok, amount, renamed, headings).
+- `check_kits.py`: **81 assertions, 5 scenarios, clean** (ok, amount, renamed, headings, twogarlic).
   Every scenario: exactly one request, a GET with no body and no write headers, to the one
   URL above; no `fetch`/`sendBeacon`; no inputs on the page; every recipe line lands exactly
   once. Then: today's text gives exactly the 5 containers with nothing unsorted; 2→3 cups
   of yogurt stays in ⑤ and the old amount is gone; yogurt renamed to Skyr appears in "Not
   sorted yet" (heavy border, tell-a-manager line), ⑤ disappears and the pan says 4;
-  headings and blank lines skipped, "Jalapeno" and a curly apostrophe still match.
+  headings and blank lines skipped, "Jalapeno" and a curly apostrophe still match; a second
+  "garlic" line goes to "Not sorted yet" while the first stays in ② and nothing else moves.
 - **It fails when it should**, each in a throwaway copy: a POST instead of a GET (32
-  failures), accents not stripped (caught), heading lines not skipped (caught). Breaking
+  failures), accents not stripped (caught), heading lines not skipped (caught), one keyword picking up two lines (caught). Breaking
   longest-first is **not** caught: Spicy Green Sauce has no overlapping keywords. That
   proof is Slice 2's (red wine / red wine vinegar, butter / buttermilk).
 - `check_styling.py`: clean, 12 pages.
