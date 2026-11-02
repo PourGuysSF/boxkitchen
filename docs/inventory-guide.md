@@ -8,8 +8,12 @@ on an iPhone on 2026-10-07. **Slice 3 is live** — merged as `59fe0ca` (PR #162
 by Stephen on 2026-10-08 on the real October count, **which is open** for month-end. **Slice 4
 is live** — merged as `bac6eb8` (PR #163) and hand-tested in Airplane Mode on 2026-10-20. **A
 real count is now safe to run.** **Slice 5 is live** — merged as `6d85f4f` (PR #164) and checked
-in iOS print preview on 2026-10-20. **Slice 6 is built** on branch `inventory-slice6`: see "Slice 6
-as built". Every decision below was made by Stephen, in the interview that produced
+in iOS print preview on 2026-10-20. **Slice 6 is live** — merged as `967e482` (PR #165); its
+Values tab checked by Stephen on 2026-11-02. **The home-page tile went live early** — `7fbd499`
+(PR #166), 2026-11-02 — the one piece of Slice 9 that could not wait. **October is a practice
+month**, counted by Stephen on November 9; the first real count is the end of November (see
+Question 4). **Slice 7 is built** on branch `inventory-slice7`, with one SQL file not yet run:
+see "Slice 7 as built". Every decision below was made by Stephen, in the interview that produced
 this document or as each slice began. Worktree `~/Developer/boxkitchen-inventory`.
 
 Target file: a new page, `tempest_inventory.html`, copied from `tempest_meat.html` as its
@@ -432,7 +436,13 @@ staff mode shows no dollar figure anywhere, including in the page source's rende
 > unanswered; built as the recommended **Values tab in manager mode**, so no counting screen
 > ever shows money. Easy to change.)
 >
-> **BUILT 2026-10-20** on `inventory-slice6` — see "Slice 6 as built".
+> **SHIPPED.** Merged to `main` as `967e482` (PR #165, squashed) on 2026-10-20. **Checked by
+> Stephen on his phone on 2026-11-02**, reaching the page through the new tile: manager mode,
+> the Values tab, and all three lines of the empty October count's total — "$0.00", "October
+> 2026 count · valued at today's prices", "0 of 0 counted rows valued · 217 of 217 not counted
+> yet": "everything looked fine so far."
+> **Values on real numbers are still unchecked**; that is part of the November 9 practice
+> count. See "Slice 6 as built".
 
 ### Slice 7 — Close the month (manager)
 
@@ -447,6 +457,20 @@ staff mode shows no dollar figure anywhere, including in the page source's rende
 **Done when:** a closed count cannot be written to (proved in the harness against the page,
 and by the RLS rule in Slice 0 at the database); reopen is logged; a price changed in costing
 after close does not move the closed month.
+
+> **Decided by Stephen as the slice began (2026-11-02):**
+> - **October is a practice month** (Question 4), so a count can be closed **as practice**:
+>   closed like any other, shown as *Practice* under Previous months, and never an opening
+>   value for the true food cost % (Slice 8). Without the mark, November's % would start from
+>   the practice numbers.
+> - **The database writes the start / close / reopen record, not the page** — one SQL file,
+>   `docs/inventory-guide-slice7.sql`, run by Stephen. Until now the page wrote the log as a
+>   second request, which a dropped signal could lose (the start log was best-effort; the plan
+>   asked that a reopen not be).
+> - **The hand test is the November 9 practice count**: count, close October as practice, find
+>   it under Previous months, reopen it, close it again.
+>
+> **BUILT 2026-11-02** on `inventory-slice7` — see "Slice 7 as built".
 
 ### Slice 8 — True food cost %
 
@@ -467,8 +491,11 @@ incomplete whenever it should be; the page never writes to any `flash_*` table.
 ### Slice 9 — Ship it into the site *(shared files, last)*
 
 - Bring the branch up to date with `main` first — the costing window keeps merging.
-- `index.html`: the tile becomes a link. Subtitle from "Track on-hand par levels" to what it
-  now does. It stays in Admin, unlocked, because staff count.
+- ~~`index.html`: the tile becomes a link.~~ **Shipped early, 2026-11-02, as `7fbd499` (PR
+  #166)**, so staff could reach the page for the month-end count without a set-up on every
+  device (a shortcut saved to an iPad's home screen keeps its own login, and after the password
+  it landed on Home, where the tile was not yet a link). In Admin, unlocked, subtitle "Month-end
+  count, place by place". Only the tile changed; everything else in this slice still waits.
 - `CLAUDE.md`: "ten pages" → eleven, wherever it is counted (the `?v=` rule, the styling
   section). `BUILD_PLAN.md`: B3 status.
 - `check_styling.py` needs **no page-list change** — it takes `glob("*.html")`, so the new page
@@ -917,6 +944,113 @@ does). **No SQL. No shared file touched.**
 
 ---
 
+## Slice 7 as built
+
+`tempest_inventory.html` (Close, the close screen, Previous months, Reopen; the Values report
+split so an open month and a closed one share it), `scripts/check_inventory.py` (the stub gains
+the trigger, the bulk upsert and filtered PATCHes; *start* rewritten; *close*, *closefail*,
+*reopen*), and **`docs/inventory-guide-slice7.sql`**. No shared file touched: the close button is
+kitchen.css's `.submit-btn` and the choice its `.mode-toggle` — Slice 9 adds *inventory* to those
+sections' `used by:` banners.
+
+### The SQL — `docs/inventory-guide-slice7.sql`, **not yet run**
+
+- `inventory_counts.practice` (boolean, default false) and `inventory_counts.changed_by` (text,
+  always empty at rest).
+- A `before insert or update` trigger on `inventory_counts`: a start, close or reopen **needs a
+  name** (`changed_by`, refused with 23514 when blank), writes its `inventory_count_log` line **in
+  the same statement**, stamps `closed_at` / `closed_by` from the database's clock on a close and
+  clears them on a reopen, and clears `changed_by` — so a later write can never reuse an old name.
+  Any other change (a month corrected) logs nothing.
+- The log's foreign key to its count becomes `deferrable initially deferred`, so the trigger can
+  log a start for the row being inserted.
+- **A self-test inside the transaction** — a pretend `__selftest__` count started, closed, refused a
+  nameless reopen, reopened, marked practice — that undoes itself; then checks that undo the whole
+  file on any mismatch; then `notify pgrst, 'reload schema'`.
+- **Order matters.** The SQL runs first: the Slice 7 page reads `practice` in manager mode and
+  fails without it. Once it has run, the Slice 6 page still live cannot *start* a count (it sends
+  no name) — harmless, since October is open.
+
+### What it does
+
+- **Close {month}…** on the count bar opens a check screen: how much is counted; **what is not
+  counted, place by place, by name** (and that closing leaves them out, not as zero); **what will
+  be saved as not valued**, by reason; the counting dates beside today's (prices freeze on the
+  close day); a reminder to check every other device for a waiting bar; **Real month / Practice
+  count**, with neither picked; who is closing. The button stays off until the choice is made, a
+  name is picked, and nothing typed on this device is still unsaved — and says which.
+- **Closing** asks first, then: a fresh read of every line and today's prices; **one upsert** of
+  `unit_cost_frozen, value_frozen, value_note` for every line (`columns=` names only those, so no
+  counted number, name or typed time is touched; a cleared line goes back to nothing); then a
+  PATCH `id=eq.X&status=eq.open` with `status, practice, changed_by`. A failure before the PATCH
+  leaves the month open, and closing again starts over. A PATCH with no answer is followed by a
+  read of the count, never a guess. The page writes no log line.
+- **A closed month** is read from its saved values only: the total, what it left out and why (as
+  of the close, with no link to change it), each place's subtotal. A line whose saved value no
+  longer matches its own numbers, or one counted after the values were saved, is flagged with
+  what to do: reopen and close again.
+- **Previous months** on the Values tab: each closed month, *Practice* if so, when and by whom,
+  its total, how many counted and how many not valued. One extra manager-only read brings the
+  saved values of every closed month.
+- **Reopen**, behind the PIN, from a closed month: asks first, says what it means; PATCH
+  `id=eq.X&status=eq.closed` with `status, changed_by`. Refused while another count is open
+  (the one-open key), and the page then says which to close first. Reopened, values are live
+  again until the next close recomputes them.
+- **Start** only offers a month with no count yet, and says where the other is; **Wrong month?**
+  never offers one either. A start sends its name with it; the page no longer writes the log.
+
+### Proved
+
+- **The SQL, against a throwaway local Postgres** (installed in a scratch folder), shaped as in
+  Slice 0 — `anon` and `authenticated` roles, the Slice 0 file run as-is, then today's live state
+  (October open, its start line, three blank lines), then the Slice 7 file sent as one message:
+  **34 of 34 checks**, every request after it made **as `anon`**, one transaction each. The
+  self-test passes and leaves nothing; the closing select reads counts 1, practice 0, log 1, the
+  trigger, end of transaction; a second run is refused and changes nothing. As anon: a start with
+  no name (or only spaces) refused; a second open count still refused, **leaving no log line**;
+  the freeze upsert writes every line in one statement and leaves the counted numbers, name and
+  typed time alone; a nameless close refused; a close stamps who and when and logs it; closing
+  twice changes nothing; a closed month refuses a new line, the freeze and an update; a nameless
+  reopen refused even right after a named close; October cannot reopen while November is open,
+  again with no log line; a month corrected without a name logs nothing; reopen clears the close
+  and keeps *practice*; the log cannot be edited or emptied; a count cannot be deleted.
+- **It fails when it should**: four deliberate breaks of the SQL — the name kept, the foreign key
+  left immediate, the self-test not undone, a close not logged — **all four caught**, each by the
+  file's own self-test or checks, so on Supabase each would have undone itself.
+- `check_inventory.py`: **440 assertions, 32 scenarios, clean.** *close*: the bar's Close; the
+  check screen's counts, gaps by place and name, not-valued reasons, dates, device reminder;
+  neither choice picked and the button waiting, then a name, then a waiting count on this device
+  stopping it; No closing nothing; exactly two writes in order — one upsert of the frozen columns
+  only, a row per line including the cleared one, after a fresh read — then the filtered PATCH
+  with practice and name; no log line from the page, the stub's trigger logging it; no counted
+  number touched; the closed month at **$27.75**, still $27.75 after Mayo is re-priced; Previous
+  months; Start never offering a month with a count; staff with no boxes and no `$`. *closefail*:
+  the values refused (no PATCH sent, month open, ready to retry); a lost PATCH answer followed by
+  a read and reported closed; a box changed while closing, and a row counted while closing, both
+  flagged. *reopen*: staff never read a closed month; the manager reads; the saved values not
+  today's; no name refused; refused with another count open, then not offered; reopened with one
+  write, logged by the stub's trigger, close cleared, practice kept; live values again ($60.00).
+  *start* rewritten for the name-carrying start and the months on offer.
+- **It fails when it should**: fifteen deliberate breaks of the page, **all fifteen caught** — the
+  page writing the log; counted numbers in the freeze; a cleared line left out; the close
+  unfiltered; the close before the values; practice not sent; a closed month at today's prices;
+  Close without the choice; a waiting count not stopping it; Start offering a taken month; reopen
+  unfiltered; a lost answer guessed; drift not flagged; a start or a reopen with no name.
+- `check_styling.py`: clean, 11 pages, 86 inputs, register unchanged at 75.
+- **Rendered at 390px** (stubbed data): the close screen and a closed month, read top to bottom.
+
+### Not proved, and known
+
+- **The SQL on Supabase** — Stephen runs it; its closing select and a read-only check of the new
+  columns are what show it. The trigger is then proved on the real database by its own self-test,
+  inside the run.
+- **A real close** — the November 9 practice count is the hand test.
+- **Many lines in one upsert**: 217 rows in a single POST is well within PostgREST, but only the
+  first real close shows the time it takes on the kitchen's wifi (the write's timeout is 30 s).
+- **A closed month prints** as a plain list, like the Values tab: not designed.
+
+---
+
 ## Out of scope
 
 - **The bar.** Stephen: bar stock "will be counted when we build the inventory sheet for the
@@ -1018,9 +1152,11 @@ Exactly as `docs/costing-bulk-entry.md` lays out, and for the same reasons:
    OSPREY, PEACH FARM or CHALLENGE (fish in the freezer, say)? If so it is not counted, and
    the true food cost % is off by its value. And is ARAMARK food? If not, Flash's purchases
    include it anyway — out of scope to change, but the % should say so.
-4. **When is the first count, and when does it close?** The suggestion is the night of
-   October 31 or the morning of November 1, before deliveries, as the opening count. Close it
-   once the big-money items are priced, or close it partial and accept the first month's %
-   will be marked incomplete.
+4. ~~When is the first count, and when does it close?~~ — **answered 2026-11-02.** October
+   was not counted on the 31st. **October is a practice month**: Stephen counts it himself on
+   **November 9**, into the open October count. **The first real count is the end of
+   November**, so the first true food cost % is **December's**, in early January. Practice
+   October must never become November's opening value (Slice 8), and it has to be closed
+   before November's count can start, since only one count is open at a time (Slice 7).
 5. **Half a jug.** For a pack of 1, one box with decimals (1.5) — is that how you would count
    an opened jug or bottle, or would you rather it was whole numbers only?

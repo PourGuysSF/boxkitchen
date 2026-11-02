@@ -13,6 +13,12 @@ holds. Drag reorders within a place and nowhere else. An item is never left in
 neither the count nor the left-off list. A new order-guide item is listed until
 a manager decides.
 
+Slice 7's promises: closing saves every line's value in ONE upsert of the frozen
+columns, then closes the count only if it is still open; a failure in between
+leaves it open; a closed month is shown from its saved values, never today's
+prices; the page never writes the log - the table's trigger does, and the stub
+carries its own copy of it (docs/inventory-guide-slice7.sql).
+
 None of that can be checked against the live database without writing to it,
 so: load the REAL page, neutralise the site-password redirect, replace
 XMLHttpRequest with a stub BEFORE the page's own <script> parses (so api() can
@@ -69,7 +75,9 @@ SCENARIOS = (
     # slice 5 - the paper backup
     "print",
     # slice 6 - dollar values
-    "values")
+    "values",
+    # slice 7 - close the month
+    "close", "closefail", "reopen")
 
 
 def find_chrome():
@@ -186,7 +194,8 @@ LINES = [
                                                        # which the price list has since made 30
 ]
 COUNT_SCENARIOS = ["count", "inflight", "countlost", "countclosed", "who",
-                   "offline", "comeback", "newer", "orphaned", "leave", "print", "values"]
+                   "offline", "comeback", "newer", "orphaned", "leave", "print", "values",
+                   "close", "closefail", "reopen"]
 
 # ------------------------------------------------------------ page surgery --
 
@@ -229,6 +238,13 @@ HARNESS = r"""
       T.inventory_count_lines.push({id:960+i,location:'Tempest',count_id:7,inventory_item_id:x[0],full_qty:x[1],loose_qty:x[2],pack_qty_snap:x[3],pack_unit_snap:x[4],counted_by:'Maria',updated_at:'2026-10-07T18:00:00Z'});
     });
   }
+  /* 'reopen': October is closed, as practice, with its values saved - and Mayo has been
+     re-priced since, so a closed month that read today's prices would show it */
+  if(SCEN==='reopen'){
+    var rc=T.inventory_counts[0];rc.status='closed';rc.practice=true;rc.closed_at='2026-11-09T20:00:00Z';rc.closed_by='Stephen';
+    T.inventory_count_lines.forEach(function(l){if(l.inventory_item_id===201){l.unit_cost_frozen=9.25;l.value_frozen=27.75;}if(l.inventory_item_id===101)l.value_note='pack changed';});
+    T.ingredient_costs.forEach(function(r){if(r.order_item_id===44)r.pack_price=20;});
+  }
   /* 'orphaned': this device kept two counts for a September count that is no longer open */
   if(SCEN==='orphaned'&&PH===0)localStorage.setItem('boxkitchen_inv_pending_3',JSON.stringify({period:'2026-09-01',rows:{'101':{full:'2',loose:'',by:'Ana',at:1},'201':{full:'4',loose:'',by:'Ana',at:2}}}));
   if(SCEN==='empty')T.inventory_places=[];
@@ -258,7 +274,9 @@ HARNESS = r"""
       if(q.active==='eq.true'&&r.active!==true)return false;
       if(q.order_item_id==='not.is.null'&&r.order_item_id==null)return false;
       if(q.status&&('eq.'+r.status)!==q.status)return false;
-      if(q.count_id&&('eq.'+r.count_id)!==q.count_id)return false;
+      if(q.count_id&&/^in\./.test(q.count_id)){if(q.count_id.slice(4,-1).split(',').indexOf(String(r.count_id))<0)return false;}
+      else if(q.count_id&&('eq.'+r.count_id)!==q.count_id)return false;
+      if(q.id&&('eq.'+r.id)!==q.id)return false;
       return true;
     }).map(clone);
     if(t==='inventory_items')rows.forEach(function(r){var g=guideRow(r.order_item_id);
@@ -282,10 +300,36 @@ HARNESS = r"""
     });
   }
   function countOpen(cid){return T.inventory_counts.some(function(c){return c.id===cid&&c.status==='open';});}
+  /* docs/inventory-guide-slice7.sql's trigger, as the stub's own copy: a start,
+     close or reopen needs a name, which is logged in the same write and never
+     kept; a close is stamped with who and when, a reopen clears that. */
+  function trigger(row,old){
+    var act=!old?'start':(row.status!==old.status?(row.status==='closed'?'close':'reopen'):null);
+    var who=String(row.changed_by==null?'':row.changed_by).trim();
+    delete row.changed_by;
+    if(!act)return {};
+    if(!who)return {refuse:{status:400,text:'{"code":"23514","message":"A count cannot be changed without a name."}'}};
+    if(act==='close'){row.closed_at=new Date().toISOString();row.closed_by=who;}
+    if(act==='reopen'){row.closed_at=null;row.closed_by=null;}
+    return {log:{id:nextId++,location:row.location||'Tempest',count_id:row.id,action:act,by_name:who}};
+  }
   function write(m,t,q,body){
     if(['inventory_items','inventory_left_off','inventory_places','inventory_counts','inventory_count_lines','inventory_count_log'].indexOf(t)<0)
       return {status:403,text:'{"message":"harness: '+m+' to '+t+' is not allowed"}'};
     if(t==='inventory_count_log'&&m!=='POST')return {status:403,text:'{"message":"the log is append-only"}'};
+    if(t==='inventory_count_lines'&&Array.isArray(body)){
+      /* the close's bulk upsert: only the columns it names are written */
+      if(m!=='POST'||q.on_conflict!=='count_id,inventory_item_id')return {status:405,text:'{"message":"harness: a bulk write is an upsert"}'};
+      if(body.some(function(b){return !countOpen(b.count_id);}))return {status:403,text:'{"code":"42501","message":"new row violates row-level security policy"}'};
+      var cols=(q.columns||'').split(','),out=[];
+      body.forEach(function(b){
+        var hit=null;for(var i=0;i<T[t].length;i++){var o=T[t][i];if(o.count_id===b.count_id&&o.inventory_item_id===b.inventory_item_id)hit=o;}
+        if(!hit){hit={id:nextId++};T[t].push(hit);}
+        cols.forEach(function(k){if(k in b)hit[k]=b[k];});
+        out.push(clone(hit));
+      });
+      return {status:201,text:JSON.stringify(out)};
+    }
     if(t==='inventory_count_lines'){
       /* RLS: a line can be added or changed only while its count is open */
       if(!countOpen(body&&body.count_id))return {status:403,text:'{"code":"42501","message":"new row violates row-level security policy"}'};
@@ -300,16 +344,24 @@ HARNESS = r"""
     if(m==='POST'){
       var row=clone(body);if(row.active===undefined)row.active=true;row.id=nextId++;
       if(t==='inventory_counts'&&!row.status)row.status='open';   // the column default
+      var tg=t==='inventory_counts'?trigger(row,null):{};
+      if(tg.refuse)return tg.refuse;
       if(clash(t,row,null))return {status:409,text:'{"code":"23505"}'};
-      T[t].push(row);return {status:201,text:JSON.stringify([row])};
+      T[t].push(row);if(tg.log)T.inventory_count_log.push(tg.log);
+      return {status:201,text:JSON.stringify([row])};
     }
     if(m==='PATCH'){
       var id=parseInt((q.id||'').replace('eq.',''),10),target=null;
       for(var i=0;i<T[t].length;i++)if(T[t][i].id===id)target=T[t][i];
       if(!target)return {status:200,text:'[]'};
+      if(q.status&&('eq.'+target.status)!==q.status)return {status:200,text:'[]'};   // the filter matched no row
       var next=clone(target);for(var k in body)next[k]=body[k];
+      var tg=t==='inventory_counts'?trigger(next,target):{};
+      if(tg.refuse)return tg.refuse;
       if(clash(t,next,id))return {status:409,text:'{"code":"23505"}'};
-      for(var k in body)target[k]=body[k];
+      for(var k in next)target[k]=next[k];
+      if(t==='inventory_counts')delete target.changed_by;
+      if(tg.log)T.inventory_count_log.push(tg.log);
       return {status:200,text:JSON.stringify([clone(target)])};
     }
     return {status:405,text:'{"message":"harness: '+m+' not supported"}'};
@@ -1010,6 +1062,7 @@ RUNNER = r"""
   function pickName(n){var s=byId('countedBy');s.value=n;s.dispatchEvent(new Event('change',{bubbles:true}));}
   function head(label){var h=all('.stock-place-hd').filter(function(h){return h.querySelector('.cat-label').textContent===label;})[0];return h?h.querySelector('.stock-place-n').textContent:'';}
   function mlabel(iso){var mn=['January','February','March','April','May','June','July','August','September','October','November','December'],p=iso.split('-');return mn[parseInt(p[1],10)-1]+' '+p[0];}
+  function lastConfirm(){return H.confirmMsgs[H.confirmMsgs.length-1]||'';}
   function body3(item,full,loose,sq,su,by){return JSON.stringify({location:'Tempest',count_id:7,inventory_item_id:item,full_qty:full,loose_qty:loose,pack_qty_snap:sq,pack_unit_snap:su,counted_by:by});}
 
   if(H.scen==='count'){
@@ -1227,44 +1280,59 @@ RUNNER = r"""
 
   if(H.scen==='start'){
     var TM=H.fx.thisMonth,LM=H.fx.lastMonth;
+    function bar(){return document.querySelector('.stock-countbar');}
+    function wrongMonth(){return all('.stock-countbar button').filter(function(b){return /Wrong month/.test(b.textContent);})[0];}
     unlock();
     step(function(){
-      var bar=document.querySelector('.stock-countbar');
-      ok('start: manager mode says no count is open', !!bar&&/No count is open/.test(bar.textContent));
-      ok('start: ...and offers this month and last month', !!btn(bar,'Start '+mlabel(TM))&&!!btn(bar,'Start '+mlabel(LM)), bar&&bar.textContent);
+      ok('start: manager mode says no count is open', !!bar()&&/No count is open/.test(bar().textContent));
+      ok('start: ...offers this month, and not last month, which already has a count', !!btn(bar(),'Start '+mlabel(TM))&&!btn(bar(),'Start '+mlabel(LM)), bar()&&bar().textContent);
+      ok('start: ...and says where last month’s is', bar().textContent.indexOf(mlabel(LM)+' already has a count — see Previous months')>-1, bar().textContent);
       ok('start: the name bar shows in manager mode', byId('nameBar').style.display!=='none');
-      btn(bar,'Start '+mlabel(TM)).click();
+      btn(bar(),'Start '+mlabel(TM)).click();
       ok('start: not without a name', writes().length===0&&/Pick your name first/.test(toast()), toast());
       pickName('Maria');
+      /* meanwhile, another phone starts this month's count */
+      T.inventory_counts.push({id:8,location:'Tempest',period:TM,status:'closed'});
     });
     step(function(){
-      btn(document.querySelector('.stock-countbar'),'Start '+mlabel(LM)).click();
-      ok('start: it asks first, naming the month', /Start the .* count\?/.test(H.confirmMsgs[H.confirmMsgs.length-1])&&H.confirmMsgs[H.confirmMsgs.length-1].indexOf(mlabel(LM))>-1, H.confirmMsgs[H.confirmMsgs.length-1]);
-    });
-    tick();tick();
-    step(function(){
-      var w=writes();
-      ok('start: a month that already has a count is refused by the table, and said so', w.length===1&&w[0].t==='inventory_counts'&&JSON.stringify(w[0].body)===JSON.stringify({location:'Tempest',period:LM})&&/There is already/.test(toast())&&toastIsError(), JSON.stringify(w));
-      btn(document.querySelector('.stock-countbar'),'Start '+mlabel(TM)).click();
+      btn(bar(),'Start '+mlabel(TM)).click();
+      ok('start: it asks first, naming the month', /Start the .* count\?/.test(lastConfirm())&&lastConfirm().indexOf(mlabel(TM))>-1, lastConfirm());
     });
     tick();tick();tick();
     step(function(){
-      var w=writes().slice(1);
-      ok('start: a count is one write, then the log says who started it', w.length===2&&w[0].t==='inventory_counts'&&JSON.stringify(w[0].body)===JSON.stringify({location:'Tempest',period:TM})&&
-         w[1].t==='inventory_count_log'&&w[1].body.action==='start'&&w[1].body.by_name==='Maria'&&w[1].body.count_id===T.inventory_counts[T.inventory_counts.length-1].id, JSON.stringify(w.map(function(x){return x.body;})));
-      var bar=document.querySelector('.stock-countbar');
-      ok('start: the bar now says it is open, and nothing is counted', !!bar&&/count is open — 0 of 10 counted/.test(bar.textContent), bar&&bar.textContent);
-      ok('start: no Start buttons while one is open', !btn(bar,'Start '+mlabel(TM))&&!btn(bar,'Start '+mlabel(LM)));
+      var w=writes();
+      ok('start: a month that already has a count is refused by the table, and said so', w.length===1&&w[0].t==='inventory_counts'&&JSON.stringify(w[0].body)===JSON.stringify({location:'Tempest',period:TM,changed_by:'Maria'})&&/There is already/.test(toast())&&toastIsError(), JSON.stringify(w));
+      ok('start: ...and the refused start logs nothing', T.inventory_count_log.length===0, JSON.stringify(T.inventory_count_log));
+      ok('start: re-read, it offers no month now - both have counts', !!bar()&&!all('button',bar()).some(function(b){return /^Start /.test(b.textContent);})&&/already have counts/.test(bar().textContent), bar()&&bar().textContent);
+      T.inventory_counts=T.inventory_counts.filter(function(c){return c.id!==8;});
+      loadAll({quiet:true,force:true});
+    });
+    tick();tick();tick();
+    step(function(){ btn(bar(),'Start '+mlabel(TM)).click(); });
+    tick();tick();tick();
+    step(function(){
+      var w=writes().slice(1),nc=T.inventory_counts[T.inventory_counts.length-1];
+      ok('start: a count is one write, carrying who started it', w.length===1&&w[0].t==='inventory_counts'&&JSON.stringify(w[0].body)===JSON.stringify({location:'Tempest',period:TM,changed_by:'Maria'}), JSON.stringify(w.map(function(x){return x.body;})));
+      ok('start: the page writes no log line - the table’s trigger does, in the same write', writes().every(function(x){return x.t!=='inventory_count_log';})&&T.inventory_count_log.length===1&&T.inventory_count_log[0].action==='start'&&T.inventory_count_log[0].by_name==='Maria'&&T.inventory_count_log[0].count_id===nc.id, JSON.stringify(T.inventory_count_log));
+      ok('start: the bar now says it is open, and nothing is counted', !!bar()&&/count is open — 0 of 10 counted/.test(bar().textContent), bar()&&bar().textContent);
+      ok('start: no Start buttons while one is open', !btn(bar(),'Start '+mlabel(TM))&&!btn(bar(),'Start '+mlabel(LM)));
+      ok('start: ...and it can be closed from here', !!btn(bar(),'Close '+mlabel(TM)+'…'));
       ok('start: the title names the month', byId('sheetTitle').textContent===mlabel(TM)+' count', byId('sheetTitle').textContent);
-      var wm=all('.stock-countbar button').filter(function(b){return /Wrong month/.test(b.textContent);})[0];
-      ok('start: before anything is counted, the month can be changed', !!wm&&wm.textContent.indexOf(mlabel(LM))>-1);
-      if(wm)wm.click();
+      ok('start: a wrong month is never changed to one that already has a count', !wrongMonth(), bar().textContent);
+      T.inventory_counts=T.inventory_counts.filter(function(c){return c.id!==6;});   // last month's goes
+      loadAll({quiet:true,force:true});
+    });
+    tick();tick();tick();
+    step(function(){
+      ok('start: before anything is counted, the month can be changed', !!wrongMonth()&&wrongMonth().textContent.indexOf(mlabel(LM))>-1);
+      T.inventory_counts.push({id:9,location:'Tempest',period:LM,status:'closed'});   // ...and another phone takes it
+      if(wrongMonth())wrongMonth().click();
     });
     tick();tick();
     step(function(){
-      var w=writes().slice(3);
+      var w=writes().slice(2);
       ok('start: changing to a month that already has a count is refused, and said so', w.length===1&&w[0].m==='PATCH'&&JSON.stringify(w[0].body)===JSON.stringify({period:LM})&&/There is already/.test(toast()), JSON.stringify(w));
-      ok('start: ...and the count keeps its month', byId('sheetTitle').textContent===mlabel(TM)+' count');
+      ok('start: ...and the count keeps its month, with nothing logged', byId('sheetTitle').textContent===mlabel(TM)+' count'&&T.inventory_count_log.length===1);
       byId('mgrSwitch').click();
     });
     step(function(){
@@ -1544,6 +1612,198 @@ RUNNER = r"""
     });
     step(function(){
       ok('values: leaving manager mode from the Values tab leaves no money behind', document.body.innerText.indexOf('$')<0&&byId('appBody').innerHTML.indexOf('$')<0&&inputs().length>0);
+    });
+  }
+
+  /* ============================== slice 7 ============================== */
+  function kinds(){return all('.stock-kind .mode-btn');}
+  function closeBar(){return btn(document.querySelector('.stock-countbar'),'Close October 2026…');}
+
+  if(H.scen==='close'){
+    unlock();
+    step(function(){
+      ok('close: the count bar offers to close the open month', !!closeBar(), (document.querySelector('.stock-countbar')||{}).textContent);
+      closeBar().click();
+    });
+    step(function(){
+      var b=body(),miss=(document.querySelector('.stock-miss')||{}).textContent||'';
+      ok('close: the check screen names the month, and how much is counted', /Close the October 2026 count/.test(b)&&/2 of 10 counted · 8 not counted/.test(b), b.slice(0,300));
+      ok('close: ...lists what is not counted, place by place, in walking order', JSON.stringify(all('.stock-miss .stock-why-hd').map(function(e){return e.textContent;}))===JSON.stringify(['Vegetable cooler — 3 of 4 not counted','Dry storage — 4 of 5 not counted','Vinegar shelf — 1 of 1 not counted']), JSON.stringify(all('.stock-miss .stock-why-hd').map(function(e){return e.textContent;})));
+      ok('close: ...by name - a cleared line is not counted', /Cilantro/.test(miss)&&/Zero pack/.test(miss)&&!/Mayo/.test(miss)&&!/Ginger/.test(miss), miss);
+      ok('close: ...and says closing with gaps leaves them out, not as zero', /not counted as zero/.test(b));
+      var nots=(document.querySelector('.stock-nots')||{}).textContent||'';
+      ok('close: what will be saved as not valued, with its reason', /Saved as not valued1/.test(b)&&/pack size changed[^]*Ginger/.test(nots), nots);
+      ok('close: it says prices are saved as of today, and when it was counted', /Counted Oct 7, 2026\. Prices are saved as Recipe Costing has them at the moment you close: today/.test(b), b.slice(0,400));
+      ok('close: it says to check the other devices', /check every other phone or tablet/.test(b));
+      ok('close: real month or practice - neither picked', kinds().length===2&&kinds()[0].textContent==='Real month'&&kinds()[1].textContent==='Practice count'&&kinds().every(function(k){return !k.classList.contains('active');}));
+      ok('close: the button waits for that choice, and says so', byId('closeBtn').disabled&&/Say whether this is a real month or a practice count/.test(b));
+      ok('close: looking writes nothing', writes().length===0);
+      kinds()[1].click();
+    });
+    step(function(){
+      ok('close: practice picked, it wants a name', kinds()[1].classList.contains('active')&&kinds()[1].getAttribute('aria-checked')==='true'&&byId('closeBtn').disabled&&/Pick your name at the top first/.test(body()));
+      pickName('Maria');
+    });
+    step(function(){
+      ok('close: with a name, it says who is closing, and can close', !byId('closeBtn').disabled&&/Closing as Maria, as a practice count\./.test(body()), (document.querySelector('.stock-close-who')||{}).textContent);
+      local[102]={full:'3',loose:'',by:'Maria',at:Date.now(),state:'waiting'};render();   // waiting on this device
+    });
+    step(function(){
+      var wn=document.querySelector('.stock-warn');
+      ok('close: a count waiting on this device stops it, and says so', byId('closeBtn').disabled&&!!wn&&/1 count typed on this device is not saved yet/.test(wn.textContent)&&visible(wn), wn&&wn.textContent);
+      delete local[102];render();
+      H.confirmReturn=false;byId('closeBtn').click();
+    });
+    step(function(){
+      ok('close: it asks first, naming the month, and that it is practice', /^Close the October 2026 count as a PRACTICE count\?/.test(lastConfirm()), lastConfirm());
+      ok('close: ...and No closes nothing', writes().length===0);
+      H.confirmReturn=true;byId('closeBtn').click();
+    });
+    tick();tick();tick();tick();tick();
+    step(function(){
+      var w=writes(),v=w[0]||{},p=w[1]||{};
+      ok('close: two writes - the values, then the close', w.length===2&&v.t==='inventory_count_lines'&&v.m==='POST'&&p.t==='inventory_counts'&&p.m==='PATCH', JSON.stringify(w.map(function(x){return x.m+' '+x.t;})));
+      ok('close: the values are ONE upsert of the frozen columns only', /on_conflict=count_id,inventory_item_id/.test(v.u)&&/columns=location,count_id,inventory_item_id,unit_cost_frozen,value_frozen,value_note/.test(v.u)&&/resolution=merge-duplicates/.test(v.prefer)&&Array.isArray(v.body), v.u);
+      ok('close: ...one row per line - a cleared line’s too, back to nothing', JSON.stringify((v.body||[]).map(function(r){return [r.inventory_item_id,r.unit_cost_frozen,r.value_frozen,r.value_note];}))===JSON.stringify([[201,9.25,27.75,null],[204,null,null,null],[101,null,null,'pack changed']]), JSON.stringify(v.body));
+      ok('close: ...each row carrying its key and its value, and nothing else', (v.body||[]).every(function(r){return JSON.stringify(Object.keys(r).sort())===JSON.stringify(['count_id','inventory_item_id','location','unit_cost_frozen','value_frozen','value_note']);}));
+      var iv=H.reqs.indexOf(v),fresh=H.reqs.slice(0,iv);
+      ok('close: ...after a fresh read of the lines and of today’s prices', fresh.some(function(r){return r.m==='GET'&&/inventory_items\(order_item_id\)$/.test(r.u)&&/count_id=eq\.7/.test(r.u);})&&fresh.slice(-2).some(function(r){return r.t==='ingredient_costs'&&/pack_price/.test(r.u);}), JSON.stringify(fresh.slice(-3).map(function(r){return r.u;})));
+      ok('close: the close is for a count still open, practice, with who is closing', /id=eq\.7/.test(p.u)&&/status=eq\.open/.test(p.u)&&JSON.stringify(p.body)===JSON.stringify({status:'closed',practice:true,changed_by:'Maria'}), p.u+' '+JSON.stringify(p.body));
+      ok('close: the page writes no log line - the table’s trigger does', w.every(function(x){return x.t!=='inventory_count_log';})&&T.inventory_count_log.length===1&&T.inventory_count_log[0].action==='close'&&T.inventory_count_log[0].by_name==='Maria', JSON.stringify(T.inventory_count_log));
+      var c=T.inventory_counts[0];
+      ok('close: closed, practice, stamped by the table', c.status==='closed'&&c.practice===true&&c.closed_by==='Maria'&&!!c.closed_at&&!('changed_by' in c), JSON.stringify(c));
+      var g=serverLines(101)[0],m=serverLines(201)[0];
+      ok('close: no counted number, name or time was touched', m.full_qty===3&&g.full_qty===1&&g.loose_qty===4&&g.pack_qty_snap===40&&g.counted_by==='Maria'&&g.updated_at==='2026-10-07T18:00:00Z', JSON.stringify(g));
+      ok('close: it says so', /October 2026 count closed/.test(toast())&&!toastIsError(), toast());
+    });
+    tick();tick();
+    step(function(){
+      var t=document.querySelector('.stock-total');
+      ok('close: ...and shows the month as it was saved', !!t&&t.querySelector('.stock-total-n').textContent==='$27.75'&&/October 2026 count · practice · Closed .* by Maria · at that day’s prices/.test(t.textContent)&&/1 of 2 counted rows valued · 1 not valued \(1 pack changed\)/.test(t.textContent), t&&t.textContent);
+      ok('close: ...under the Values tab', document.querySelector('.stock-tabs button.active').textContent==='Values');
+      /* Mayo is re-priced in Recipe Costing after the close */
+      T.ingredient_costs.forEach(function(r){if(r.order_item_id===44)r.pack_price=20;});
+      loadAll({quiet:true,force:true});
+    });
+    tick();tick();tick();tick();
+    step(function(){
+      var t=document.querySelector('.stock-total');
+      ok('close: a price changed after the close does not move the closed month', !!t&&t.querySelector('.stock-total-n').textContent==='$27.75', t&&t.textContent);
+      ok('close: nothing changed while closing, so no warning', !document.querySelector('.stock-warn'));
+      ok('close: it can be reopened - nothing else is open', !!byId('reopenBtn')&&!byId('reopenBtn').disabled);
+      all('.stock-tabs button')[1].click();
+    });
+    step(function(){
+      ok('close: Values says no count is open', /No count is open/.test(body()));
+      var r=document.querySelector('.stock-prev');
+      ok('close: Previous months lists it: practice, who, its total', !!r&&/^October 2026Practice/.test(r.textContent)&&/by Maria · \$27\.75 · 2 counted · 1 not valued/.test(r.textContent), r&&r.textContent);
+      all('.stock-tabs button')[0].click();
+    });
+    step(function(){
+      var b=document.querySelector('.stock-countbar');
+      ok('close: Set-up never offers a month that already has a count', !!b&&/No count is open/.test(b.textContent)&&all('button',b).every(function(x){var m=/^Start (.*)$/.exec(x.textContent);return !m||!T.inventory_counts.some(function(c){return mlabel(c.period)===m[1];});}), b&&b.textContent);
+      byId('mgrSwitch').click();
+    });
+    step(function(){
+      ok('close: staff see no open count, no box to type in, and no money', /No count is open yet/.test(byId('introBar').textContent)&&inputs().every(function(i){return i.disabled;})&&document.body.innerText.indexOf('$')<0);
+    });
+  }
+
+  if(H.scen==='closefail'){
+    unlock();
+    step(function(){ pickName('Maria'); });
+    step(function(){ closeBar().click(); });
+    step(function(){ kinds()[0].click(); });   // a real month
+    step(function(){ H.nextWrite.push('e500');byId('closeBtn').click(); });
+    tick();tick();tick();tick();
+    step(function(){
+      var w=writes();
+      ok('closefail: the values refused - the close is not even sent, and the month is open', w.length===1&&w[0].t==='inventory_count_lines'&&T.inventory_counts[0].status==='open', JSON.stringify(w.map(function(x){return x.m+' '+x.t;})));
+      ok('closefail: ...and it says so', /still open/.test(toast())&&toastIsError(), toast());
+      ok('closefail: ...still on the close screen, ready to try again', !!byId('closeBtn')&&!byId('closeBtn').disabled&&kinds()[0].classList.contains('active'));
+      H.nextWrite.push('ok','lost');   // the values land; the close lands too, but its answer is lost
+      byId('closeBtn').click();
+    });
+    tick();tick();tick();tick();tick();tick();
+    step(function(){
+      var w=writes().slice(1);
+      ok('closefail: closing again starts over - the values, then the close', w.length===2&&w[0].t==='inventory_count_lines'&&w[1].t==='inventory_counts', JSON.stringify(w.map(function(x){return x.m+' '+x.t;})));
+      ok('closefail: a close whose answer is lost is asked about, not guessed', reads('inventory_counts').some(function(r){return /id=eq\.7/.test(r.u)&&/select=id,status$/.test(r.u);}));
+      ok('closefail: ...it had landed, so the page says closed', T.inventory_counts[0].status==='closed'&&/count closed/.test(toast())&&!toastIsError(), toast());
+      ok('closefail: one close in the log, and it is a real month', T.inventory_count_log.filter(function(l){return l.action==='close';}).length===1&&T.inventory_counts[0].practice===false);
+      /* a box changed between the values being saved and the close; and a row was counted meanwhile */
+      T.inventory_count_lines.forEach(function(l){if(l.inventory_item_id===201)l.full_qty=5;});
+      T.inventory_count_lines.push({id:970,location:'Tempest',count_id:7,inventory_item_id:102,full_qty:2,loose_qty:null,pack_qty_snap:null,pack_unit_snap:'BU',counted_by:'Jose',updated_at:'2026-10-07T18:01:00Z'});
+      loadAll({quiet:true,force:true});
+    });
+    tick();tick();tick();tick();
+    step(function(){
+      var wn=document.querySelector('.stock-warn'),nots=(document.querySelector('.stock-nots')||{}).textContent||'';
+      ok('closefail: a line changed while closing is flagged on the closed month', !!wn&&/^1 line was changed while this month was closing/.test(wn.textContent), wn&&wn.textContent);
+      ok('closefail: a line counted while closing is not valued, and says why', /Counted while the month was closing[^]*Cilantro/.test(nots)&&/1 counted while closing/.test(document.querySelector('.stock-total').textContent), nots);
+    });
+  }
+
+  if(H.scen==='reopen'){
+    step(function(){
+      ok('reopen: staff see no open count', /No count is open yet/.test(byId('introBar').textContent));
+      ok('reopen: staff never read a closed month', reads('inventory_counts').every(function(r){return /status=eq\.open/.test(r.u);})&&reads('inventory_count_lines').length===0);
+    });
+    unlock();
+    step(function(){
+      ok('reopen: behind the PIN, every count is read, and the closed ones’ saved values', reads('inventory_counts').some(function(r){return /select=id,period,status,closed_at,closed_by,practice/.test(r.u);})&&reads('inventory_count_lines').some(function(r){return /count_id=in\.\(7\)/.test(r.u)&&/value_frozen/.test(r.u);}));
+      all('.stock-tabs button')[1].click();
+    });
+    step(function(){
+      var r=document.querySelector('.stock-prev');
+      ok('reopen: Previous months lists the closed month', !!r&&/^October 2026Practice/.test(r.textContent)&&/Closed Nov 9, 2026 by Stephen · \$27\.75 · 2 counted · 1 not valued/.test(r.textContent), r&&r.textContent);
+      btn(r,'View').click();
+    });
+    tick();tick();
+    step(function(){
+      var t=document.querySelector('.stock-total'),nots=(document.querySelector('.stock-nots')||{}).textContent||'';
+      ok('reopen: the closed month shows its saved values, not today’s prices', !!t&&t.querySelector('.stock-total-n').textContent==='$27.75', t&&t.textContent);
+      ok('reopen: ...its not-valued line says why, as of the close, with no link to change it', /pack size had changed since this was counted[^]*Ginger/.test(nots)&&!document.querySelector('.stock-cost-link'), nots);
+      ok('reopen: ...and how to fix it', /reopen it, fix them, and close it again/.test(body()));
+      ok('reopen: looking writes nothing', writes().length===0);
+      byId('reopenBtn').click();
+      ok('reopen: not without a name', writes().length===0&&/Pick your name first/.test(toast()), toast());
+      pickName('Maria');
+    });
+    tick();
+    step(function(){
+      T.inventory_counts.push({id:12,location:'Tempest',period:'2026-12-01',status:'open'});   // another phone starts a count
+      byId('reopenBtn').click();
+      ok('reopen: it asks first - what reopening means, and that it is recorded', /^Reopen the October 2026 count\?[^]*today’s prices[^]*recorded under Maria\.$/.test(lastConfirm()), lastConfirm());
+    });
+    tick();tick();tick();tick();tick();
+    step(function(){
+      var w=writes();
+      ok('reopen: with another count open, the table refuses it, and the page says so', w.length===1&&w[0].m==='PATCH'&&/id=eq\.7/.test(w[0].u)&&/status=eq\.closed/.test(w[0].u)&&JSON.stringify(w[0].body)===JSON.stringify({status:'open',changed_by:'Maria'})&&/Another count is open/.test(toast())&&toastIsError(), JSON.stringify(w)+' '+toast());
+      ok('reopen: ...nothing logged', T.inventory_count_log.length===0);
+      ok('reopen: re-read, it says to close the other first, and will not offer it', !!byId('reopenBtn')&&byId('reopenBtn').disabled&&/close the December 2026 count first/.test(body()), body().slice(-300));
+      T.inventory_counts=T.inventory_counts.filter(function(c){return c.id!==12;});
+      loadAll({quiet:true,force:true});
+    });
+    tick();tick();tick();tick();
+    step(function(){ byId('reopenBtn').click(); });
+    tick();tick();tick();tick();
+    step(function(){
+      var w=writes().slice(1),c=T.inventory_counts[0];
+      ok('reopen: it reopens - one write, and the page logs nothing', w.length===1&&w[0].t==='inventory_counts'&&c.status==='open', JSON.stringify(w));
+      ok('reopen: the table logged it, with the name', T.inventory_count_log.length===1&&T.inventory_count_log[0].action==='reopen'&&T.inventory_count_log[0].by_name==='Maria', JSON.stringify(T.inventory_count_log));
+      ok('reopen: ...and cleared the close, keeping practice', c.closed_at===null&&c.closed_by===null&&c.practice===true, JSON.stringify(c));
+      var b=document.querySelector('.stock-countbar');
+      ok('reopen: it says so, back on Set-up with the month open', /October 2026 count reopened/.test(toast())&&!!b&&/October 2026 count is open/.test(b.textContent), toast());
+      all('.stock-tabs button')[1].click();
+    });
+    step(function(){
+      var t=document.querySelector('.stock-total');
+      ok('reopen: open again, it values at today’s prices', !!t&&t.querySelector('.stock-total-n').textContent==='$60.00'&&/valued at today’s prices/.test(t.textContent), t&&t.textContent);
+      byId('mgrSwitch').click();
+    });
+    step(function(){
+      ok('reopen: staff can count in it again', inputs().length>0&&inputs().every(function(i){return !i.disabled;}));
     });
   }
 

@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script>
+  (function(){
+    var raw = localStorage.getItem('boxkitchen_auth');
+    var ts = raw ? parseInt(raw, 10) : 0;
+    var TTL = 30 * 24 * 60 * 60 * 1000; // 30 days
+    if (!ts || isNaN(ts) || (Date.now() - ts) > TTL) {
+      window.location.replace('index.html');
+    }
+  })();
+</script>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#fbfaf6">
+<title>Tempest Kits</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=Playfair+Display:wght@700;900&display=swap">
+<link rel="stylesheet" href="assets/kitchen.css?v=2026-09-19">
+<style>
+  /* Kits — page-level rules only (docs/kits.md). The header, loading and
+     empty states are the shared components in assets/kitchen.css. The page
+     has no inputs, so #135 cannot happen here. State is weight and border,
+     never hue, so every part of the sheet survives paper. */
+  .kit-wrap{max-width:720px;margin:0 auto;padding:0 0 40px}
+  .kit-title{padding:18px 18px 4px;font-family:var(--font-display);font-size:1.6rem;font-weight:900;line-height:1.15}
+  .kit-from{padding:0 18px 14px;color:var(--grey);font-size:0.95rem;border-bottom:3px solid var(--ink)}
+  .kit-sec{padding:14px 18px 6px;font-family:var(--font-cond);font-size:14px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink)}
+  .kit-box{display:flex;gap:14px;padding:12px 18px;border-bottom:1px solid var(--hair)}
+  /* the number is a ring: a border prints, a filled disc would not */
+  .kit-num{flex-shrink:0;width:34px;height:34px;border:2px solid var(--ink);border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:var(--font-cond);font-size:18px;font-weight:700;color:var(--ink)}
+  .kit-body{flex:1;min-width:0}
+  .kit-name{font-weight:600;font-size:1.05rem;color:var(--ink)}
+  .kit-keep{font-size:0.85rem;color:var(--grey);margin-top:1px}
+  .kit-line{padding:4px 0 0;font-size:1rem;color:var(--ink);overflow-wrap:anywhere}
+  .kit-pan{margin:14px 18px 0;padding:12px 14px;border:2px solid var(--ink);border-radius:6px}
+  .kit-pan div{padding:2px 0}
+  .kit-out{padding:8px 18px;border-bottom:1px solid var(--hair)}
+  .kit-why{font-size:0.85rem;color:var(--grey)}
+  /* the loud box: heavy border and weight, so it stands out without colour */
+  .kit-unsorted{margin:16px 18px 0;padding:12px 14px;border:4px solid var(--ink);border-radius:6px}
+  .kit-unsorted .kit-sec{padding:0 0 6px}
+  .kit-unsorted .kit-line{font-weight:600}
+  .kit-unsorted-msg{margin-top:8px;font-weight:700;color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="header-row">
+    <a class="home-link" href="index.html">← Home</a>
+    <h1>Tempest <span>Kits</span></h1>
+  </div>
+</div>
+<div id="appBody"><div class="loading"><div class="spinner"></div><p>Loading the kit…</p></div></div>
+
+<script>
+var SB='https://sxppuyarecqkgkrsrefc.supabase.co',SK='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN4cHB1eWFyZWNxa2drcnNyZWZjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczOTA4MzAsImV4cCI6MjA5Mjk2NjgzMH0.GM8OfcR68_JjdPeQ3k7j6L3ulJFaeS1xnSLBcdtYXtU';
+var LOCATION='Tempest';
+
+/* The kits (docs/kits.md, "The 8 kits"). A kit only says WHICH container each
+   ingredient goes in, by keyword. Amounts always come from the recipe.
+   keep: how it is kept. side: true = next to the pan, labelled.
+   out: lines deliberately left out, each with its reason. */
+var KITS=[
+  {slug:'spicy-green-sauce',name:'Spicy green sauce',recipeId:25,
+   boxes:[
+     {name:'Spices',keep:'measure together',kw:['coriander','cumin','salt']},
+     {name:'Herbs & veg',keep:'together',kw:['parsley','cilantro','jalapeño','garlic']},
+     {name:'Olive oil blend',keep:'own container',kw:['olive oil']},
+     {name:'Lemon juice',keep:'own container',kw:['lemon juice']},
+     {name:'Greek yogurt',keep:'own container',kw:['yogurt']}
+   ],
+   out:[]}
+];
+
+/* this page only reads: api() knows GET and nothing else */
+function api(table, query, cb){
+  var xhr=new XMLHttpRequest();
+  xhr.open('GET', SB+'/rest/v1/'+table+(query?'?'+query:''));
+  xhr.setRequestHeader('apikey', SK);
+  xhr.setRequestHeader('Authorization', 'Bearer '+SK);
+  xhr.timeout=60000;
+  xhr.onload=function(){var r=null;try{r=JSON.parse(xhr.responseText);}catch(e){}cb(r,xhr.status);};
+  xhr.onerror=xhr.ontimeout=function(){cb(null,0);};
+  xhr.send(null);
+}
+
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+
+/* lower case, no accents (jalapeño = jalapeno), straight apostrophes */
+function norm(s){
+  return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'')
+    .replace(/[‘’ʼ`]/g,"'").toLowerCase();
+}
+function reEsc(s){return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');}
+/* a keyword matches at the start of a word: "carrot" finds "carrots" */
+function hits(line, kw){return new RegExp('(^|[^a-z0-9])'+reEsc(norm(kw))).test(norm(line));}
+
+/* docs/kits.md, "How a recipe line finds its container". Returns the
+   containers (empty ones dropped, numbers closing up), the left-out lines
+   and the lines nobody claimed. Every recipe line lands in exactly one. */
+function sortKit(kit, ingredients){
+  var lines=String(ingredients||'').split(/\r?\n/).map(function(s){return s.trim();})
+    .filter(function(s){return s && !/^—.+—$/.test(s);});
+  var owner=lines.map(function(){return null;});
+  /* every keyword use, longest first; ties keep the kit's own order, so a
+     keyword used twice claims lines in recipe order, in the kit's order */
+  var uses=[],seq=0;
+  kit.boxes.forEach(function(b,bi){b.kw.forEach(function(k){uses.push({kw:k,to:{box:bi},seq:seq++});});});
+  kit.out.forEach(function(o,oi){uses.push({kw:o.kw,to:{out:oi},seq:seq++});});
+  uses.sort(function(a,b){return norm(b.kw).length-norm(a.kw).length||a.seq-b.seq;});
+  uses.forEach(function(u){
+    for(var i=0;i<lines.length;i++){
+      if(owner[i]===null && hits(lines[i],u.kw)){owner[i]=u.to;return;}
+    }
+  });
+  var boxes=kit.boxes.map(function(b){return {name:b.name,keep:b.keep,side:!!b.side,lines:[]};});
+  var out=[],unsorted=[];
+  lines.forEach(function(l,i){
+    var o=owner[i];
+    if(o===null)unsorted.push(l);
+    else if('box' in o)boxes[o.box].lines.push(l);
+    else out.push({line:l,why:kit.out[o.out].why});
+  });
+  return {boxes:boxes.filter(function(b){return b.lines.length;}),out:out,unsorted:unsorted};
+}
+
+function drawKit(kit, recipe){
+  var body=document.getElementById('appBody');
+  var h='<div class="kit-wrap"><div class="kit-title">'+esc(kit.name)+'</div>';
+  if(!recipe||recipe.status==='archived'){
+    body.innerHTML=h+'<div class="kit-from">&nbsp;</div><div class="kit-unsorted"><div class="kit-unsorted-msg">Recipe not found in the Recipe Database — tell a manager.</div></div></div>';
+    return;
+  }
+  var s=sortKit(kit, recipe.ingredients);
+  h+='<div class="kit-from">from '+esc(recipe.name)+'</div>';
+  if(s.unsorted.length){
+    h+='<div class="kit-unsorted" id="unsorted"><div class="kit-sec">Not sorted yet</div>';
+    s.unsorted.forEach(function(l){h+='<div class="kit-line">'+esc(l)+'</div>';});
+    h+='<div class="kit-unsorted-msg">This is in the recipe but not in the kit yet — tell a manager.</div></div>';
+  }
+  h+='<div class="kit-sec">Containers</div>';
+  s.boxes.forEach(function(b,i){
+    h+='<div class="kit-box"><div class="kit-num" aria-label="Container '+(i+1)+'">'+(i+1)+'</div><div class="kit-body">'
+      +'<div class="kit-name">'+esc(b.name)+'</div><div class="kit-keep">'+esc(b.side?'next to the pan, labelled':b.keep)+'</div>';
+    b.lines.forEach(function(l){h+='<div class="kit-line">'+esc(l)+'</div>';});
+    h+='</div></div>';
+  });
+  var side=s.boxes.filter(function(b){return b.side;});
+  var inPan=s.boxes.length-side.length;
+  h+='<div class="kit-sec">Into the hotel pan</div><div class="kit-pan" id="pan">'
+    +'<div>All '+inPan+' container'+(inPan===1?'':'s')+' into one hotel pan</div>';
+  side.forEach(function(b){h+='<div>Next to the pan, labelled: '+esc(b.name)+'</div>';});
+  h+='<div>Label and date the pan · into the cooler</div></div>';
+  if(s.out.length){
+    h+='<div class="kit-sec">Not in the kit — at make time</div>';
+    s.out.forEach(function(o){h+='<div class="kit-out"><div class="kit-line">'+esc(o.line)+'</div><div class="kit-why">'+esc(o.why)+'</div></div>';});
+  }
+  body.innerHTML=h+'</div>';
+}
+
+var loading=false;
+function load(){
+  if(loading)return;
+  loading=true;
+  document.getElementById('appBody').innerHTML='<div class="loading"><div class="spinner"></div><p>Loading the kit…</p></div>';
+  var ids=KITS.map(function(k){return k.recipeId;}).join(',');
+  api('Recipes','id=in.('+ids+')&location=eq.'+LOCATION+'&select=id,name,status,ingredients',function(r,s){
+    loading=false;
+    if(s!==200||!Array.isArray(r)){
+      document.getElementById('appBody').innerHTML='<div class="empty">Could not load the recipes. Check the signal, then try again.<br><br>'
+        +'<button class="link-btn" onclick="load()">Try again</button></div>';
+      return;
+    }
+    var byId={};r.forEach(function(x){byId[x.id]=x;});
+    drawKit(KITS[0], byId[KITS[0].recipeId]);
+  });
+}
+load();
+</script>
+</body>
+</html>
