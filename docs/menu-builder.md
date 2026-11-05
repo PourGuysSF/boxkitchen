@@ -414,6 +414,24 @@ hand Stephen SQL with `pbcopy < file`, never from scrollback.
 
 **Done when:** `menu_draft_lines` exists (confirmed read-only, 0 rows) and RLS matches.
 
+**As built — 2026-11-05.** `docs/menu-builder-slice0b.sql`, run by Stephen in the Supabase SQL
+editor (handed over with `pbcopy`); read-back `menu_draft_lines 0`, `menu_drafts 1`; `pg_policies`
+shows exactly select / insert / update; PostgREST read-only `content-range: */0` (lines) and
+`0-0/1` (drafts). Column types copy live `recipe_lines`; four named checks —
+`menu_draft_lines_kind`, `_guess`, `_estimate`, `_linked_name` — each wrapped in
+`coalesce(…, false)` so a NULL can never slip a row past a check. Choices the ticket left open:
+- **A `do $check$` block before the commit** (3 policies, no delete grant, RLS on), so a broken
+  copy undoes itself. Proved: a copy whose check cannot pass left no table and no policies.
+- **A skip line's unit** is not checked (its amount, if any, must be > 0).
+- **A guess's own rule also requires `not skip`**, so *skip with a guess* is refused by both
+  `_kind` and `_guess`.
+Proved first on a throwaway `pgserver` Postgres with Supabase-like roles and default privileges,
+stand-in `ingredient_costs` and `"Recipes"` (bigint identity ids; a delete policy on `Recipes`):
+same-id upsert twice → one row, updated; all seven kinds save; 26 bad lines refused, each by the
+rule that names it; a recipe id that doesn't exist saves; deleting a recipe a line uses succeeds
+and the line stays; deleting a price row a line uses is refused; delete as `anon` refused, and with
+the default delete grant put back it deletes 0 rows; `authenticated` reads.
+
 ### Slice 1 — The page, the dishes, the status *(new page, unlinked)* · needs only 0a
 
 - `tempest_menu_builder.html`, copied from `tempest_costing.html`: the PIN gate (reading the shared
