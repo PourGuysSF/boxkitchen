@@ -1,13 +1,11 @@
 # Menu Builder — what a draft dish might cost (B7)
 
-Status: **plan v1, written 2026-11-02, not yet approved. Building waits until the Recipe Costing
-plan (`~/Developer/boxkitchen-costing/docs/recipe-costing.md`, B4.3) is approved**, because this
-page reuses its math. No code written, no SQL run. Every row of "Decisions" is Stephen's. The
-design choices made without asking are under "Decided in planning, not asked" so they can be
-overruled. **Everything that depends on the costing plan is listed under "Re-check when the
-costing plan is approved".** The two costing-plan choices this page needed most — **M1** (a house
-recipe can have its own conversion) and **M5** (the math lives in one shared file) — were
-**approved by Stephen on 2026-11-02** and are written in here. Worktree
+Status, 2026-11-05: **the Recipe Costing plan was approved 2026-11-02**, and the planner re-checked
+everything this plan leans on against it (see "Re-check", below — **all hold**). **Slices 0a and 1
+are live** (PR #170, unlinked, phone-tested with Stephen's first real dish). **Slice 0b** (the lines
+table) is being built now. **Slice 2** (lines on the page, with costs) waits for the costing window's
+Slices 2 and 3 to be merged to `main`. Every row of "Decisions" is Stephen's; the design choices made
+without asking are under "Decided in planning, not asked" so they can be overruled. Worktree
 `~/Developer/boxkitchen-menu`, branch `menu-builder`.
 
 Target file: a new page, `tempest_menu_builder.html`, copied from `tempest_costing.html` as its
@@ -332,6 +330,10 @@ menu dishes (D16) — needs the same numbers, they move into the shared file the
 
 ## Re-check when the costing plan is approved
 
+**Done 2026-11-05** by the planning window, against the approved costing plan and the live
+database (read-only). **All hold**; the only changes are the column types and RLS details now in
+Slice 0b. Results are in the second table below.
+
 Every place this plan leans on `recipe-costing.md` (plan v1 as of 2026-11-02, with its Menu Builder
 section). If any of these changes in the approved version, this plan changes with it before Slice 0.
 
@@ -353,6 +355,18 @@ section). If any of these changes in the approved version, this plan changes wit
 | D14 | **Archived recipes**: left out of lists; one already used still costs, labelled *archived* | Decided in planning | This page's house-recipe list behaves the same |
 | D15 | **Promotion later**: composing the recipe text first; a guess can't be promoted until priced; a promote button is a second writer of `recipe_lines` | Menu Builder section, line shape | Out of scope now; the button needs a change to both plans |
 | D16 | **Its "next plan" — plate cost for real menu dishes** | What it is for; Out of scope | That plan and this page cost the same thing (a plate). Plan them together; a *Ready* draft is the natural seed of a real menu dish |
+
+**Re-check results, 2026-11-05:**
+
+| # | result |
+|---|---|
+| D1–D6 | Unchanged in the approved plan: M5 (one shared `assets/recipe-math.js`), M1 (`recipe_conversions`), the math contract 1–5, a recipe costed through `lineCost()` like a price (rule 5), the units table, the reasons and their wording. |
+| D7 | Holds. Live `recipe_lines`: `qty numeric`, `unit text`, `ingredient_cost_id bigint` → `ingredient_costs(id)` with no on-delete rule, `sub_recipe_id bigint` → `Recipes(id)` on delete restrict, `skip boolean not null default false`, `linked_name text`, `component text`, `active boolean not null default true`. Keyed by `(recipe_id, line_text, occurrence)` with a bigint identity id. `menu_draft_lines` copies these types. Different on purpose: a uuid id named by the page (as `menu_drafts`), no `line_text` / `occurrence`, and no foreign key on `sub_recipe_id` (D9). |
+| D8 | Holds. `ingredient_conversions`, `recipe_conversions`, `recipe_yields` are live with 0 rows. Builder choices there: `from_kind` is `volume`, `weight` or the count word itself; a yield's and a portion's amount and unit are both set or both empty. Read here in Slice 5. |
+| D9 | `Recipes.id` and `ingredient_costs.id` are both **`bigint` identity**, so both link columns here are `bigint`. **New and important:** `Recipes` has a live **delete policy**, so recipes really can be hard-deleted from the Recipe Database. That confirms `sub_recipe_id` gets **no foreign key**: a draft must never block a delete, and the page says *recipe deleted — relink* instead. RLS copies 0a as built. |
+| D10–D12 | Unchanged. One door; the Recipe Costing page is `tempest_recipe_costing.html` (how to open it at one ingredient is not specified yet; settle in Slice 5); `boxkitchen_mgr` is already in use and phone-tested in Slice 1. |
+| D13 | Unchanged order: shared file starts in costing Slice 2, `lineCost()` in 3, conversions 4, yields and recipe conversions 5, recipes inside recipes 6. **Status 2026-11-05:** costing Slice 0 closed (four tables live, 0 rows); costing Slice 1 built, local commit, not pushed; Slices 2–3 not started. So Menu Builder Slice 2 waits. |
+| D14–D16 | Unchanged. |
 
 ---
 
@@ -399,6 +413,24 @@ hand Stephen SQL with `pbcopy < file`, never from scrollback.
 - Stephen runs it and reports the confirming select.
 
 **Done when:** `menu_draft_lines` exists (confirmed read-only, 0 rows) and RLS matches.
+
+**As built — 2026-11-05.** `docs/menu-builder-slice0b.sql`, run by Stephen in the Supabase SQL
+editor (handed over with `pbcopy`); read-back `menu_draft_lines 0`, `menu_drafts 1`; `pg_policies`
+shows exactly select / insert / update; PostgREST read-only `content-range: */0` (lines) and
+`0-0/1` (drafts). Column types copy live `recipe_lines`; four named checks —
+`menu_draft_lines_kind`, `_guess`, `_estimate`, `_linked_name` — each wrapped in
+`coalesce(…, false)` so a NULL can never slip a row past a check. Choices the ticket left open:
+- **A `do $check$` block before the commit** (3 policies, no delete grant, RLS on), so a broken
+  copy undoes itself. Proved: a copy whose check cannot pass left no table and no policies.
+- **A skip line's unit** is not checked (its amount, if any, must be > 0).
+- **A guess's own rule also requires `not skip`**, so *skip with a guess* is refused by both
+  `_kind` and `_guess`.
+Proved first on a throwaway `pgserver` Postgres with Supabase-like roles and default privileges,
+stand-in `ingredient_costs` and `"Recipes"` (bigint identity ids; a delete policy on `Recipes`):
+same-id upsert twice → one row, updated; all seven kinds save; 26 bad lines refused, each by the
+rule that names it; a recipe id that doesn't exist saves; deleting a recipe a line uses succeeds
+and the line stays; deleting a price row a line uses is refused; delete as `anon` refused, and with
+the default delete grant put back it deletes 0 rows; `authenticated` reads.
 
 ### Slice 1 — The page, the dishes, the status *(new page, unlinked)* · needs only 0a
 
