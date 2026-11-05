@@ -7,8 +7,9 @@ Stephen's.
 
 **Slice 1 is live** (`8e6f3ea`, #168), and so is the one-keyword-one-line rule (`72dfef2`,
 #169). Stephen checked Slice 1 on a phone and on the kitchen tablet before Slice 2 began. See
-"Slice 1 as built". **Slice 2 BUILT 2026-11-05** on `kits-slice2`, not pushed — see "Slice 2
-as built".
+"Slice 1 as built". **Slice 2 is live** (`d399dda`, #174); Stephen walked all 8 kits on
+2026-11-05 and approved them. **Slice 3 BUILT 2026-11-05** on `kits-slice3`, not pushed — see
+"Slice 3 as built".
 
 Target file: a new page, `tempest_kits.html`. At the very end, and only then: the Kits tile in
 `index.html`, `BUILD_PLAN.md` (B5), and the page count in `CLAUDE.md`. This plan needs **no
@@ -425,6 +426,39 @@ keyword finds a line. No keyword was changed.
   button that works.
 - The guard adds a scenario for each, and re-proves that nothing is written.
 - **Stephen tries it in Airplane Mode**, as with Inventory's Slice 4.
+
+### Slice 3 as built
+
+`tempest_kits.html`, `scripts/check_kits.py`, and this file. No shared file touched.
+
+**Decided by Stephen (2026-11-05):** a missing or archived recipe shows **"Recipe not found"**
+on the list in bold ink, in place of the count; a kit where nothing sorts shows "Not sorted
+yet" with every line, no containers and no pan step, and **"Needs sorting"** on the list; the
+no-signal wording stays ("Could not load the recipes. Check the signal, then try again." +
+**Try again**).
+
+**What changed on the page.** Most of this slice was already built in Slice 1 and only
+needed proving. New: the list's two bold marks (`.kit-flag`, ink and weight, never a hue);
+the empty-kit screen (never "All 0 containers into one hotel pan"); the bare `&nbsp;`
+under a not-found kit's title is now an empty line. Try again redraws **the address you were
+on**, because the load ends in `route()`.
+
+**Proved**
+
+- `check_kits.py`: **346 assertions, 18 scenarios, clean**. New: `missing` (Gastrique's recipe
+  absent) and `archived` (Dumpling's), on the list and on the sheet, with Back; `lost`
+  (celery deleted from Pork Belly: ① keeps its other lines; sugar from Gastrique: ⑥ goes,
+  Horseradish becomes ⑥, the pan says 5 with the red wine beside; macaroni from Mac & Cheese:
+  10 containers, Noodles & assembly keeps two); `emptied` (Pickled rewritten so no container
+  keyword matches); `fail` (no answer), `e500`, `hang` (the page's own timeout, ≤60s, fires),
+  each then Try again; `failaddr` (fail at `#mac-and-cheese`, Try again lands on Mac &
+  Cheese). Every scenario: GETs only, and exactly 1 (2 after a Try again).
+- **It fails when it should**, each in a throwaway copy: a dead Try again, no list mark,
+  "All 0 containers" shown, an empty container left in, Try again landing on the list, no
+  timeout, the mark in tomato instead of bold ink. All caught.
+- `check_styling.py`: clean, 14 pages.
+- The missing/archived screens can't be seen live without changing a recipe, so the guard is
+  their proof. Stephen's Airplane Mode test covers the no-signal path on a real phone.
 
 ### Slice 4 — The paper backup
 
