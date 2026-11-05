@@ -29,6 +29,45 @@ const GUIDE_LABELS: Record<string, string> = {
   produce_protein: "Produce & Protein",
 };
 
+// The vendors on each guide, in the order the guide shows them (mirrors
+// biriteVendors / produceVendors in tempest_orders.html).
+const GUIDE_VENDORS: Record<string, string[]> = {
+  birite_dairy: ["Birite", "Dairy"],
+  produce_protein: ["Schmitz Ranch", "Asia Intl", "Cooks Produce"],
+};
+
+// Each item's place in the list, read the way the guide reads: vendor by vendor, then
+// shelf by shelf (active shelves in their registry order, then any leftover shelf in
+// first-seen order), then by sort_order within the shelf. Mirrors shelvesFor() in
+// tempest_orders.html. Never sort on raw sort_order alone: it is only unique within a
+// shelf (a drag renumbers its shelf 10,20,30…, overlapping every other shelf).
+// `items` must arrive in sort_order; if `shelves` is empty this degrades to first-seen.
+function guidePositions(items: any[], shelves: any[], vendorOrder: string[]): Record<string, number> {
+  const vendors = [...vendorOrder];
+  for (const it of items) if (!vendors.includes(it.vendor)) vendors.push(it.vendor);
+  const pos: Record<string, number> = {};
+  let n = 0;
+  for (const v of vendors) {
+    const byShelf: Record<string, any[]> = {};
+    const shelfOrder: string[] = [];
+    const vItems = items.filter((it) => it.vendor === v);
+    for (const it of vItems) {
+      const c = it.category || "Other";
+      if (!byShelf[c]) byShelf[c] = [];
+      byShelf[c].push(it);
+    }
+    for (const s of shelves) {
+      if (s.vendor === v && s.active && byShelf[s.label] && !shelfOrder.includes(s.label)) shelfOrder.push(s.label);
+    }
+    for (const it of vItems) {
+      const c = it.category || "Other";
+      if (!shelfOrder.includes(c)) shelfOrder.push(c);
+    }
+    for (const c of shelfOrder) for (const it of byShelf[c]) pos[String(it.id)] = n++;
+  }
+  return pos;
+}
+
 function esc(s: unknown): string {
   return String(s ?? "").replace(/[&<>"]/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] as string));
@@ -87,21 +126,23 @@ Deno.serve(async (req) => {
   const location = rec.location || "Tempest";
 
   // Resolve item ids -> {name, unit} using the same public tables the app reads.
-  const [items, unitsList] = await Promise.all([
-    rest(`order_items?location=eq.${encodeURIComponent(location)}&select=id,name,unit,unit_id,sort_order`),
+  const [items, unitsList, shelves] = await Promise.all([
+    rest(`order_items?location=eq.${encodeURIComponent(location)}&select=id,name,unit,unit_id,vendor,category,sort_order&order=sort_order.asc`),
     rest(`order_units?select=id,label`),
+    rest(`order_categories?location=eq.${encodeURIComponent(location)}&select=vendor,label,sort_order,active&order=vendor.asc,sort_order.asc`),
   ]);
   const unitMap: Record<string, string> = {};
   for (const u of unitsList) unitMap[String(u.id)] = u.label;
   const itemMap: Record<string, any> = {};
   for (const it of items) itemMap[String(it.id)] = it;
+  const pos = guidePositions(items, shelves, GUIDE_VENDORS[rec.guide_name] ?? []);
 
   const rows = Object.keys(quantities)
     .map((id) => {
       const it = itemMap[id];
       const name = it?.name ?? `Item #${id}`;
       const unit = it ? (unitMap[String(it.unit_id)] ?? it.unit ?? "") : "";
-      const sort = it?.sort_order ?? 9999;
+      const sort = pos[id] ?? Number.MAX_SAFE_INTEGER;
       return { name, unit, qty: quantities[id], sort };
     })
     .sort((a, b) => a.sort - b.sort);
