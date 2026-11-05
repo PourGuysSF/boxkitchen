@@ -12,8 +12,11 @@
 //   WEBHOOK_SECRET   (optional)  – if set, requests must send matching x-webhook-secret
 //   SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY  – auto-injected by Supabase
 //
-// Deploy (later, only when you say so):
-//   supabase functions deploy notify-order-submit --no-verify-jwt
+// Deploy (only when you say so), from a folder holding just this function:
+//   supabase functions deploy notify-order-submit --project-ref <ref> --use-api
+// Keep JWT verification ON — the default, so never pass --no-verify-jwt. The live
+// function runs with verify_jwt=true and the orders Database Webhook calls it with the
+// project key; turning verification off would let anyone trigger order emails.
 
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") ?? "";
 const NOTIFY_TO = (Deno.env.get("NOTIFY_EMAILS") ?? "stephen@pourguys.com")
