@@ -7,7 +7,8 @@ Stephen's.
 
 **Slice 1 is live** (`8e6f3ea`, #168), and so is the one-keyword-one-line rule (`72dfef2`,
 #169). Stephen checked Slice 1 on a phone and on the kitchen tablet before Slice 2 began. See
-"Slice 1 as built". Slice 2 is being built on `kits-slice2`.
+"Slice 1 as built". **Slice 2 BUILT 2026-11-05** on `kits-slice2`, not pushed — see "Slice 2
+as built".
 
 Target file: a new page, `tempest_kits.html`. At the very end, and only then: the Kits tile in
 `index.html`, `BUILD_PLAN.md` (B5), and the page count in `CLAUDE.md`. This plan needs **no
@@ -365,6 +366,54 @@ unguarded until Slice 3 adds their scenarios.
   - each address opens its own kit.
 - **Stephen walks all 8** on a phone and checks each one against how the kitchen actually kits
   it. Any change goes into "The 8 kits" in this document first, then the page.
+
+### Slice 2 as built
+
+`tempest_kits.html`, `scripts/check_kits.py`, and this file. **No shared file touched**, the
+kits-guard workflow included. The page is still reachable only by its address.
+
+**Decided by Stephen before the build (2026-11-05)**, and written into "The 8 kits" first:
+the chicken stock is **not in the kit** (cans, from the shelf, at make time), so Chicken &
+dumpling soup has 5 containers; Mac & Cheese's sub-headings are **the kit's own groups**, so
+Herbs sits under Noodles & assembly; its six containers with no wording say "own container".
+
+**What it does**
+
+- All 8 kits in `KITS`, in Line PM order, word for word from "The 8 kits". A box may carry a
+  `group` (its sub-heading); numbering runs straight through the groups (Mac & Cheese 1–11).
+- **The list** (no address, or an address that names no kit): "Kits", then 8 edged tap
+  targets (≥60px), each with the kit's name and its real container count, worked out from the
+  loaded recipe (5, 3, 7, 3, 5, 5, 3, 11).
+- **Addresses** by hash. `hashchange` redraws from the recipes already loaded: **one read for
+  all 8**, never a second. The sheet has "← All kits" (`href="#"`); the browser's back works
+  too, because every kit is its own history entry.
+- "Not in the kit" reasons: raw meat — pull from the meat shelf; to cover, at the stove;
+  comes from the braise; to finish / to taste, at the stove; cans, from the shelf; from the tap.
+- Unchanged from Slice 1: the GET-only `api()`, the sorting rule, the "could not load" and
+  "recipe not found" messages (Slice 3 guards them).
+
+**Live text check, 2026-11-05.** A read-only GET of recipes 5, 54, 43, 14, 19, 24 and 46, run
+through the rule: every line lands where "The 8 kits" says, nothing in "Not sorted yet", every
+keyword finds a line. No keyword was changed.
+
+**Proved**
+
+- `check_kits.py`: **254 assertions, 10 scenarios, clean**. New: `all8` opens every kit by its
+  address in turn and checks it against an expectation **written out by hand** from "The 8
+  kits" (not by running the page's sort): each container's part, name, keep line and lines;
+  numbering; "Not in the kit" lines and reasons; the pan count and next-to-the-pan names;
+  Back; then the browser's back. `reorder` swaps red wine / red wine vinegar and butter /
+  buttermilk in the recipe, because in today's text the shorter word's line always comes first,
+  so longest-first is only proved when it isn't. `list`, `direct` (opens `#mac-and-cheese`
+  cold), `nope` (an unknown address). Every scenario: exactly one request, a GET, all 8 ids.
+  Longest-first on pepper / peppercorns is checked in `all8` but **can't be broken by line
+  order** with these kits: `peppercorns` sits in a container and `pepper` in "Not in the kit",
+  and containers claim before "Not in the kit" on a tie, so either order gives the same answer.
+- **It fails when it should**, each in a throwaway copy: longest-first off (caught by `reorder`;
+  today's text alone does **not** catch it), twice-listed claims reversed, every address showing
+  the list, a bad address opening a kit, refetching on every kit, a POST, the stock dropped
+  from "Not in the kit", sub-headings dropped. All caught.
+- `check_styling.py`: clean, 13 pages.
 
 ### Slice 3 — When the recipe or the wifi lets it down
 
