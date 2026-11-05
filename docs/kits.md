@@ -1,11 +1,13 @@
 # Kits — what goes in each kit
 
 Status: **plan v1, approved by Stephen 2026-11-02**, with one change: the build is split into
-five small slices, so each can be checked before the next starts ("Slices"). **Slice 1 BUILT 2026-11-02** on
-`kits-slice1`, not pushed — see "Slice 1 as built". Written from
+five small slices, so each can be checked before the next starts ("Slices"). Written from
 Stephen's interview in the Kits window (2026-10-28 and 2026-11-02). Every decision below is
-Stephen's. **No code exists.** Saved on branch `kits` in worktree `~/Developer/boxkitchen-kits`
-(from `main` `967e482`), **not pushed**. Stephen sends it to the live site later.
+Stephen's.
+
+**Slice 1 is live** (`8e6f3ea`, #168), and so is the one-keyword-one-line rule (`72dfef2`,
+#169). Stephen checked Slice 1 on a phone and on the kitchen tablet before Slice 2 began. See
+"Slice 1 as built". Slice 2 is being built on `kits-slice2`.
 
 Target file: a new page, `tempest_kits.html`. At the very end, and only then: the Kits tile in
 `index.html`, `BUILD_PLAN.md` (B5), and the page count in `CLAUDE.md`. This plan needs **no
@@ -41,7 +43,7 @@ It is BUILD_PLAN **B5** ("mise en place per recipe; depends on the recipe librar
 | Batch size | **One batch**, exactly as the recipe says. |
 | Raw meat | **Not in the kit.** Pulled from the meat shelf at make time; listed under "Not in the kit". |
 | Lines with no amount | Salt & pepper to taste, stock "to cover", tap water: **left for the stove**, listed under "Not in the kit" so nobody wonders whether they were forgotten. |
-| Big items | A whole bottle or jug (honey, Frank's, red wine) or the 6 qt chicken stock goes **next to the hotel pan, labelled** with the kit. |
+| Big items | A whole bottle or jug (honey, Frank's, red wine) goes **next to the hotel pan, labelled** with the kit. |
 | Method steps | **Not on the kit sheet.** Kit contents only. |
 | Tick boxes | **None in v1.** The Line PM item already records that a kit was built. Ticks can come with the link. |
 | Link from Line PM | **A later step**, not this build. Each kit gets its own address now so the link is easy later. |
@@ -194,8 +196,10 @@ As approved by Stephen 2026-10-28. Keywords in `code`. **⇢** = next to the pan
 - ③ Aromatics — together — `thyme` `bay`
 - ④ Vegetables — together — `carrot` `celery` `white onion` `garlic`
 - ⑤ Flour — own container — `flour`
-- ⑥ Chicken stock — ⇢ (6 qt won't fit in the pan) — `chicken stock`
-- Not in the kit: `chicken thigh` (raw meat) · `salt` and `black pepper` (to taste)
+- Not in the kit: `chicken thigh` (raw meat) · `chicken stock` (cans, from the shelf) · `salt`
+  and `black pepper` (to taste)
+- *Changed 2026-11-05 by Stephen:* the stock comes in cans, grabbed at make time, so it is no
+  longer a next-to-the-pan container. The kit has 5 containers.
 
 **Spicy green sauce** — Spicy Green Sauce (25)
 - ① Spices — together — `coriander` `cumin` `salt`
@@ -210,7 +214,10 @@ As approved by Stephen 2026-10-28. Keywords in `code`. **⇢** = next to the pan
 - ③ Cider vinegar — own container — `cider vinegar`
 - Not in the kit: `water` (from the tap)
 
-**Mac & cheese** — Mac & Cheese (46), 11 containers
+**Mac & cheese** — Mac & Cheese (46), 11 containers. *Decided 2026-11-05 by Stephen:* the
+sub-headings are the kit's own groups below, not the recipe's parts (so ⑪ Herbs sits under
+Noodles & assembly, where it is used, though the recipe lists chives and parsley under Roux
+base); and ④ ⑤ ⑥ ⑦ ⑨ ⑩ are each "own container".
 - *Cheese base* — ① Half & half, labelled "cheese base" — `half & half` · ② Cheeses — together
   — `velveeta` `mixed cheese` · ③ Seasoning — together — `chipotle peppers` `salt`
   `chipotle chili powder` `ancho`
