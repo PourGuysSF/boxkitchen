@@ -287,6 +287,9 @@ the right week under the right dates across a month end (Nov 29 – Dec 5).
 > looks good"). Note for the next look: the local server is its own origin, so the site
 > password is asked again at `index.html` before the page opens. The phone and kitchen-tablet
 > look waits for a merge he approves.
+>
+> **Shipped 2026-11-05** as PR #172 (squash `dd33c0f`), with Slice 0's SQL; unlinked, no tile.
+> Stephen looked at the live page on his devices the same day: "it looks fine right now."
 
 ### Slice 2 — Changing a box (manager)
 
