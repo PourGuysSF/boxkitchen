@@ -90,7 +90,9 @@ SCENARIOS = ("ok", "slow", "fail", "empty", "ledgerslow", "ledgerfail",
              # slice 6 - run the run
              "slice6",
              # the reviews of PR #157 (slice 6)
-             "r6_count", "r6_run")
+             "r6_count", "r6_run",
+             # B4.3 Recipe Costing, slice 1 - the price list notices a rename
+             "renamed")
 
 # ---------------------------------------------------------------- fixtures --
 # Two "Slab bacon" rows on purpose: the whole of slice 1 is that the id we
@@ -182,6 +184,18 @@ HARNESS = r"""
        what it is warning about, or it is just a speed bump */
     confirmMsgs:[]};
   if(SCEN==='retry'){window.__h.nextGuide.push('err');window.__h.nextLedger.push('defer');}
+  /* B4.3 slice 1: order item 169 renamed IN PLACE on the Orders page, so the
+     price row saved as "Heirloom tomato" now shows under "Arrow cabbage";
+     row 506 differs from its item's name only by case and spacing - not a
+     rename. Scenario-local, so no other scenario's counts move. */
+  if(SCEN==='renamed'){
+    ORDER_ITEMS=JSON.parse(JSON.stringify(ORDER_ITEMS));
+    ORDER_ITEMS.forEach(function(o){if(o.id===169)o.name='Arrow cabbage';});
+    server.push({id:505,location:'Tempest',order_item_id:169,name:'Heirloom tomato',invoice_alias:null,
+                 pack_qty:10,pack_unit:'lb',pack_price:30,active:true});
+    server.push({id:506,location:'Tempest',order_item_id:88,name:'slab  BACON',invoice_alias:null,
+                 pack_qty:5,pack_unit:'lb',pack_price:20,active:true});
+  }
   function planned(q,ok,empty){
     var p=q.shift();
     if(p==='err')return {err:true};
@@ -2877,6 +2891,75 @@ RUNNER = r"""
            histFor(502).filter(function(h){return Number(h.pack_price)===81;}).length===1, prices(502));
       });
     }
+  }
+
+  /* ------- B4.3 Recipe Costing slice 1: the price list notices a rename ------- */
+  if(H.scen==='renamed'){
+    function rowById(id){var rs=$('listBody').querySelectorAll('.ing-row');
+      for(var i=0;i<rs.length;i++)if((rs[i].getAttribute('onclick')||'')==='openEdit('+id+')')return rs[i];return null;}
+    function mark(id){var r=rowById(id);return r?r.querySelector('.ing-renamed'):null;}
+    function patches(){return H.reqs.filter(function(r){return r.m==='PATCH'&&r.u.indexOf('/ingredient_costs')>-1;});}
+    step(function(){});
+    step(function(){
+      var m=mark(505);
+      ok('R5: loading a renamed row writes nothing by itself',
+         H.reqs.filter(function(r){return r.m!=='GET';}).length===0);
+      ok('R1: a renamed row is marked', !!m);
+      ok('R1: the mark names what it was priced as',
+         m&&m.textContent==='renamed on the order guide — priced as Heirloom tomato', m&&m.textContent);
+      ok('R1: the row still shows the current name',
+         rowById(505)&&rowById(505).querySelector('.ing-name').textContent==='Arrow cabbage');
+      var probe=document.createElement('div');probe.style.background='var(--yellow)';document.body.appendChild(probe);
+      var yellow=getComputedStyle(probe).backgroundColor;probe.remove();
+      ok('R1: the mark is the yellow highlighter, not red',
+         m&&getComputedStyle(m).backgroundColor===yellow, m&&getComputedStyle(m).backgroundColor+' vs '+yellow);
+      ok('R1: the mark is really on screen', visible(m));
+      ok('R1: case and spacing alone are not a rename', rowById(506)&&!mark(506));
+      ok('R1: an unrenamed linked row is untouched', rowById(501)&&!mark(501));
+      ok('R1: an off-guide row is untouched', rowById(502)&&!mark(502));
+      ok('R1: only one row is marked', $('listBody').querySelectorAll('.ing-renamed').length===1,
+         'saw '+$('listBody').querySelectorAll('.ing-renamed').length);
+    });
+    /* opening it asks nothing; saving it asks once, and No writes nothing */
+    step(function(){ H.reqs.length=0; H.confirms=0; H.confirmMsgs=[]; H.confirmReturn=false; openEdit(505); });
+    step(function(){ ok('R2: opening a marked row asks nothing', H.confirms===0, 'confirms='+H.confirms);
+                     set('fPrice','31'); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){
+      ok('R2: saving a marked row asks once', H.confirms===1, 'confirms='+H.confirms);
+      ok('R2: the question names both names',
+         H.confirmMsgs[0]==='This price was saved for Heirloom tomato. Is it right for Arrow cabbage?', H.confirmMsgs[0]);
+      ok('R2: answering No writes nothing', patches().length===0, 'saw '+patches().length);
+      ok('R2: answering No keeps the modal open', shown());
+      ok('R2: answering No leaves Save usable', $('saveBtn').disabled===false);
+      ok('R2: answering No leaves the mark', !!mark(505));
+    });
+    /* Yes saves, the name is re-written from the guide, and the mark clears */
+    step(function(){ H.reqs.length=0; H.confirms=0; H.confirmMsgs=[]; H.confirmReturn=true; $('saveBtn').click(); });
+    step(function(){
+      var p=patches();
+      ok('R3: answering Yes asks once and writes once', H.confirms===1&&p.length===1, 'confirms='+H.confirms+' patches='+p.length);
+      ok('R3: the save writes the current guide name', p[0]&&p[0].body.name==='Arrow cabbage', p[0]&&p[0].body.name);
+      ok('R3: and the typed price', p[0]&&Number(p[0].body.pack_price)===31);
+      ok('R3: the mark is gone after the save', !mark(505));
+    });
+    /* an unmarked row never asks */
+    step(function(){ closeEdit(); H.reqs.length=0; H.confirms=0; openEdit(506); });
+    step(function(){ set('fPrice','21'); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){
+      ok('R4: a case-only difference saves without asking', H.confirms===0, 'confirms='+H.confirms);
+      ok('R4: and writes', patches().length===1);
+    });
+    step(function(){ closeEdit(); H.reqs.length=0; H.confirms=0; openEdit(502); });
+    step(function(){ set('fPrice','11'); });
+    step(function(){ $('saveBtn').click(); });
+    step(function(){
+      ok('R4: an off-guide row saves without asking', H.confirms===0, 'confirms='+H.confirms);
+      ok('R4: and writes', patches().length===1);
+      ok('R5: that save is the only write since the last reset',
+         H.reqs.filter(function(r){return r.m!=='GET'&&r.u.indexOf('/ingredient_costs')>-1;}).length===1);
+    });
   }
 
   if(H.scen==='slice5'){
