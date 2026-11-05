@@ -260,6 +260,34 @@ The page exists, and writes nothing.
 the page makes **no request but GET**, renders a stubbed week correctly in both views, and puts
 the right week under the right dates across a month end (Nov 29 – Dec 5).
 
+> **Slice 1 as built (2026-11-02, committed 2026-11-05).** `tempest_schedule.html`, copied from
+> `tempest_meat.html`: same gate, header (`Tempest <span>Schedule</span>`), Manager switch and PIN
+> flow, `kitchen.css?v=2026-09-19`. Inventory's timeout `api()`; Flash's `.date-bar` /
+> `.date-left` / `.date-arrow` row with `.date-today` as "This week"; the shared `.view-toggle`
+> for Day / Week (remembered in `localStorage['boxkitchen_schedule_view']`, try/catch, Day
+> fallback). Page-only rules in its own `<style>`, all prefixed `sched-`; no `:root`, no
+> `kitchen.css` change. The PIN box is restated as `.modal input[type="tel"].pin-input`, as on
+> Inventory, so it renders at 1.4rem rather than 15.2px (the styling guard caught it).
+>
+> Reads, GET only: people (all Tempest, retired included), then shifts by `person_id=in.(…)`
+> and the week's dates, day notes and active standing notes together. Nothing is drawn until
+> all four land; any failure shows "Couldn't load the schedule" with **Try again**; a newer load
+> supersedes one in flight. A box with `kind` null (cleared) reads as empty, but its
+> `updated_at` still counts toward "Updated …". The Week grid's note rows are each standing note
+> (its label on its days) and a "Games & events" row for the day notes. Coming back to the
+> page reloads the week quietly, keeping the view and the day.
+>
+> **`scripts/check_schedule.py`**: 69 assertions over 5 scenarios (`ok`, `monthend`, `yearend`,
+> `fail`, `empty`), the real page in headless Chrome at 390px, `XMLHttpRequest` stubbed and the
+> clock fixed **at 5:30 PM with `TZ=America/Los_Angeles`**, when UTC is already tomorrow.
+> Proved able to fail: with `toISOString()` planted in the date key, it fails on today's day and
+> column. `check_styling.py` clean (12 pages).
+>
+> Stephen looked on his laptop through `python3 -m http.server` on 2026-11-02 ("everything
+> looks good"). Note for the next look: the local server is its own origin, so the site
+> password is asked again at `index.html` before the page opens. The phone and kitchen-tablet
+> look waits for a merge he approves.
+
 ### Slice 2 — Changing a box (manager)
 
 - The picker, as designed: quick buttons, Other, Training, Clear, Save. Day notes the same way.
