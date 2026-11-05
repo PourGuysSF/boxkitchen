@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<script>
+  (function(){
+    var raw = localStorage.getItem('boxkitchen_auth');
+    var ts = raw ? parseInt(raw, 10) : 0;
+    var TTL = 30 * 24 * 60 * 60 * 1000; // 30 days
+    if (!ts || isNaN(ts) || (Date.now() - ts) > TTL) {
+      window.location.replace('index.html');
+    }
+  })();
+</script>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#fbfaf6">
+<title>Tempest Schedule</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=Playfair+Display:wght@700;900&display=swap">
+<link rel="stylesheet" href="assets/kitchen.css?v=2026-09-19">
+<!-- Shared styling lives in assets/kitchen.css (see docs/page-restyle.md).
+     Page-only rules below: the day strip, the crew lists, the week grid and
+     how a box reads. Plan: docs/schedule.md. -->
+<style>
+.sched-week-bar .date-display{white-space:nowrap}
+.sched-days{display:flex;gap:6px;padding:10px 18px;border-bottom:1px solid var(--hair)}
+.sched-day{flex:1;min-width:0;min-height:48px;padding:6px 0;background:var(--paper);border:1px solid var(--edge);border-radius:6px;color:var(--ink);font-family:var(--font-cond);cursor:pointer;line-height:1.15}
+.sched-day .dn{display:block;font-size:12px;font-weight:600;letter-spacing:.08em;color:var(--grey)}
+.sched-day .dd{display:block;font-size:1.05rem;font-weight:600}
+.sched-day.today{border:2px solid var(--ink)}
+.sched-day.today .dd{font-weight:700}
+.sched-day.active{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+.sched-day.active .dn{color:var(--paper)}
+.sched-dayhead{padding:14px 18px 6px;font-family:var(--font-cond);font-size:1.05rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+.sched-notes{padding:0 18px 10px}
+.sched-note{font-size:0.9rem;padding:2px 0}
+.sched-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:11px 18px;border-bottom:1px solid var(--hair)}
+.sched-name{font-weight:500;min-width:0}
+.sched-box{text-align:right;flex-shrink:0}
+.sched-shift{color:var(--ink);font-weight:600}
+.sched-off{color:var(--grey);font-family:var(--font-cond);font-weight:600;letter-spacing:.08em}
+.sched-req{background:var(--yellow);color:var(--ink);padding:1px 6px;font-family:var(--font-cond);font-weight:700;letter-spacing:.08em}
+.sched-train{display:block;font-family:var(--font-cond);font-size:12px;font-weight:600;letter-spacing:.08em;color:var(--grey)}
+.sched-empty{color:var(--grey)}
+.sched-updated{padding:14px 18px 90px;font-size:0.85rem;color:var(--grey)}
+.sched-gridwrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.sched-grid{border-collapse:separate;border-spacing:0;font-size:0.85rem;min-width:100%}
+.sched-grid th,.sched-grid td{border-bottom:1px solid var(--hair);border-right:1px solid var(--hair);padding:7px 8px;text-align:center;vertical-align:middle;min-width:76px}
+.sched-grid thead th{font-family:var(--font-cond);font-weight:700;letter-spacing:.06em;line-height:1.2;border-bottom:1px solid var(--ink)}
+.sched-grid thead th .es{display:block;font-weight:500;color:var(--grey)}
+.sched-grid thead th.today{background:var(--ink);color:var(--paper)}
+.sched-grid thead th.today .es{color:var(--paper)}
+.sched-grid .sticky{position:sticky;left:0;z-index:1;background:var(--paper);text-align:left;min-width:110px;border-right:1px solid var(--ink)}
+.sched-grid tr.crew th{text-align:left;font-family:var(--font-cond);font-size:13px;font-weight:700;letter-spacing:.12em;color:var(--grey);background:var(--press)}
+.sched-grid td.note{font-size:0.8rem}
+.sched-err{text-align:center;padding:60px 20px;color:var(--ink)}
+/* The PIN box: kitchen.css's .pin-input loses to .modal input[type="tel"] (15.2px); as Inventory. */
+.modal input[type="tel"].pin-input{font-size:1.4rem}
+.sched-err button{margin-top:14px;min-height:44px;padding:8px 18px;background:var(--paper);border:1px solid var(--ink);border-radius:6px;font-family:var(--font-cond);font-weight:600;letter-spacing:.08em;text-transform:uppercase;cursor:pointer}
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="header-row">
+    <a class="home-link" href="index.html">← Home</a>
+    <h1>Tempest <span>Schedule</span></h1>
+    <div class="mgr-toggle"><span>Manager</span><div class="mgr-switch" id="mgrSwitch" onclick="toggleMgr()"><div class="knob"></div></div></div>
+  </div>
+</div>
+<div class="date-bar sched-week-bar">
+  <div class="date-left">
+    <button class="date-arrow" type="button" aria-label="Previous week" onclick="stepWeek(-1)">◀</button>
+    <div class="date-info"><div class="date-display" id="weekLabel"></div></div>
+    <button class="date-arrow" type="button" aria-label="Next week" onclick="stepWeek(1)">▶</button>
+  </div>
+  <div class="date-today" id="thisWeekLink" onclick="goThisWeek()">This week</div>
+</div>
+<div class="view-toggle">
+  <button type="button" id="viewDayBtn" onclick="setView('day')">Day</button>
+  <button type="button" id="viewWeekBtn" onclick="setView('week')">Week</button>
+</div>
+<div id="dayStrip" class="sched-days"></div>
+<div id="appBody"><div class="loading"><div class="spinner"></div><p>Loading the schedule…</p></div></div>
+<div class="sched-updated" id="updatedLine"></div>
+
+<!-- Manager PIN modal -->
+<div class="modal-bg" id="pinModal">
+  <div class="modal">
+    <h3>Enter Manager PIN</h3>
+    <label>4-digit PIN</label>
+    <input class="pin-input" type="tel" inputmode="numeric" pattern="[0-9]*" maxlength="4" id="pinInput" autocomplete="off">
+    <div class="modal-err" id="pinErr">Incorrect PIN</div>
+    <div class="modal-btns">
+      <button class="modal-btn cancel" onclick="closePin()">Cancel</button>
+      <button class="modal-btn save" onclick="submitPin()">Unlock</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<script>
+var SB='https://sxppuyarecqkgkrsrefc.supabase.co',SK='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN4cHB1eWFyZWNxa2drcnNyZWZjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczOTA4MzAsImV4cCI6MjA5Mjk2NjgzMH0.GM8OfcR68_JjdPeQ3k7j6L3ulJFaeS1xnSLBcdtYXtU';
+var MANAGER_PIN = '4316';
+var API_TIMEOUT=15000;
+var LOAD_TIMEOUT=60000;
+var VIEW_KEY='boxkitchen_schedule_view';
+var mgr=false,st=null,loadSeq=0;
+var view='day',weekStart=null,dayIdx=0,todayKey='';
+var people=[],shifts={},dayNotes={},standing=[],updatedMax=null;
+
+var DAY_EN=['SUNDAY','MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY'];
+var DAY_ES=['DOMINGO','LUNES','MARTES','MIERCOLES','JUEVES','VIERNES','SABADO'];
+var DAY_AB=['SU','MO','TU','WE','TH','FR','SA'];
+var DAY_SHORT=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+var MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+/* api() with a timeout, from tempest_inventory.html: one callback, status 0
+   on no answer. This slice only ever sends GET. */
+function api(m,t,q,d,cb,ms,pf){var x=new XMLHttpRequest(),fired=false;function fire(r,s){if(fired)return;fired=true;if(cb)cb(r,s);}
+  x.open(m,SB+'/rest/v1/'+t+(q?'?'+q:''));x.timeout=ms||(m==='GET'?LOAD_TIMEOUT:API_TIMEOUT);x.setRequestHeader('apikey',SK);x.setRequestHeader('Authorization','Bearer '+SK);if(d){x.setRequestHeader('Content-Type','application/json');x.setRequestHeader('Prefer',pf||'return=representation');}
+  x.onload=function(){var r=null;try{r=JSON.parse(x.responseText);}catch(e){}fire(r,x.status);};x.onerror=function(){fire(null,0);};x.ontimeout=function(){fire(null,0);};x.send(d?JSON.stringify(d):null);}
+
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+
+/* Dates: local calendar days only. Never toISOString() — it is UTC, and after
+   4–5 PM in San Francisco it is already tomorrow. Step with new Date(y,m,d+n). */
+function keyOf(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function addDays(d,n){return new Date(d.getFullYear(),d.getMonth(),d.getDate()+n);}
+function sundayOf(d){return new Date(d.getFullYear(),d.getMonth(),d.getDate()-d.getDay());}
+function weekDates(){var a=[];for(var i=0;i<7;i++)a.push(addDays(weekStart,i));return a;}
+function weekLabel(s){
+  var e=addDays(s,6);
+  if(s.getFullYear()!==e.getFullYear())return MON[s.getMonth()]+' '+s.getDate()+', '+s.getFullYear()+' – '+MON[e.getMonth()]+' '+e.getDate()+', '+e.getFullYear();
+  if(s.getMonth()!==e.getMonth())return MON[s.getMonth()]+' '+s.getDate()+' – '+MON[e.getMonth()]+' '+e.getDate()+', '+e.getFullYear();
+  return MON[s.getMonth()]+' '+s.getDate()+' – '+e.getDate()+', '+e.getFullYear();
+}
+function md(d){return (d.getMonth()+1)+'/'+d.getDate();}
+function fmtUpdated(iso){
+  var d=new Date(iso);if(isNaN(d))return '';
+  var h=d.getHours(),ap=h<12?'AM':'PM';h=h%12||12;
+  return 'Updated '+DAY_SHORT[d.getDay()]+' '+h+':'+String(d.getMinutes()).padStart(2,'0')+' '+ap;
+}
+
+function readView(){try{var v=localStorage.getItem(VIEW_KEY);return v==='week'?'week':'day';}catch(e){return 'day';}}
+function saveView(v){try{localStorage.setItem(VIEW_KEY,v);}catch(e){}}
+
+function init(){
+  var now=new Date();
+  todayKey=keyOf(now);
+  weekStart=sundayOf(now);
+  dayIdx=now.getDay();
+  view=readView();
+  paintChrome();
+  loadWeek();
+}
+
+function paintChrome(){
+  document.getElementById('weekLabel').textContent=weekLabel(weekStart);
+  document.getElementById('viewDayBtn').className=view==='day'?'active':'';
+  document.getElementById('viewWeekBtn').className=view==='week'?'active':'';
+  var strip=document.getElementById('dayStrip');
+  if(view!=='day'){strip.style.display='none';return;}
+  strip.style.display='';
+  var ds=weekDates(),h='';
+  for(var i=0;i<7;i++){
+    var k=keyOf(ds[i]),cls='sched-day'+(i===dayIdx?' active':'')+(k===todayKey?' today':'');
+    h+='<button type="button" class="'+cls+'" onclick="pickDay('+i+')" aria-pressed="'+(i===dayIdx)+'" aria-label="'+DAY_EN[i]+' '+md(ds[i])+(k===todayKey?', today':'')+'"><span class="dn">'+DAY_AB[i]+'</span><span class="dd">'+ds[i].getDate()+'</span></button>';
+  }
+  strip.innerHTML=h;
+}
+
+function stepWeek(n){weekStart=addDays(weekStart,7*n);paintChrome();loadWeek();}
+function goThisWeek(){var now=new Date();todayKey=keyOf(now);weekStart=sundayOf(now);dayIdx=now.getDay();paintChrome();loadWeek();}
+function pickDay(i){dayIdx=i;paintChrome();render();}
+function setView(v){if(v===view)return;view=v;saveView(v);paintChrome();render();}
+
+/* Four reads. People first (shifts are asked for by person id, retired people
+   included so a past week still shows them), then the rest together. Nothing
+   is drawn until every read has landed; one failure shows Try again. A newer
+   load supersedes an older one still in flight. */
+function loadWeek(opt){
+  opt=opt||{};
+  var seq=++loadSeq,ds=weekDates(),first=keyOf(ds[0]),last=keyOf(ds[6]);
+  if(!opt.quiet){document.getElementById('appBody').innerHTML='<div class="loading"><div class="spinner"></div><p>Loading the schedule…</p></div>';document.getElementById('updatedLine').textContent='';}
+  var failed=false;
+  function fail(){if(failed||seq!==loadSeq)return;failed=true;
+    document.getElementById('appBody').innerHTML='<div class="sched-err">Couldn’t load the schedule. Check the wifi.<br><button type="button" onclick="loadWeek()">Try again</button></div>';
+    document.getElementById('updatedLine').textContent='';}
+  api('GET','schedule_people','select=id,name,crew,sort_order,active&location=eq.Tempest&order=crew.asc,sort_order.asc,id.asc',null,function(pr,s){
+    if(seq!==loadSeq)return;
+    if(!Array.isArray(pr)){fail();return;}
+    var ids=pr.map(function(p){return p.id;}),got={},need=3;
+    function done(){
+      if(failed||seq!==loadSeq)return;
+      if(--need)return;
+      people=pr;shifts={};dayNotes={};updatedMax=null;
+      got.shifts.forEach(function(r){shifts[r.person_id+'|'+r.work_date]=r;bump(r.updated_at);});
+      got.notes.forEach(function(r){dayNotes[r.note_date]=r.note||'';bump(r.updated_at);});
+      standing=got.standing;
+      render();
+    }
+    function take(name){return function(r){if(seq!==loadSeq)return;if(!Array.isArray(r)){fail();return;}got[name]=r;done();};}
+    if(ids.length)api('GET','schedule_shifts','select=person_id,work_date,kind,shift_text,training,updated_at&person_id=in.('+ids.join(',')+')&work_date=gte.'+first+'&work_date=lte.'+last,null,take('shifts'));
+    else take('shifts')([]);
+    api('GET','schedule_day_notes','select=note_date,note,updated_at&location=eq.Tempest&note_date=gte.'+first+'&note_date=lte.'+last,null,take('notes'));
+    api('GET','schedule_standing','select=id,label,weekdays,sort_order&location=eq.Tempest&active=eq.true&order=sort_order.asc,id.asc',null,take('standing'));
+  });
+}
+function bump(t){if(t&&(!updatedMax||new Date(t)>new Date(updatedMax)))updatedMax=t;}
+
+function boxOf(p,k){var r=shifts[p.id+'|'+k];return r&&r.kind?r:null;}
+/* Active people always show; a retired person only in a week where they have a box. */
+function shown(crew){
+  var ds=weekDates();
+  return people.filter(function(p){
+    if(p.crew!==crew)return false;
+    if(p.active)return true;
+    for(var i=0;i<7;i++)if(boxOf(p,keyOf(ds[i])))return true;
+    return false;
+  });
+}
+function standingOn(i){return standing.filter(function(s){return (s.weekdays||[]).indexOf(i)>=0;});}
+
+/* How a box reads. Every state is also a word; empty is never OFF. */
+function boxHtml(b,inWeek){
+  if(!b)return inWeek?'<span class="sched-empty" aria-label="not scheduled yet"></span>':'<span class="sched-empty" aria-label="not scheduled yet">—</span>';
+  if(b.kind==='off')return '<span class="sched-off">OFF</span>';
+  if(b.kind==='request')return '<span class="sched-req">REQUEST</span>';
+  return '<span class="sched-shift">'+esc(b.shift_text)+'</span>'+(b.training?'<span class="sched-train">TRAINING</span>':'');
+}
+
+function render(){
+  var body=document.getElementById('appBody');
+  var day=shown('day'),night=shown('night');
+  if(!day.length&&!night.length){body.innerHTML='<div class="empty">No one on the schedule yet.</div>';}
+  else body.innerHTML=view==='week'?renderWeek(day,night):renderDay(day,night);
+  document.getElementById('updatedLine').textContent=updatedMax?fmtUpdated(updatedMax):'';
+}
+
+function renderDay(day,night){
+  var d=weekDates()[dayIdx],k=keyOf(d);
+  var h='<div class="sched-dayhead">'+DAY_EN[dayIdx]+' · '+DAY_ES[dayIdx]+' · '+md(d)+'</div>';
+  var notes=standingOn(dayIdx).map(function(s){return '<div class="sched-note">'+esc(s.label)+'</div>';}).join('');
+  var dn=(dayNotes[k]||'').trim();
+  if(dn)notes+='<div class="sched-note">'+esc(dn)+'</div>';
+  if(notes)h+='<div class="sched-notes">'+notes+'</div>';
+  function crew(label,list){
+    if(!list.length)return '';
+    var s='<div class="cat-header"><div class="cat-label">'+label+'</div></div>';
+    list.forEach(function(p){s+='<div class="sched-row"><div class="sched-name">'+esc(p.name)+'</div><div class="sched-box">'+boxHtml(boxOf(p,k),false)+'</div></div>';});
+    return s;
+  }
+  return h+crew('DAY CREW',day)+crew('NIGHT CREW',night);
+}
+
+function renderWeek(day,night){
+  var ds=weekDates(),keys=ds.map(keyOf);
+  var h='<div class="sched-gridwrap"><table class="sched-grid"><thead><tr><th class="sticky" scope="col">Name</th>';
+  for(var i=0;i<7;i++)h+='<th scope="col"'+(keys[i]===todayKey?' class="today"':'')+'>'+DAY_EN[i]+'<span class="es">'+DAY_ES[i]+'</span>'+md(ds[i])+'</th>';
+  h+='</tr></thead><tbody>';
+  function crew(label,list){
+    if(!list.length)return '';
+    var s='<tr class="crew"><th class="sticky" scope="rowgroup">'+label+'</th><th colspan="7"></th></tr>';
+    list.forEach(function(p){
+      s+='<tr><th class="sticky" scope="row">'+esc(p.name)+'</th>';
+      for(var i=0;i<7;i++)s+='<td>'+boxHtml(boxOf(p,keys[i]),true)+'</td>';
+      s+='</tr>';
+    });
+    return s;
+  }
+  h+=crew('DAY CREW',day)+crew('NIGHT CREW',night);
+  h+='<tr class="crew"><th class="sticky" scope="rowgroup">NOTES</th><th colspan="7"></th></tr>';
+  standing.forEach(function(s){
+    h+='<tr><th class="sticky" scope="row">'+esc(s.label)+'</th>';
+    for(var i=0;i<7;i++)h+='<td class="note">'+((s.weekdays||[]).indexOf(i)>=0?esc(s.label):'')+'</td>';
+    h+='</tr>';
+  });
+  h+='<tr><th class="sticky" scope="row">Games &amp; events</th>';
+  for(var i=0;i<7;i++)h+='<td class="note">'+esc((dayNotes[keys[i]]||'').trim())+'</td>';
+  h+='</tr></tbody></table></div>';
+  return h;
+}
+
+function showToast(msg,type){
+  var t=document.getElementById('toast');
+  t.textContent=(type==='success'?'✓ ':'⚠ ')+msg;
+  t.className='toast show '+(type||'success');
+  clearTimeout(st);st=setTimeout(function(){t.className='toast';},1800);
+}
+
+/* Coming back to the page: today may have moved, and a manager may have
+   saved. Reload this week; keep the view and the chosen day. */
+document.addEventListener('visibilitychange',function(){
+  if(document.hidden)return;
+  todayKey=keyOf(new Date());
+  paintChrome();
+  loadWeek({quiet:true});
+});
+
+// ── MANAGER MODE ── (changes nothing visible in this slice)
+function toggleMgr(){
+  if(mgr){mgr=false;document.getElementById('mgrSwitch').classList.remove('on');render();return;}
+  if(sessionStorage.getItem('boxkitchen_mgr')==='1'){mgr=true;document.getElementById('mgrSwitch').classList.add('on');render();return;}
+  openPin();
+}
+function openPin(){
+  var inp=document.getElementById('pinInput');inp.value='';
+  document.getElementById('pinErr').classList.remove('show');
+  document.getElementById('pinModal').classList.add('show');
+  setTimeout(function(){inp.focus();},100);
+}
+function closePin(){document.getElementById('pinModal').classList.remove('show');}
+function submitPin(){
+  var v=(document.getElementById('pinInput').value||'').trim();
+  if(v===MANAGER_PIN){
+    sessionStorage.setItem('boxkitchen_mgr','1');
+    closePin();
+    mgr=true;document.getElementById('mgrSwitch').classList.add('on');render();
+    showToast('Manager mode unlocked','success');
+  }else{
+    var e=document.getElementById('pinErr');e.classList.add('show');
+    var inp=document.getElementById('pinInput');inp.value='';inp.focus();
+  }
+}
+document.getElementById('pinModal').addEventListener('click',function(e){if(e.target===this)closePin();});
+document.getElementById('pinInput').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();submitPin();}});
+
+init();
+</script>
+</body>
+</html>
