@@ -55,6 +55,8 @@
   .kit-item{display:flex;justify-content:space-between;align-items:center;gap:12px;min-height:60px;padding:12px 16px;border:1px solid var(--edge);border-radius:6px;color:var(--ink)}
   .kit-item:active{background:var(--press)}
   .kit-item-name{font-weight:600;font-size:1.1rem}
+  /* a kit that needs a manager: bold ink, never a colour (CLAUDE.md rule 4) */
+  .kit-item-n.kit-flag{color:var(--ink);font-weight:700}
   .kit-item-n{font-family:var(--font-cond);font-size:14px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--grey);white-space:nowrap}
 </style>
 </head>
@@ -222,7 +224,7 @@ function drawKit(kit, recipe){
   var body=document.getElementById('appBody');
   var h='<div class="kit-wrap"><a class="kit-back" href="#" id="backLink">← All kits</a><div class="kit-title">'+esc(kit.name)+'</div>';
   if(!recipe||recipe.status==='archived'){
-    body.innerHTML=h+'<div class="kit-from">&nbsp;</div><div class="kit-unsorted"><div class="kit-unsorted-msg">Recipe not found in the Recipe Database — tell a manager.</div></div></div>';
+    body.innerHTML=h+'<div class="kit-from"></div><div class="kit-unsorted" id="notFound"><div class="kit-unsorted-msg">Recipe not found in the Recipe Database — tell a manager.</div></div></div>';
     return;
   }
   var s=sortKit(kit, recipe.ingredients);
@@ -232,6 +234,8 @@ function drawKit(kit, recipe){
     s.unsorted.forEach(function(l){h+='<div class="kit-line">'+esc(l)+'</div>';});
     h+='<div class="kit-unsorted-msg">This is in the recipe but not in the kit yet — tell a manager.</div></div>';
   }
+  /* nothing left to put in a container: never "All 0 containers" */
+  if(!s.boxes.length){body.innerHTML=h+drawOut(s)+'</div>';return;}
   h+='<div class="kit-sec">Containers</div>';
   var part=null;
   s.boxes.forEach(function(b,i){
@@ -247,11 +251,13 @@ function drawKit(kit, recipe){
     +'<div>All '+inPan+' container'+(inPan===1?'':'s')+' into one hotel pan</div>';
   side.forEach(function(b){h+='<div>Next to the pan, labelled: '+esc(b.name)+'</div>';});
   h+='<div>Label and date the pan · into the cooler</div></div>';
-  if(s.out.length){
-    h+='<div class="kit-sec">Not in the kit — at make time</div>';
-    s.out.forEach(function(o){h+='<div class="kit-out"><div class="kit-line">'+esc(o.line)+'</div><div class="kit-why">'+esc(o.why)+'</div></div>';});
-  }
-  body.innerHTML=h+'</div>';
+  body.innerHTML=h+drawOut(s)+'</div>';
+}
+function drawOut(s){
+  if(!s.out.length)return '';
+  var h='<div class="kit-sec">Not in the kit — at make time</div>';
+  s.out.forEach(function(o){h+='<div class="kit-out"><div class="kit-line">'+esc(o.line)+'</div><div class="kit-why">'+esc(o.why)+'</div></div>';});
+  return h;
 }
 
 /* the list: every kit in Line PM order, with the containers it really has */
@@ -260,7 +266,9 @@ function drawList(){
   KITS.forEach(function(k){
     var r=recipes[k.recipeId],n=r&&r.status!=='archived'?sortKit(k,r.ingredients).boxes.length:null;
     h+='<a class="kit-item" href="#'+k.slug+'" data-slug="'+k.slug+'"><span class="kit-item-name">'+esc(k.name)+'</span>'
-      +'<span class="kit-item-n">'+(n===null?'':n+' container'+(n===1?'':'s'))+'</span></a>';
+      +(n===null?'<span class="kit-item-n kit-flag">Recipe not found</span>'
+        :n===0?'<span class="kit-item-n kit-flag">Needs sorting</span>'
+        :'<span class="kit-item-n">'+n+' container'+(n===1?'':'s')+'</span>')+'</a>';
   });
   document.getElementById('appBody').innerHTML=h+'</div></div>';
 }
