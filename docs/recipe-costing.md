@@ -1,7 +1,7 @@
 # Recipe Costing — what a batch costs (B4.3)
 
-Status: **plan v1, approved by Stephen 2026-11-02. Slice 0 is closed (tables live, 0 rows); Slice 1 is next.** No app code written
-yet. It is built in a separate window: this plan is owned by the planning window, the build window
+Status: **plan v1, approved by Stephen 2026-11-02. Slice 0 is closed (tables live, 0 rows); Slice 1
+is built and reviewed (2026-11-05), not yet shipped.** It is built in a separate window: this plan is owned by the planning window, the build window
 records each slice "as built" here, and any change to the design goes back to the planner. Every
 decision in "Decisions" was Stephen's, in the interview that produced this document. The design
 choices made without asking are listed under "Decided in planning, not asked" so they can be
@@ -508,6 +508,10 @@ Eight, small, safe before fast. Each is reviewable in one sitting and leaves thi
 found them. The new page stays **unlinked** — reachable only by its address — until Slice 7. From
 Slice 2 on, every piece of arithmetic goes into `assets/recipe-math.js`, never into the page.
 
+**Shipping (planner's decision, 2026-11-05):** Each slice ships to main as its own PR once Stephen
+approves it, from a branch made from origin/main (Menu Builder's Slice 2 waits for this plan's
+Slice 3 on main). Slice 7 is the last PR, not the only one.
+
 ### Slice 0 — Ground truth and tables *(no app code)* · **blocks everything**
 
 - **Read-only, Stephen runs:** one query over `pg_policies`, `information_schema.columns` and
@@ -616,7 +620,14 @@ against a stubbed `api()` in `check_costing.py`, with all of its existing assert
 > red fill: 1). `check_styling.py` clean. **Not clean:** the existing `provenance` scenario
 > fails 5 `m29` invoice-bar height checks — identically on the page before this change, so
 > pre-existing (likely layout under this Chrome), not caused by Slice 1; left for its own look.
-> Not yet done: Stephen's phone look at a marked row, and review/PR.
+> **Reviewed 2026-11-05** against `docs/review-checklist.md` and Constraints: no defects. Save is
+> the only path that rewrites `name` (Retire/Restore PATCH only `active`); a re-link to another
+> item is not asked about, by design; the mark is ink on the yellow highlighter, wraps at phone
+> width, prints as words; no class renamed, no input added; nothing writes on load. Noted, not
+> changed (plan is silent): the list's search does not match the old, priced-as name. Live
+> read-only check the same day: 160 linked price rows, all 160 carry their order item's current
+> name, none on a retired item — no live row is marked. Not yet done: the PR and Stephen's
+> phone look.
 
 ### Slice 2 — The recipes, read-only *(new page)*
 
