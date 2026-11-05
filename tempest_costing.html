@@ -36,6 +36,13 @@
   .modal input,.modal select{margin-bottom:0}
   .nb-label{margin:14px 0 7px}
 
+  /* B4.3 Recipe Costing, Slice 1 — used by: render() (.ing-renamed).
+     A price row whose saved name is no longer its order item's name: the
+     yellow highlighter, as .ing-pack.unset, never red. The words carry the
+     meaning, so it still reads on paper where the fill does not print. */
+  .ing-renamed{display:inline-block;background:var(--yellow);color:var(--ink);font-weight:600;
+               font-size:0.76rem;padding:1px 5px;margin-top:3px;overflow-wrap:anywhere}
+
   /* Slice 3 — the invoice bar. Page-only: no other page files a delivery,
      so this stays out of kitchen.css rather than becoming a shared
      component with one caller.
@@ -497,6 +504,18 @@ function ucFmt(n){var v=Number(n)||0;return '$'+v.toLocaleString('en-US',{minimu
 function unitCost(it){var q=num(it.pack_qty),p=num(it.pack_price);return (q>0&&p>0)?p/q:null;}
 /* Display name: prefer the linked order-guide item's live name, else the stored name. */
 function nameOf(it){var o=it.order_item_id!=null?orderById[it.order_item_id]:null;return o?o.name:(it.name||'(unnamed)');}
+/* B4.3 Slice 1: a price follows its order item's id and shows the item's
+   CURRENT name, so an item renamed in place on the Orders page (#270 Heirloom
+   -> Arrow cabbage) silently carries the old item's price. The row's own saved
+   `name` still says what it was priced as. Returns that old name when the two
+   differ - ignoring case and spacing, which do not make a different item - or
+   null. Never guesses: an unresolvable order item is not called renamed. */
+function renamedFrom(it){
+  var o=it.order_item_id!=null?orderById[it.order_item_id]:null;
+  if(!o||!it.name)return null;
+  function norm(x){return String(x||'').toLowerCase().replace(/\s+/g,' ').trim();}
+  return norm(it.name)===norm(o.name)?null:it.name;
+}
 function vendorOf(it){var o=it.order_item_id!=null?orderById[it.order_item_id]:null;return o&&o.vendor?o.vendor:'Off-guide items';}
 
 /* ---- PIN gate ---- */
@@ -617,13 +636,14 @@ function render(){
     h+='<div class="vhead">'+esc(vn)+'</div>';
     for(var j=0;j<rows.length;j++){
       var it=rows[j],uc=unitCost(it),alias=it.invoice_alias?'<div class="ing-alias-line">'+esc(it.invoice_alias)+'</div>':'';
+      var was=renamedFrom(it),renamed=was?'<div class="ing-renamed">renamed on the order guide — priced as '+esc(was)+'</div>':'';
       var packTxt,packCls='';
       if(uc!=null){packTxt=num(it.pack_qty)+' '+esc(it.pack_unit||'')+' · '+money(it.pack_price)+'/pack';}
       else{packTxt='Tap to set price';packCls=' unset';}
       var costCell=(uc!=null)?('<div class="uc">'+ucFmt(uc)+'</div><div class="uc-unit">/'+esc(it.pack_unit||'unit')+'</div>'):'<div class="uc none">— set —</div>';
       h+='<div class="ing-row'+(it.active?'':' retired')+'" onclick="openEdit('+it.id+')">'+
            '<div class="ing-main"><div class="ing-name">'+esc(nameOf(it))+(it.active?'':' <span class="ing-alias">(retired)</span>')+'</div>'+alias+
-           '<div class="ing-pack'+packCls+'">'+packTxt+'</div></div>'+
+           '<div class="ing-pack'+packCls+'">'+packTxt+'</div>'+renamed+'</div>'+
            '<div class="ing-cost">'+costCell+'</div>'+
          '</div>';
     }
@@ -1086,6 +1106,13 @@ function saveItem(andNext){
                      :(newOiId!=null?'keeps its current order-guide link, which this page cannot show right now'
                                     :'stays off the order guide'))+
                 '.\n\nSave with the link unchanged?'))return;
+    /* B4.3 Slice 1: any save re-writes `name` from the order guide and so
+       clears the renamed mark. Ask once before that happens - only when the
+       row stays on the same guide item (a re-link is a different question,
+       already asked by the picker). */
+    var was=renamedFrom(it);
+    if(was&&newO&&newOiId===it.order_item_id&&
+       !confirm('This price was saved for '+was+'. Is it right for '+newO.name+'?'))return;
     var warn=magnitudeWarning(it,packQty,packPrice,unit,label);
     if(warn&&!confirm(warn))return;
     payload={order_item_id:newOiId,name:(newO?newO.name:name),invoice_alias:alias,pack_qty:packQty,pack_unit:unit,pack_price:packPrice,updated_at:nowIso};
