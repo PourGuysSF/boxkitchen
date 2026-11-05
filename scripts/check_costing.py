@@ -1905,8 +1905,17 @@ RUNNER = r"""
        (778px of content against 743). Folded it is one row. It folds as the
        modal CLOSES and never while it is open: a bar that shrank as you
        finished typing would slide the picker up under your next tap, and a
-       tap on a list row is a pick. */
-    step(function(){ closeHist(); closeEdit(); H.reqs.length=0; openEdit(502); });
+       tap on a list row is a pick.
+       A real tap on Cancel or Save takes focus out of the bar first; .click()
+       does not, and an earlier step's save gate left focus in #invDate. With
+       focus there, m83's !inBar() correctly refuses to fold ("being typed
+       in"), and every height below would measure the wrong state. So leave
+       the bar as a tap leaves it, and say so before measuring. */
+    step(function(){ closeHist();
+      var a=document.activeElement;if(a&&inBar())a.blur();
+      ok('m29: (focus has left the invoice bar, as a tap on Cancel leaves it)', !inBar(),
+         document.activeElement&&(document.activeElement.id||document.activeElement.tagName));
+      closeEdit(); H.reqs.length=0; openEdit(502); });
     step(function(){
       FOLDED_BAR=$('invBar').getBoundingClientRect().height;
       ok('m29: a set invoice opens folded to one line', visible($('invSet')));
