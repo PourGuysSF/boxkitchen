@@ -1,0 +1,25 @@
+# The Menu Builder's write path (page-named ids, upsert on id, look-up before
+# retry, no delete) cannot be tested against the live database without writing
+# to it. check_menu_builder.py drives the real page in headless Chrome against a
+# stubbed XMLHttpRequest, so it can run here.
+name: menu builder guard
+
+on:
+  pull_request:
+    paths: ['tempest_menu_builder.html', 'assets/**', 'scripts/check_menu_builder.py']
+  push:
+    branches: [main]
+    paths: ['tempest_menu_builder.html', 'assets/**', 'scripts/check_menu_builder.py']
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: browser-actions/setup-chrome@v1
+        id: chrome
+        with:
+          chrome-version: stable
+      - run: python3 scripts/check_menu_builder.py
+        env:
+          CHROME: ${{ steps.chrome.outputs.chrome-path }}

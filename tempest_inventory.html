@@ -98,7 +98,7 @@
   .stock-print-sign{display:none}
   @media print{
     .stock-pending,.name-bar,#introBar,.stock-setup,.stock-countbar,.row-mgr-actions,
-    .stock-print-btn,.stock-place-empty{display:none !important}
+    .stock-print-btn,.stock-place-empty,.stock-kind,.stock-close-act{display:none !important}
     .stock-pb{break-before:page;page-break-before:always}
     .stock-print-sign{display:block;padding:6px 0 10px;font-size:11pt;border-bottom:1px solid var(--ink);break-after:avoid;page-break-after:avoid}
     .manager-mode .stock-boxes{display:flex !important}
@@ -140,6 +140,22 @@
   /* manager mode: the month's count, at the top of set-up */
   .stock-countbar{padding:12px 18px;border-bottom:1px solid var(--hair);font-size:0.9rem;line-height:1.4}
   .stock-countbar-btns{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+
+  /* ── CLOSE THE MONTH (manager, Slice 7) ── the check screen reads top to
+     bottom: what is missing, what will not be valued, real or practice, who,
+     then the one button. Something that stops a close is the highlighter
+     behind ink, like the waiting bar - it is a thing to do, not an error. */
+  .stock-warn{margin:12px 18px 0;padding:10px 12px;background:var(--yellow);color:var(--ink);border-radius:6px;font-size:0.88rem;font-weight:600;line-height:1.35}
+  .stock-note{padding:10px 18px;font-size:0.88rem;line-height:1.45;border-bottom:1px solid var(--hair)}
+  .stock-kind{padding:12px 18px 14px;border-bottom:1px solid var(--hair)}
+  .stock-kind .mode-toggle{margin-top:8px}
+  .stock-kind-sub{margin-top:8px;font-size:0.8rem;color:var(--grey);line-height:1.4}
+  .stock-close-act{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:16px 18px 28px}
+  .stock-close-act .submit-btn{flex:1 1 220px}
+  .stock-close-act .mgr-edit-btn{flex:0 0 auto;padding:0 16px}
+  /* previous months: one row per closed count, its month and how it closed */
+  .stock-prev{align-items:center}
+  .stock-tag{font-family:var(--font-cond);font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;border:1px solid var(--ink);border-radius:4px;padding:0 5px;margin-left:6px;vertical-align:2px}
 
   /* Manager mode is set-up, not counting: the boxes give way to the
      row's controls, and the grip leads the row. */
@@ -271,6 +287,11 @@ var count=null,lines={},staff=[],local={};
 /* Slice 6, manager only: the price list WITH prices, every line of the count
    (with its row, even a removed one), and which manager tab is showing */
 var prices=null,allLines=[],mview='setup';
+/* Slice 7, manager only: every count, open or closed; the frozen lines of the
+   closed ones (for Previous months); the closed month being looked at
+   (prevId, and its lines once read); and, on the close screen, whether this
+   is a real month or a practice count - neither until a manager says. */
+var allCounts=null,prevLines=[],prevId=null,prev=null,closeKind=null;
 var WHO_KEY='boxkitchen_inv_who',SAVE_DELAY=1200;
 /* Slice 4: everything typed and not yet confirmed is also kept on this device,
    one key per count, so a closed tab or a dead signal loses nothing. notes[id]
@@ -319,7 +340,7 @@ function loadAll(opt){
   var seq=++loadSeq,withSetup=mgr;
   loading=true;
   if(!opt.quiet)document.getElementById('appBody').innerHTML='<div class="loading"><div class="spinner"></div><p>Loading the count sheet…</p></div>';
-  var got={},need=withSetup?8:5,failed=false;
+  var got={},need=withSetup?9:5,failed=false;
   function fail(){
     failed=true;loading=false;
     // a quiet re-read that fails keeps the sheet on screen: offline, it is all you have
@@ -329,7 +350,7 @@ function loadAll(opt){
   function done(){
     loading=false;
     places=got.places;items=got.items;packs=packMap(got.packs);staff=got.staff;
-    if(withSetup){guide=got.guide;leftOff=got.leftOff;prices=priceMap(got.prices);}
+    if(withSetup){guide=got.guide;leftOff=got.leftOff;prices=priceMap(got.prices);allCounts=got.allCounts;prevLines=got.prevLines;prev=null;}
     var c=got.counts[0]||null;
     if(!count||!c||count.id!==c.id){local={};notes={};}   // typed values belong to one count
     count=c;lines={};
@@ -366,6 +387,19 @@ function loadAll(opt){
     api('GET','inventory_left_off','location=eq.'+LOCATION+'&active=eq.true&select=id,order_item_id',null,land('leftOff'));
     /* The only read that asks for a price - and only behind the PIN. */
     api('GET','ingredient_costs','location=eq.'+LOCATION+'&active=eq.true&order_item_id=not.is.null&select=order_item_id,pack_qty,pack_unit,pack_price',null,land('prices'));
+    /* Every count, closed ones too - which months Start may offer, and
+       Previous months - and the frozen values of the closed ones. */
+    api('GET','inventory_counts','location=eq.'+LOCATION+'&select=id,period,status,closed_at,closed_by,practice&order=period.desc',null,function(r,s){
+      if(seq!==loadSeq||failed)return;
+      if(!(s>=200&&s<300)||!Array.isArray(r))return fail();
+      var ids=r.filter(function(c){return c.status==='closed';}).map(function(c){return c.id;});
+      if(!ids.length){got.prevLines=[];return land('allCounts')(r,s);}
+      api('GET','inventory_count_lines','location=eq.'+LOCATION+'&count_id=in.('+ids.join(',')+')&select=count_id,full_qty,loose_qty,value_frozen,value_note',null,function(r2,s2){
+        if(seq!==loadSeq||failed)return;
+        if(!(s2>=200&&s2<300)||!Array.isArray(r2))return fail();
+        got.prevLines=r2;land('allCounts')(r,s);
+      });
+    });
   }
 }
 
@@ -415,9 +449,18 @@ function render(){
     if(!distinct[oid]){distinct[oid]=1;nItems++;if(packs[oid])nPacked++;}
   }
   var h='';
-  if(mgr&&mview==='values'){
-    body.innerHTML='<div class="manager-mode"><div class="stock-setup">'+countBarHtml()+tabsHtml()+'</div>'+valuesHtml()+'</div>';
-    document.getElementById('introBar').textContent='Manager values. What each counted item is worth at Recipe Costing’s prices today — and, just as plainly, what is not valued yet, and why.';
+  if(mgr&&mview==='close'){
+    body.innerHTML='<div class="manager-mode">'+closeHtml()+'</div>';
+    document.getElementById('introBar').textContent='Closing the month. Look over what is not counted and what cannot be valued, say whether this is a real month or a practice count, then close it. Its numbers and values are saved as they are now.';
+    updateProgress(nItems);updatePendingBar();
+    return;
+  }
+  if(mgr&&(mview==='values'||mview==='prev')){
+    var pv=mview==='prev'?prevHtml():null;
+    body.innerHTML='<div class="manager-mode"><div class="stock-setup">'+countBarHtml()+tabsHtml()+'</div>'+(pv!==null?pv:valuesHtml()+previousHtml())+'</div>';
+    document.getElementById('introBar').textContent=pv!==null
+      ?'A closed month, exactly as it was saved when it closed: its numbers, and its values at that day’s prices. Nothing here moves when a price changes.'
+      :'Manager values. What each counted item is worth at Recipe Costing’s prices today — and, just as plainly, what is not valued yet, and why.';
     updateProgress(nItems);updatePendingBar();
     if(document.getElementById('placesModal').classList.contains('show'))renderPlaces();
     return;
@@ -986,25 +1029,41 @@ function countedAs(l){
 }
 function money(n){return '$'+Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
 function tabsHtml(){
+  var onV=mview==='values'||mview==='prev';   // a closed month is part of Values
   return '<div class="view-toggle stock-tabs" role="tablist">'
     +'<button type="button" role="tab" aria-selected="'+(mview==='setup')+'" class="'+(mview==='setup'?'active':'')+'" onclick="setMview(\'setup\')">Set-up</button>'
-    +'<button type="button" role="tab" aria-selected="'+(mview==='values')+'" class="'+(mview==='values'?'active':'')+'" onclick="setMview(\'values\')">Values</button></div>';
+    +'<button type="button" role="tab" aria-selected="'+onV+'" class="'+(onV?'active':'')+'" onclick="setMview(\'values\')">Values</button></div>';
 }
-function setMview(v){if(mview===v)return;mview=v;render();window.scrollTo(0,0);}
+function setMview(v){if(mview===v)return;mview=v;if(v!=='close')closeKind=null;if(v!=='prev')prevId=null;render();window.scrollTo(0,0);}
 var WHY={
   'no price':'No price in Recipe Costing yet.',
   'pack changed':'Recipe Costing’s pack size changed after this was counted. Recount it, or put the pack back.',
   'order units':'Counted in order-guide units before it had a pack, and Recipe Costing prices it in a different unit. Recount it now that it has a pack.'
 };
-function valuesHtml(){
-  if(!count)return '<div class="empty">No count is open. Values appear once a month’s count has begun.</div>';
-  if(!prices)return '<div class="empty">Loading prices…</div>';
-  var groups={},order=[],total=0,valued=0,nots=[],counted=0,activeCounted=0;
+/* The same reasons, for a closed month: what was true on the day it closed.
+   'not saved' only happens there - a line counted after the values were
+   saved, while the month was closing. */
+var WHY_FROZEN={
+  'no price':'There was no price in Recipe Costing when the month closed.',
+  'pack changed':'Recipe Costing’s pack size had changed since this was counted, so it could not be valued.',
+  'order units':'Counted in order-guide units, and Recipe Costing priced it in a different unit.',
+  'not saved':'Counted while the month was closing, after the values were saved. Reopen the month and close it again to value it.'
+};
+var REASONS=['no price','pack changed','order units','not saved'];
+function reasonLabel(w){return w==='order units'?'counted in order units':w==='not saved'?'counted while closing':w;}
+
+/* One valuation, shared by the open month (today's prices) and a closed one
+   (the values saved when it closed). vOf(line, order_item_id) says what a
+   line is worth: {counted, value, why, now}. Rows are grouped by the place
+   each item is in now; a line whose row has since been removed still counts,
+   and is listed on its own. */
+function valuation(ls,vOf){
+  var groups={},order=[],total=0,valued=0,nots=[],counted=0,activeCounted=0,by={};
   function group(key,label){if(!groups[key]){groups[key]={label:label,rows:[],sum:0,nv:0};order.push(key);}return groups[key];}
   for(var i=0;i<places.length;i++)group('p'+places[i].id,places[i].label);
-  for(var i=0;i<allLines.length;i++){
-    var l=allLines[i],it=itemById(l.inventory_item_id),emb=l.inventory_items||{},gi=(it&&it.order_items)||emb.order_items||{};
-    var oid=it?it.order_item_id:emb.order_item_id,v=valueLine(l,prices[oid]);
+  for(var i=0;i<ls.length;i++){
+    var l=ls[i],it=itemById(l.inventory_item_id),emb=l.inventory_items||{},gi=(it&&it.order_items)||emb.order_items||{};
+    var oid=it?it.order_item_id:emb.order_item_id,v=vOf(l,oid);
     if(!v.counted)continue;
     counted++;
     var key,label;
@@ -1015,32 +1074,42 @@ function valuesHtml(){
     var row={name:gi.name||'(unknown item)',vendor:gi.vendor||'',place:it&&placeById(it.place_id)?placeById(it.place_id).label:label,as:countedAs(l),v:v};
     g.rows.push(row);
     if(v.value!=null){g.sum+=v.value;total+=v.value;valued++;}
-    else{g.nv++;nots.push(row);}
+    else{g.nv++;nots.push(row);by[v.why]=(by[v.why]||0)+1;}
   }
-  var notCounted=items.length-activeCounted,by={};
-  for(var i=0;i<nots.length;i++)by[nots[i].v.why]=(by[nots[i].v.why]||0)+1;
-  var whyList=['no price','pack changed','order units'].filter(function(w){return by[w];}).map(function(w){return by[w]+' '+(w==='order units'?'counted in order units':w);});
-  var h='<div class="stock-total"><div class="stock-total-n">'+money(total)+'</div>'
-    +'<div class="stock-total-of">'+esc(monthLabel(count.period))+' count · valued at today’s prices</div>'
-    +'<div class="stock-total-line"><strong>'+valued+'</strong> of '+counted+' counted rows valued'
-    +(nots.length?' · <mark class="stock-nv">'+nots.length+' not valued</mark> ('+esc(whyList.join(', '))+')':'')
-    +' · '+notCounted+' of '+items.length+' not counted yet</div></div>';
-  if(nots.length){
-    h+='<div class="cat-header stock-place-hd"><div class="cat-label">Not valued — and why</div><div class="stock-place-n">'+nots.length+'</div></div><div class="stock-nots">';
-    ['no price','pack changed','order units'].forEach(function(w){
-      var rows=nots.filter(function(r){return r.v.why===w;});if(!rows.length)return;
-      h+='<div class="stock-why"><div class="stock-why-hd">'+esc(WHY[w])+'</div>';
-      for(var k=0;k<rows.length;k++){
-        var r=rows[k],now=r.v.now?' — Recipe Costing now: × '+fmtQty(num(r.v.now.pack_qty))+' '+esc(r.v.now.pack_unit||''):'';
-        h+='<div class="stock-why-row">'+esc(r.name)+' <span class="stock-why-sub">'+esc(r.place)+' · counted '+esc(r.as)+now+'</span></div>';
-      }
-      if(w==='no price')h+='<a class="link-btn stock-cost-link" href="tempest_costing.html">Add prices in Recipe Costing</a>';
-      h+='</div>';
-    });
+  return {groups:groups,order:order,total:total,valued:valued,nots:nots,counted:counted,activeCounted:activeCounted,by:by};
+}
+/* "Not valued — and why": every unvalued line under its reason. Live, a
+   changed pack says what Recipe Costing has now, and missing prices link
+   there; closed, nothing can change, so it says how to. The close screen
+   draws its own heading (bare). */
+function notsHtml(c,whyText,live,bare){
+  if(!c.nots.length)return '';
+  var h=(bare?'':'<div class="cat-header stock-place-hd"><div class="cat-label">Not valued — and why</div><div class="stock-place-n">'+c.nots.length+'</div></div>')+'<div class="stock-nots">';
+  REASONS.forEach(function(w){
+    var rows=c.nots.filter(function(r){return r.v.why===w;});if(!rows.length)return;
+    h+='<div class="stock-why"><div class="stock-why-hd">'+esc(whyText[w])+'</div>';
+    for(var k=0;k<rows.length;k++){
+      var r=rows[k],now=live&&r.v.now?' — Recipe Costing now: × '+fmtQty(num(r.v.now.pack_qty))+' '+esc(r.v.now.pack_unit||''):'';
+      h+='<div class="stock-why-row">'+esc(r.name)+' <span class="stock-why-sub">'+esc(r.place)+' · counted '+esc(r.as)+now+'</span></div>';
+    }
+    if(live&&w==='no price')h+='<a class="link-btn stock-cost-link" href="tempest_costing.html">Add prices in Recipe Costing</a>';
     h+='</div>';
-  }
-  for(var i=0;i<order.length;i++){
-    var g=groups[order[i]];if(!g.rows.length)continue;
+  });
+  if(!live)h+='<div class="stock-note">These stay not valued in this month. To value them: reopen it, fix them, and close it again.</div>';
+  return h+'</div>';
+}
+/* The report: a total that says what it leaves out, the unvalued lines and
+   why, then each place with its subtotal and its rows. `of` is HTML. */
+function reportHtml(c,of,tail,whyText,live){
+  var wl=REASONS.filter(function(w){return c.by[w];}).map(function(w){return c.by[w]+' '+reasonLabel(w);});
+  var h='<div class="stock-total"><div class="stock-total-n">'+money(c.total)+'</div>'
+    +'<div class="stock-total-of">'+of+'</div>'
+    +'<div class="stock-total-line"><strong>'+c.valued+'</strong> of '+c.counted+' counted rows valued'
+    +(c.nots.length?' · <mark class="stock-nv">'+c.nots.length+' not valued</mark> ('+esc(wl.join(', '))+')':'')
+    +tail+'</div></div>';
+  h+=notsHtml(c,whyText,live);
+  for(var i=0;i<c.order.length;i++){
+    var g=c.groups[c.order[i]];if(!g.rows.length)continue;
     h+='<div class="cat-header stock-place-hd stock-vhead"><div class="cat-label">'+esc(g.label)+'</div><div class="stock-place-n">'+money(g.sum)+(g.nv?' · '+g.nv+' not valued':'')+'</div></div>';
     for(var k=0;k<g.rows.length;k++){
       var r=g.rows[k];
@@ -1050,8 +1119,240 @@ function valuesHtml(){
         +'</div>';
     }
   }
-  if(!counted)h+='<div class="empty">Nothing is counted yet.</div>';
   return h;
+}
+function liveValuation(){return valuation(allLines,function(l,oid){return valueLine(l,prices[oid]);});}
+function valuesHtml(){
+  if(!count)return '<div class="empty">No count is open. Values appear once a month’s count has begun.</div>';
+  if(!prices)return '<div class="empty">Loading prices…</div>';
+  var c=liveValuation();
+  return reportHtml(c,esc(monthLabel(count.period))+' count · valued at today’s prices',' · '+(items.length-c.activeCounted)+' of '+items.length+' not counted yet',WHY,true)
+    +(c.counted?'':'<div class="empty">Nothing is counted yet.</div>');
+}
+
+/* ── MANAGER: closing a month (Slice 7) ──
+   docs/inventory-guide.md, Slice 7. Closing is three steps, in this order:
+     1. read every line of the count, and today's prices, fresh;
+     2. save each line's unit cost and value - or why it has none - in ONE
+        upsert (the frozen columns only, so a counted number is never touched);
+     3. mark the count closed, practice or not, with who is closing.
+   If 2 lands and 3 does not, the count is still open and its saved values are
+   ignored until it closes: closing again simply starts over. The table's
+   trigger (docs/inventory-guide-slice7.sql) stamps closed_at and closed_by and
+   writes the log line in the same statement as 3 - the page writes no log.
+   Once closed, the table refuses any change to its lines (Slice 0). */
+var closing=false;
+function frozenFor(l,pr){
+  var v=valueLine(l,pr);
+  if(!v.counted)return {unit:null,value:null,note:null};
+  if(v.value==null)return {unit:null,value:null,note:v.why};
+  return {unit:num(pr.pack_price)/num(pr.pack_qty),value:v.value,note:null};
+}
+function openClose(){
+  if(busy)return stillSaving();
+  if(!count)return;
+  closeKind=null;mview='close';render();window.scrollTo(0,0);
+}
+function setCloseKind(k){if(closing)return;closeKind=k;render();}
+function dayLabel(iso){
+  var d=iso?new Date(iso):null;
+  return d&&!isNaN(d)?d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'';
+}
+function closeBlocker(){
+  if(!closeKind)return 'Say whether this is a real month or a practice count.';
+  if(!who)return 'Pick your name at the top first.';
+  var u=unsavedCounts().n;
+  if(u)return 'Wait for the '+(u===1?'count':u+' counts')+' typed on this device to save.';
+  return '';
+}
+function closeHtml(){
+  var back='<button type="button" class="mgr-edit-btn" onclick="setMview(\'setup\')">Back</button>';
+  if(!count)return '<div class="empty">No count is open, so there is nothing to close.</div><div class="stock-close-act">'+back+'</div>';
+  if(!prices)return '<div class="empty">Loading prices…</div>';
+  var m=esc(monthLabel(count.period)),c=liveValuation();
+  // not counted: the rows on the sheet now, place by place, in walking order
+  var miss=[],nMiss=0,first=null,last=null;
+  function gap(label,rows){
+    var left=rows.filter(function(it){return !isCounted(it.id);});
+    if(left.length){miss.push({label:label,left:left,of:rows.length});nMiss+=left.length;}
+  }
+  for(var i=0;i<places.length;i++)gap(places[i].label,items.filter(function(it){return it.place_id===places[i].id;}));
+  gap('Not in an active place',items.filter(function(it){return !placeById(it.place_id);}));
+  for(var i=0;i<allLines.length;i++){var l=allLines[i];if(l.full_qty==null&&l.loose_qty==null)continue;
+    if(!first||l.updated_at<first)first=l.updated_at;if(!last||l.updated_at>last)last=l.updated_at;}
+  var span=first?(dayLabel(first)===dayLabel(last)?dayLabel(first):dayLabel(first)+' – '+dayLabel(last)):'';
+  var u=unsavedCounts().n,blocker=closeBlocker();
+  var h='<div class="stock-total"><div class="stock-total-of">Close the '+m+' count</div>'
+    +'<div class="stock-total-line"><strong>'+(items.length-nMiss)+'</strong> of '+items.length+' counted'
+    +(nMiss?' · <mark class="stock-nv">'+nMiss+' not counted</mark>':'')
+    +' · '+money(c.total)+' at today’s prices'+(c.nots.length?', '+c.nots.length+' not valued':'')+'</div>'
+    +'<div class="stock-total-line">'+(span?'Counted '+esc(span)+'. ':'')+'Prices are saved as Recipe Costing has them at the moment you close: today, '+esc(dayLabel(new Date().toISOString()))+'.</div></div>';
+  if(u)h+='<div class="stock-warn">'+u+(u===1?' count typed on this device is':' counts typed on this device are')+' not saved yet — see the bar at the top. Closing waits until '+(u===1?'it is':'they are')+'.</div>';
+  h+='<div class="stock-note">Before you close, check every other phone or tablet that was used to count. One showing a yellow “waiting for signal” bar is still holding numbers, and once the month is closed they cannot be saved.</div>';
+  h+='<div class="cat-header stock-place-hd stock-chead"><div class="cat-label">Not counted yet</div><div class="stock-place-n">'+nMiss+'</div></div>';
+  if(!nMiss)h+='<div class="stock-none">Every item on the sheet is counted.</div>';
+  else{
+    h+='<div class="stock-miss">';
+    for(var i=0;i<miss.length;i++){
+      h+='<div class="stock-why"><div class="stock-why-hd">'+esc(miss[i].label)+' — '+miss[i].left.length+' of '+miss[i].of+' not counted</div>';
+      for(var k=0;k<miss[i].left.length;k++)h+='<div class="stock-why-row">'+esc(itemName(miss[i].left[k]))+'</div>';
+      h+='</div>';
+    }
+    h+='<div class="stock-note">You can close with items not counted. They are left out of the month — not counted as zero.</div></div>';
+  }
+  h+='<div class="cat-header stock-place-hd stock-chead"><div class="cat-label">Saved as not valued</div><div class="stock-place-n">'+c.nots.length+'</div></div>';
+  if(!c.nots.length)h+='<div class="stock-none">Every counted item has a value.</div>';
+  else h+='<div class="stock-note">These stay not valued in the '+m+' count. To value them first, add what is missing in Recipe Costing, then come back.</div>'
+    +notsHtml(c,WHY,true,true);
+  h+='<div class="stock-kind"><div class="stock-why-hd">Is this a real month, or a practice count?</div>'
+    +'<div class="mode-toggle" role="radiogroup" aria-label="Real month or practice count">'
+    +'<button type="button" class="mode-btn'+(closeKind==='real'?' active':'')+'" role="radio" aria-checked="'+(closeKind==='real')+'" onclick="setCloseKind(\'real\')">Real month</button>'
+    +'<button type="button" class="mode-btn'+(closeKind==='practice'?' active':'')+'" role="radio" aria-checked="'+(closeKind==='practice')+'" onclick="setCloseKind(\'practice\')">Practice count</button></div>'
+    +'<div class="stock-kind-sub">A practice count is closed like any other month, but the food cost % never starts from it.</div></div>';
+  h+='<div class="stock-note stock-close-who">'+(blocker?esc(blocker):'Closing as <strong>'+esc(who)+'</strong>'+(closeKind==='practice'?', as a practice count.':'.'))+'</div>';
+  h+='<div class="stock-close-act"><button type="button" class="submit-btn" id="closeBtn"'+(blocker||busy?' disabled':'')+' onclick="closeMonth()">'
+    +(closing?'Closing…':'Close the '+m+' count')+'</button>'+back+'</div>';
+  return h;
+}
+function closeMonth(){
+  if(busy)return stillSaving();
+  var c=count;if(!c||closeBlocker())return;
+  var practice=closeKind==='practice',by=who,label=monthLabel(c.period);
+  if(!confirm('Close the '+label+' count'+(practice?' as a PRACTICE count':'')+'? Its numbers and values are saved as they are now, and nobody can change them unless a manager reopens it.'))return;
+  setBusy(true);closing=true;render();
+  function stop(msg){closing=false;setBusy(false);showToast(msg,'error');loadAll({quiet:true,force:true});}
+  // 1. fresh: every line of the count, and today's prices
+  var got={},need=2;
+  function landed(k){return function(r,s){
+    if(got.bad)return;
+    if(!(s>=200&&s<300)||!Array.isArray(r)){got.bad=true;return stop('No signal — nothing was closed. Try again.');}
+    got[k]=r;if(!--need)freeze();
+  };}
+  api('GET','inventory_count_lines','location=eq.'+LOCATION+'&count_id=eq.'+c.id+'&select=inventory_item_id,full_qty,loose_qty,pack_qty_snap,pack_unit_snap,inventory_items(order_item_id)',null,landed('lines'));
+  api('GET','ingredient_costs','location=eq.'+LOCATION+'&active=eq.true&order_item_id=not.is.null&select=order_item_id,pack_qty,pack_unit,pack_price',null,landed('prices'));
+  // 2. every line's value - a cleared line's too, back to nothing - in one write
+  function freeze(){
+    var pm=priceMap(got.prices),rows=[];
+    for(var i=0;i<got.lines.length;i++){
+      var l=got.lines[i],f=frozenFor(l,pm[(l.inventory_items||{}).order_item_id]);
+      rows.push({location:LOCATION,count_id:c.id,inventory_item_id:l.inventory_item_id,unit_cost_frozen:f.unit,value_frozen:f.value,value_note:f.note});
+    }
+    if(!rows.length)return shut();
+    api('POST','inventory_count_lines','on_conflict=count_id,inventory_item_id&columns=location,count_id,inventory_item_id,unit_cost_frozen,value_frozen,value_note',rows,function(r,s){
+      if(s>=200&&s<300&&Array.isArray(r)&&r.length===rows.length)return shut();
+      if(s===401||s===403)return stop('This count was closed on another device — showing what is saved');
+      stop(s===0||s>=500?'No answer — the count is still open. Close it again; it starts over.':'Could not save the values — the count is still open');
+    },30000,'resolution=merge-duplicates,return=representation');
+  }
+  // 3. closed - only if it is still open; the trigger stamps who and when, and logs it
+  function shut(){
+    api('PATCH','inventory_counts','id=eq.'+c.id+'&status=eq.open',{status:'closed',practice:practice,changed_by:by},function(r,s){
+      var row=Array.isArray(r)&&r.length===1?r[0]:null;
+      if(s>=200&&s<300&&row&&row.status==='closed')return closed();
+      if(s>=200&&s<300)return stop('This count is no longer open — showing what is saved');
+      if(s!==0)return stop('Could not close the count — it is still open');
+      // no answer: it may or may not have landed, so ask the table
+      api('GET','inventory_counts','location=eq.'+LOCATION+'&id=eq.'+c.id+'&select=id,status',null,function(r2,s2){
+        if(s2>=200&&s2<300&&Array.isArray(r2)&&r2[0]&&r2[0].status==='closed')return closed();
+        stop(s2>=200&&s2<300?'No answer — the count is still open. Close it again; it starts over.':'No answer — showing what is saved. If it still shows open, close it again.');
+      });
+    });
+  }
+  function closed(){
+    closing=false;setBusy(false);closeKind=null;
+    mview='prev';prevId=c.id;prev=null;
+    showToast(label+' count closed','success');
+    loadAll({quiet:true,force:true});
+  }
+}
+
+/* ── MANAGER: previous months ──
+   Every closed count, read as it was saved: its values come from the line,
+   never from today's prices. A saved value that no longer matches the line's
+   own numbers (a box changed while the month was closing) is flagged. */
+var prevLoading=0;
+function countById(id){for(var i=0;i<(allCounts||[]).length;i++)if(allCounts[i].id===id)return allCounts[i];return null;}
+function frozenValue(l){
+  if(l.full_qty==null&&l.loose_qty==null)return {counted:false};
+  var v=num(l.value_frozen);
+  if(v!=null)return {counted:true,value:v};
+  return {counted:true,value:null,why:l.value_note||'not saved'};
+}
+function frozenDrift(l){
+  var v=num(l.value_frozen),u=num(l.unit_cost_frozen);
+  if(l.full_qty==null&&l.loose_qty==null)return v!=null;   // cleared after its value was saved
+  if(v==null||u==null)return false;
+  var f=num(l.full_qty)||0,lo=num(l.loose_qty)||0,sq=num(l.pack_qty_snap);
+  return Math.abs((sq!=null?f*sq+lo:f)*u-v)>0.005;
+}
+function prevSum(id){
+  var s={total:0,counted:0,nv:0};
+  for(var i=0;i<prevLines.length;i++){var l=prevLines[i];if(l.count_id!==id)continue;
+    var v=frozenValue(l);if(!v.counted)continue;s.counted++;if(v.value!=null)s.total+=v.value;else s.nv++;}
+  return s;
+}
+function closedLine(c){return 'Closed '+esc(dayLabel(c.closed_at))+(c.closed_by?' by '+esc(c.closed_by):'');}
+function previousHtml(){
+  var closed=(allCounts||[]).filter(function(c){return c.status==='closed';});
+  var h='<div class="cat-header stock-place-hd stock-prevhead"><div class="cat-label">Previous months</div><div class="stock-place-n">'+closed.length+' closed</div></div>';
+  if(!closed.length)return h+'<div class="stock-none">No month has been closed yet. A month is closed from Set-up, once it is counted.</div>';
+  for(var i=0;i<closed.length;i++){
+    var c=closed[i],s=prevSum(c.id);
+    h+='<div class="count-row stock-prev" data-count-id="'+c.id+'"><div class="count-info"><div class="count-name">'+esc(monthLabel(c.period))+(c.practice?'<span class="stock-tag">Practice</span>':'')+'</div>'
+      +'<div class="count-par">'+closedLine(c)+' · '+money(s.total)+' · '+s.counted+' counted'+(s.nv?' · '+s.nv+' not valued':'')+'</div></div>'
+      +'<button type="button" class="mgr-edit-btn" onclick="openPrev('+c.id+')" aria-label="View the '+esc(monthLabel(c.period))+' count">View</button></div>';
+  }
+  return h;
+}
+function openPrev(id){
+  if(busy)return stillSaving();
+  prevId=id;if(!prev||prev.id!==id)prev=null;
+  mview='prev';render();window.scrollTo(0,0);
+}
+function loadPrev(id){
+  if(prevLoading===id)return;
+  prevLoading=id;
+  api('GET','inventory_count_lines','location=eq.'+LOCATION+'&count_id=eq.'+id+'&select=id,inventory_item_id,full_qty,loose_qty,pack_qty_snap,pack_unit_snap,counted_by,unit_cost_frozen,value_frozen,value_note,inventory_items(order_item_id,place_id,active,order_items(name,vendor,unit))',null,function(r,s){
+    if(prevLoading!==id)return;
+    prevLoading=0;
+    if(!(s>=200&&s<300)||!Array.isArray(r)){
+      showToast('Could not load that month','error');
+      if(mview==='prev'&&prevId===id){mview='values';prevId=null;render();}
+      return;
+    }
+    prev={id:id,lines:r};
+    if(mgr&&mview==='prev'&&prevId===id)render();
+  });
+}
+function prevHtml(){
+  var back='<button type="button" class="mgr-edit-btn" onclick="setMview(\'values\')">Back to Values</button>';
+  var c=countById(prevId);
+  if(!c||c.status!=='closed')return '<div class="empty">That month is not closed any more.</div><div class="stock-close-act">'+back+'</div>';
+  if(!prev||prev.id!==c.id){loadPrev(c.id);return '<div class="empty">Loading the '+esc(monthLabel(c.period))+' count…</div>';}
+  var calc=valuation(prev.lines,frozenValue),drift=prev.lines.filter(frozenDrift).length;
+  var h=drift?'<div class="stock-warn">'+drift+(drift===1?' line was':' lines were')+' changed while this month was closing, so '+(drift===1?'its saved value does':'their saved values do')+' not match what was counted. Reopen the month and close it again.</div>':'';
+  h+=reportHtml(calc,esc(monthLabel(c.period))+' count'+(c.practice?' · practice':'')+' · '+closedLine(c)+' · at that day’s prices','',WHY_FROZEN,false);
+  if(!calc.counted)h+='<div class="empty">Nothing was counted in this month.</div>';
+  var open=count&&count.id!==c.id?count:null;
+  h+='<div class="stock-note">'+(open?'To reopen this month, close the '+esc(monthLabel(open.period))+' count first — only one count can be open at a time.'
+    :'Reopen it to change a number or value a missing price. Its values go back to today’s prices until it is closed again, and the reopen is recorded with your name.')+'</div>';
+  h+='<div class="stock-close-act"><button type="button" class="mgr-edit-btn" id="reopenBtn"'+(open?' disabled':'')+' onclick="reopenMonth('+c.id+')">Reopen '+esc(monthLabel(c.period))+'</button>'+back+'</div>';
+  return h;
+}
+function reopenMonth(id){
+  if(busy)return stillSaving();
+  var c=countById(id);if(!c||c.status!=='closed')return;
+  if(count){showToast('Close the '+monthLabel(count.period)+' count first','error');return;}
+  if(!who){showToast('Pick your name first','error');return;}
+  if(!confirm('Reopen the '+monthLabel(c.period)+' count? Its numbers can be changed again, its values go back to today’s prices until it is closed again, and the reopen is recorded under '+who+'.'))return;
+  setBusy(true);
+  api('PATCH','inventory_counts','id=eq.'+id+'&status=eq.closed',{status:'open',changed_by:who},function(r,s){
+    var row=Array.isArray(r)&&r.length===1?r[0]:null;
+    if(s>=200&&s<300&&row&&row.status==='open'){mview='setup';prevId=null;prev=null;return finish('ok',monthLabel(c.period)+' count reopened');}
+    if(s===409){setBusy(false);showToast('Another count is open — close it first','error');loadAll({quiet:true,force:true});return;}
+    if(s>=200&&s<300){setBusy(false);showToast('It is not closed any more — showing what is saved','error');loadAll({quiet:true,force:true});return;}
+    finish(s===0?'unknown':'fail','');
+  });
 }
 
 /* ── MANAGER: the month's count ── */
@@ -1064,33 +1365,40 @@ function monthIso(offset){
   return m.getFullYear()+'-'+String(m.getMonth()+1).padStart(2,'0')+'-01';
 }
 function nCounted(){var n=0;for(var k=0;k<items.length;k++)if(isCounted(items[k].id))n++;return n;}
+/* a month that already has a count, open or closed: never offered again */
+function hasCount(period){for(var i=0;i<(allCounts||[]).length;i++)if(allCounts[i].period===period)return true;return false;}
 function countBarHtml(){
   if(count){
-    var n=nCounted(),h='<div class="stock-countbar"><strong>'+esc(monthLabel(count.period))+' count</strong> is open — '+n+' of '+items.length+' counted. Closing a month comes in a later update.';
+    var m=esc(monthLabel(count.period)),n=nCounted();
+    var h='<div class="stock-countbar"><strong>'+m+' count</strong> is open — '+n+' of '+items.length+' counted. Close it once the counting is done; its numbers and values are then saved as they are.'
+      +'<div class="stock-countbar-btns"><button class="mgr-edit-btn" onclick="openClose()">Close '+m+'…</button>';
     if(!n){
       var other=count.period===monthIso(0)?monthIso(-1):monthIso(0);
-      h+='<div class="stock-countbar-btns"><button class="mgr-edit-btn" onclick="switchMonth(\''+other+'\')">Wrong month? Make it '+esc(monthLabel(other))+'</button></div>';
+      if(!hasCount(other))h+='<button class="mgr-edit-btn" onclick="switchMonth(\''+other+'\')">Wrong month? Make it '+esc(monthLabel(other))+'</button>';
     }
-    return h+'</div>';
+    return h+'</div></div>';
   }
-  var a=monthIso(0),b=monthIso(-1);
-  return '<div class="stock-countbar">No count is open. Start the month’s count when you are ready — staff can count as soon as it starts.'
-    +'<div class="stock-countbar-btns"><button class="mgr-edit-btn" onclick="startCount(\''+a+'\')">Start '+esc(monthLabel(a))+'</button>'
-    +'<button class="mgr-edit-btn" onclick="startCount(\''+b+'\')">Start '+esc(monthLabel(b))+'</button></div></div>';
+  var offer=[monthIso(0),monthIso(-1)].filter(function(p){return !hasCount(p);}),
+      taken=[monthIso(0),monthIso(-1)].filter(hasCount).map(monthLabel);
+  return '<div class="stock-countbar">No count is open. '+(offer.length?'Start the month’s count when you are ready — staff can count as soon as it starts.':'')
+    +(taken.length?' '+esc(taken.join(' and '))+(taken.length===1?' already has a count':' already have counts')+' — see Previous months on the Values tab.':'')
+    +(offer.length?'<div class="stock-countbar-btns">'+offer.map(function(p){return '<button class="mgr-edit-btn" onclick="startCount(\''+p+'\')">Start '+esc(monthLabel(p))+'</button>';}).join('')+'</div>':'')
+    +'</div>';
 }
 /* One open count at a time, and one count per month - both are unique keys
    on the table, so a second phone starting one at the same moment gets a
-   409 and is told, never a second count. */
+   409 and is told, never a second count. Who started it goes WITH the write:
+   the table's trigger logs it in the same statement (Slice 7), and refuses a
+   start with no name. */
 function startCount(period){
   if(busy)return stillSaving();
   if(!who){showToast('Pick your name first','error');return;}
   if(!confirm('Start the '+monthLabel(period)+' count? Staff can count as soon as it is open.'))return;
   setBusy(true);
-  api('POST','inventory_counts',null,{location:LOCATION,period:period},function(r,s){
+  api('POST','inventory_counts',null,{location:LOCATION,period:period,changed_by:who},function(r,s){
     var o=outcome(r,s);
     if(o==='conflict'){setBusy(false);showToast('There is already a '+monthLabel(period)+' count, or another count is open','error');loadAll({quiet:true,force:true});return;}
-    if(o!=='ok')return finish(o,'');
-    api('POST','inventory_count_log',null,{location:LOCATION,count_id:r[0].id,action:'start',by_name:who},function(){finish('ok',monthLabel(period)+' count started');});
+    finish(o,monthLabel(period)+' count started');
   });
 }
 /* A count started under the wrong month can be moved - but only before
@@ -1243,6 +1551,9 @@ function saveName(){
 /* ── MANAGER MODE ── */
 function setMgr(on){
   mgr=on;
+  // the close screen and a closed month are not places to come back to
+  if(!on&&mview==='close'&&!closing){mview='setup';closeKind=null;}
+  if(!on&&mview==='prev'){mview='values';prevId=null;}
   var sw=document.getElementById('mgrSwitch');
   sw.classList.toggle('on',on);sw.setAttribute('aria-checked',on?'true':'false');
   // the order guide and left-off list are manager-only reads; fetch them on the way in
