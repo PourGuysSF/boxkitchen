@@ -1,7 +1,7 @@
 # Recipe Costing — what a batch costs (B4.3)
 
 Status: **plan v1, approved by Stephen 2026-11-02. Slice 0 is closed (tables live, 0 rows); Slice 1
-is built and reviewed (2026-11-05), not yet shipped.** It is built in a separate window: this plan is owned by the planning window, the build window
+is shipped (PR #171, 2026-11-05). Slice 2 is next.** It is built in a separate window: this plan is owned by the planning window, the build window
 records each slice "as built" here, and any change to the design goes back to the planner. Every
 decision in "Decisions" was Stephen's, in the interview that produced this document. The design
 choices made without asking are listed under "Decided in planning, not asked" so they can be
@@ -626,8 +626,15 @@ against a stubbed `api()` in `check_costing.py`, with all of its existing assert
 > width, prints as words; no class renamed, no input added; nothing writes on load. Noted, not
 > changed (plan is silent): the list's search does not match the old, priced-as name. Live
 > read-only check the same day: 160 linked price rows, all 160 carry their order item's current
-> name, none on a retired item — no live row is marked. Not yet done: the PR and Stephen's
-> phone look.
+> name, none on a retired item — no live row is marked.
+>
+> **SHIPPED 2026-11-05** — PR #171, squash-merged as `ffe0e1d`; GitHub Pages deployed. Phone
+> check by Stephen on his iPhone: the list looks normal, an item opens and cancels as before; no
+> live row is renamed, so the mark was shown from the stubbed harness instead. Follow-up: the
+> 5 `provenance` m29 failures were a test fault — the harness closed the modal with focus still
+> in `#invDate`, so m83's `!inBar()` rightly refused to fold; the test now leaves the bar as a
+> tap does and checks that first (page unchanged; m83's own test still fails if `!inBar()` is
+> removed); full suite clean 679/679 three times.
 
 ### Slice 2 — The recipes, read-only *(new page)*
 
