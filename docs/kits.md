@@ -1,11 +1,15 @@
 # Kits — what goes in each kit
 
 Status: **plan v1, approved by Stephen 2026-11-02**, with one change: the build is split into
-five small slices, so each can be checked before the next starts ("Slices"). **Slice 1 BUILT 2026-11-02** on
-`kits-slice1`, not pushed — see "Slice 1 as built". Written from
+five small slices, so each can be checked before the next starts ("Slices"). Written from
 Stephen's interview in the Kits window (2026-10-28 and 2026-11-02). Every decision below is
-Stephen's. **No code exists.** Saved on branch `kits` in worktree `~/Developer/boxkitchen-kits`
-(from `main` `967e482`), **not pushed**. Stephen sends it to the live site later.
+Stephen's.
+
+**Slice 1 is live** (`8e6f3ea`, #168), and so is the one-keyword-one-line rule (`72dfef2`,
+#169). Stephen checked Slice 1 on a phone and on the kitchen tablet before Slice 2 began. See
+"Slice 1 as built". **Slice 2 is live** (`d399dda`, #174); Stephen walked all 8 kits on
+2026-11-05 and approved them. **Slice 3 BUILT 2026-11-05** on `kits-slice3`, not pushed — see
+"Slice 3 as built".
 
 Target file: a new page, `tempest_kits.html`. At the very end, and only then: the Kits tile in
 `index.html`, `BUILD_PLAN.md` (B5), and the page count in `CLAUDE.md`. This plan needs **no
@@ -41,7 +45,7 @@ It is BUILD_PLAN **B5** ("mise en place per recipe; depends on the recipe librar
 | Batch size | **One batch**, exactly as the recipe says. |
 | Raw meat | **Not in the kit.** Pulled from the meat shelf at make time; listed under "Not in the kit". |
 | Lines with no amount | Salt & pepper to taste, stock "to cover", tap water: **left for the stove**, listed under "Not in the kit" so nobody wonders whether they were forgotten. |
-| Big items | A whole bottle or jug (honey, Frank's, red wine) or the 6 qt chicken stock goes **next to the hotel pan, labelled** with the kit. |
+| Big items | A whole bottle or jug (honey, Frank's, red wine) goes **next to the hotel pan, labelled** with the kit. |
 | Method steps | **Not on the kit sheet.** Kit contents only. |
 | Tick boxes | **None in v1.** The Line PM item already records that a kit was built. Ticks can come with the link. |
 | Link from Line PM | **A later step**, not this build. Each kit gets its own address now so the link is easy later. |
@@ -194,8 +198,10 @@ As approved by Stephen 2026-10-28. Keywords in `code`. **⇢** = next to the pan
 - ③ Aromatics — together — `thyme` `bay`
 - ④ Vegetables — together — `carrot` `celery` `white onion` `garlic`
 - ⑤ Flour — own container — `flour`
-- ⑥ Chicken stock — ⇢ (6 qt won't fit in the pan) — `chicken stock`
-- Not in the kit: `chicken thigh` (raw meat) · `salt` and `black pepper` (to taste)
+- Not in the kit: `chicken thigh` (raw meat) · `chicken stock` (cans, from the shelf) · `salt`
+  and `black pepper` (to taste)
+- *Changed 2026-11-05 by Stephen:* the stock comes in cans, grabbed at make time, so it is no
+  longer a next-to-the-pan container. The kit has 5 containers.
 
 **Spicy green sauce** — Spicy Green Sauce (25)
 - ① Spices — together — `coriander` `cumin` `salt`
@@ -210,7 +216,10 @@ As approved by Stephen 2026-10-28. Keywords in `code`. **⇢** = next to the pan
 - ③ Cider vinegar — own container — `cider vinegar`
 - Not in the kit: `water` (from the tap)
 
-**Mac & cheese** — Mac & Cheese (46), 11 containers
+**Mac & cheese** — Mac & Cheese (46), 11 containers. *Decided 2026-11-05 by Stephen:* the
+sub-headings are the kit's own groups below, not the recipe's parts (so ⑪ Herbs sits under
+Noodles & assembly, where it is used, though the recipe lists chives and parsley under Roux
+base); and ④ ⑤ ⑥ ⑦ ⑨ ⑩ are each "own container".
 - *Cheese base* — ① Half & half, labelled "cheese base" — `half & half` · ② Cheeses — together
   — `velveeta` `mixed cheese` · ③ Seasoning — together — `chipotle peppers` `salt`
   `chipotle chili powder` `ancho`
@@ -359,6 +368,54 @@ unguarded until Slice 3 adds their scenarios.
 - **Stephen walks all 8** on a phone and checks each one against how the kitchen actually kits
   it. Any change goes into "The 8 kits" in this document first, then the page.
 
+### Slice 2 as built
+
+`tempest_kits.html`, `scripts/check_kits.py`, and this file. **No shared file touched**, the
+kits-guard workflow included. The page is still reachable only by its address.
+
+**Decided by Stephen before the build (2026-11-05)**, and written into "The 8 kits" first:
+the chicken stock is **not in the kit** (cans, from the shelf, at make time), so Chicken &
+dumpling soup has 5 containers; Mac & Cheese's sub-headings are **the kit's own groups**, so
+Herbs sits under Noodles & assembly; its six containers with no wording say "own container".
+
+**What it does**
+
+- All 8 kits in `KITS`, in Line PM order, word for word from "The 8 kits". A box may carry a
+  `group` (its sub-heading); numbering runs straight through the groups (Mac & Cheese 1–11).
+- **The list** (no address, or an address that names no kit): "Kits", then 8 edged tap
+  targets (≥60px), each with the kit's name and its real container count, worked out from the
+  loaded recipe (5, 3, 7, 3, 5, 5, 3, 11).
+- **Addresses** by hash. `hashchange` redraws from the recipes already loaded: **one read for
+  all 8**, never a second. The sheet has "← All kits" (`href="#"`); the browser's back works
+  too, because every kit is its own history entry.
+- "Not in the kit" reasons: raw meat — pull from the meat shelf; to cover, at the stove;
+  comes from the braise; to finish / to taste, at the stove; cans, from the shelf; from the tap.
+- Unchanged from Slice 1: the GET-only `api()`, the sorting rule, the "could not load" and
+  "recipe not found" messages (Slice 3 guards them).
+
+**Live text check, 2026-11-05.** A read-only GET of recipes 5, 54, 43, 14, 19, 24 and 46, run
+through the rule: every line lands where "The 8 kits" says, nothing in "Not sorted yet", every
+keyword finds a line. No keyword was changed.
+
+**Proved**
+
+- `check_kits.py`: **254 assertions, 10 scenarios, clean**. New: `all8` opens every kit by its
+  address in turn and checks it against an expectation **written out by hand** from "The 8
+  kits" (not by running the page's sort): each container's part, name, keep line and lines;
+  numbering; "Not in the kit" lines and reasons; the pan count and next-to-the-pan names;
+  Back; then the browser's back. `reorder` swaps red wine / red wine vinegar and butter /
+  buttermilk in the recipe, because in today's text the shorter word's line always comes first,
+  so longest-first is only proved when it isn't. `list`, `direct` (opens `#mac-and-cheese`
+  cold), `nope` (an unknown address). Every scenario: exactly one request, a GET, all 8 ids.
+  Longest-first on pepper / peppercorns is checked in `all8` but **can't be broken by line
+  order** with these kits: `peppercorns` sits in a container and `pepper` in "Not in the kit",
+  and containers claim before "Not in the kit" on a tie, so either order gives the same answer.
+- **It fails when it should**, each in a throwaway copy: longest-first off (caught by `reorder`;
+  today's text alone does **not** catch it), twice-listed claims reversed, every address showing
+  the list, a bad address opening a kit, refetching on every kit, a POST, the stock dropped
+  from "Not in the kit", sub-headings dropped. All caught.
+- `check_styling.py`: clean, 13 pages.
+
 ### Slice 3 — When the recipe or the wifi lets it down
 
 - **A recipe that is missing or archived**: that kit says "Recipe not found in the Recipe
@@ -369,6 +426,39 @@ unguarded until Slice 3 adds their scenarios.
   button that works.
 - The guard adds a scenario for each, and re-proves that nothing is written.
 - **Stephen tries it in Airplane Mode**, as with Inventory's Slice 4.
+
+### Slice 3 as built
+
+`tempest_kits.html`, `scripts/check_kits.py`, and this file. No shared file touched.
+
+**Decided by Stephen (2026-11-05):** a missing or archived recipe shows **"Recipe not found"**
+on the list in bold ink, in place of the count; a kit where nothing sorts shows "Not sorted
+yet" with every line, no containers and no pan step, and **"Needs sorting"** on the list; the
+no-signal wording stays ("Could not load the recipes. Check the signal, then try again." +
+**Try again**).
+
+**What changed on the page.** Most of this slice was already built in Slice 1 and only
+needed proving. New: the list's two bold marks (`.kit-flag`, ink and weight, never a hue);
+the empty-kit screen (never "All 0 containers into one hotel pan"); the bare `&nbsp;`
+under a not-found kit's title is now an empty line. Try again redraws **the address you were
+on**, because the load ends in `route()`.
+
+**Proved**
+
+- `check_kits.py`: **346 assertions, 18 scenarios, clean**. New: `missing` (Gastrique's recipe
+  absent) and `archived` (Dumpling's), on the list and on the sheet, with Back; `lost`
+  (celery deleted from Pork Belly: ① keeps its other lines; sugar from Gastrique: ⑥ goes,
+  Horseradish becomes ⑥, the pan says 5 with the red wine beside; macaroni from Mac & Cheese:
+  10 containers, Noodles & assembly keeps two); `emptied` (Pickled rewritten so no container
+  keyword matches); `fail` (no answer), `e500`, `hang` (the page's own timeout, ≤60s, fires),
+  each then Try again; `failaddr` (fail at `#mac-and-cheese`, Try again lands on Mac &
+  Cheese). Every scenario: GETs only, and exactly 1 (2 after a Try again).
+- **It fails when it should**, each in a throwaway copy: a dead Try again, no list mark,
+  "All 0 containers" shown, an empty container left in, Try again landing on the list, no
+  timeout, the mark in tomato instead of bold ink. All caught.
+- `check_styling.py`: clean, 14 pages.
+- The missing/archived screens can't be seen live without changing a recipe, so the guard is
+  their proof. Stephen's Airplane Mode test covers the no-signal path on a real phone.
 
 ### Slice 4 — The paper backup
 

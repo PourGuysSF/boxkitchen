@@ -46,6 +46,18 @@
   .kit-unsorted .kit-sec{padding:0 0 6px}
   .kit-unsorted .kit-line{font-weight:600}
   .kit-unsorted-msg{margin-top:8px;font-weight:700;color:var(--ink)}
+  .kit-back{display:inline-flex;align-items:center;min-height:44px;padding:0 18px;margin-top:6px;font-family:var(--font-cond);font-size:16px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--grey)}
+  .kit-back:active{color:var(--tomato)}
+  /* a recipe's part: the kit's own group, over its containers */
+  .kit-part{padding:16px 18px 4px;font-family:var(--font-display);font-size:1.15rem;font-weight:700;color:var(--ink);border-bottom:2px solid var(--ink)}
+  /* the list: one big tap target per kit, edged so it reads as a button */
+  .kit-list{padding:12px 18px 0;display:flex;flex-direction:column;gap:10px}
+  .kit-item{display:flex;justify-content:space-between;align-items:center;gap:12px;min-height:60px;padding:12px 16px;border:1px solid var(--edge);border-radius:6px;color:var(--ink)}
+  .kit-item:active{background:var(--press)}
+  .kit-item-name{font-weight:600;font-size:1.1rem}
+  /* a kit that needs a manager: bold ink, never a colour (CLAUDE.md rule 4) */
+  .kit-item-n.kit-flag{color:var(--ink);font-weight:700}
+  .kit-item-n{font-family:var(--font-cond);font-size:14px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--grey);white-space:nowrap}
 </style>
 </head>
 <body>
@@ -55,24 +67,103 @@
     <h1>Tempest <span>Kits</span></h1>
   </div>
 </div>
-<div id="appBody"><div class="loading"><div class="spinner"></div><p>Loading the kit…</p></div></div>
+<div id="appBody"><div class="loading"><div class="spinner"></div><p>Loading the kits…</p></div></div>
 
 <script>
 var SB='https://sxppuyarecqkgkrsrefc.supabase.co',SK='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN4cHB1eWFyZWNxa2drcnNyZWZjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczOTA4MzAsImV4cCI6MjA5Mjk2NjgzMH0.GM8OfcR68_JjdPeQ3k7j6L3ulJFaeS1xnSLBcdtYXtU';
 var LOCATION='Tempest';
 
-/* The kits (docs/kits.md, "The 8 kits"). A kit only says WHICH container each
-   ingredient goes in, by keyword. Amounts always come from the recipe.
-   keep: how it is kept. side: true = next to the pan, labelled.
-   out: lines deliberately left out, each with its reason. */
+/* The kits (docs/kits.md, "The 8 kits"), in Line PM order. A kit only says
+   WHICH container each ingredient goes in, by keyword. Amounts always come
+   from the recipe. keep: how it is kept. side: true = next to the pan,
+   labelled. group: the kit's own sub-heading (Mac & Cheese). out: lines
+   deliberately left out, each with its reason. A word needed for two lines
+   is listed twice: each keyword picks up exactly one line. */
+var OWN='own container',TOG='together';
 var KITS=[
+  {slug:'buffalo-sauce',name:'Buffalo sauce',recipeId:5,
+   boxes:[
+     {name:'Butter',keep:'own container, melts first',kw:['butter']},
+     {name:'Harissa + garlic',keep:TOG,kw:['harissa','garlic']},
+     {name:'Honey',side:true,kw:['honey']},
+     {name:'Lemon juice',keep:OWN,kw:['lemon juice']},
+     {name:'Frank’s Red Hot',side:true,kw:['frank']}
+   ],
+   out:[]},
+  {slug:'pork-belly',name:'Pork belly',recipeId:54,
+   boxes:[
+     {name:'Braise veg',keep:TOG,kw:['white onion','carrot','celery','heads of garlic']},
+     {name:'Braise seasoning',keep:TOG,kw:['bay','salt','peppercorns','parsley stems']},
+     {name:'Roasting herbs',keep:TOG,kw:['thyme','rosemary','garlic cloves']}
+   ],
+   out:[
+     {kw:'pork belly',why:'raw meat — pull from the meat shelf'},
+     {kw:'stock',why:'to cover, at the stove'},
+     {kw:'cooking liquid',why:'comes from the braise'},
+     {kw:'salt',why:'to finish, at the stove'},
+     {kw:'pepper',why:'to finish, at the stove'}
+   ]},
+  {slug:'gastrique',name:'Gastrique',recipeId:43,
+   boxes:[
+     {name:'Bacon',keep:OWN,kw:['bacon']},
+     {name:'Shallots',keep:OWN,kw:['shallot']},
+     {name:'Herbs',keep:TOG,kw:['thyme','bay']},
+     {name:'Red wine',side:true,kw:['red wine']},
+     {name:'Red wine vinegar',keep:OWN,kw:['red wine vinegar']},
+     {name:'Sugar',keep:OWN,kw:['sugar']},
+     {name:'Horseradish',keep:OWN,kw:['horseradish']}
+   ],
+   out:[]},
+  {slug:'dumpling',name:'Dumpling',recipeId:14,
+   boxes:[
+     {name:'Dry mix',keep:TOG,kw:['baking powder','baking soda','salt','black pepper','flour']},
+     {name:'Butter',keep:OWN,kw:['butter']},
+     {name:'Buttermilk',keep:OWN,kw:['buttermilk']}
+   ],
+   out:[]},
+  {slug:'chicken-dumpling-soup',name:'Chicken & dumpling soup',recipeId:19,
+   boxes:[
+     {name:'Olive oil',keep:OWN,kw:['olive oil']},
+     {name:'Butter',keep:OWN,kw:['butter']},
+     {name:'Aromatics',keep:TOG,kw:['thyme','bay']},
+     {name:'Vegetables',keep:TOG,kw:['carrot','celery','white onion','garlic']},
+     {name:'Flour',keep:OWN,kw:['flour']}
+   ],
+   out:[
+     {kw:'chicken thigh',why:'raw meat — pull from the meat shelf'},
+     {kw:'chicken stock',why:'cans, from the shelf'},
+     {kw:'salt',why:'to taste, at the stove'},
+     {kw:'black pepper',why:'to taste, at the stove'}
+   ]},
   {slug:'spicy-green-sauce',name:'Spicy green sauce',recipeId:25,
    boxes:[
      {name:'Spices',keep:'measure together',kw:['coriander','cumin','salt']},
-     {name:'Herbs & veg',keep:'together',kw:['parsley','cilantro','jalapeño','garlic']},
-     {name:'Olive oil blend',keep:'own container',kw:['olive oil']},
-     {name:'Lemon juice',keep:'own container',kw:['lemon juice']},
-     {name:'Greek yogurt',keep:'own container',kw:['yogurt']}
+     {name:'Herbs & veg',keep:TOG,kw:['parsley','cilantro','jalapeño','garlic']},
+     {name:'Olive oil blend',keep:OWN,kw:['olive oil']},
+     {name:'Lemon juice',keep:OWN,kw:['lemon juice']},
+     {name:'Greek yogurt',keep:OWN,kw:['yogurt']}
+   ],
+   out:[]},
+  {slug:'pickled-onions-peppers',name:'Pickled onions & peppers',recipeId:24,
+   boxes:[
+     {name:'Veg',keep:TOG,kw:['red onion','mini pepper','garlic']},
+     {name:'Pickling spices',keep:TOG,kw:['sugar','salt','coriander']},
+     {name:'Cider vinegar',keep:OWN,kw:['cider vinegar']}
+   ],
+   out:[{kw:'water',why:'from the tap'}]},
+  {slug:'mac-and-cheese',name:'Mac & cheese',recipeId:46,
+   boxes:[
+     {group:'Cheese base',name:'Half & half',keep:'labelled “cheese base”',kw:['half & half']},
+     {group:'Cheese base',name:'Cheeses',keep:TOG,kw:['velveeta','mixed cheese']},
+     {group:'Cheese base',name:'Seasoning',keep:TOG,kw:['chipotle peppers','salt','chipotle chili powder','ancho']},
+     {group:'Roux base',name:'Butter',keep:OWN,kw:['butter']},
+     {group:'Roux base',name:'Onion',keep:OWN,kw:['white onion']},
+     {group:'Roux base',name:'Roasted garlic',keep:OWN,kw:['roasted garlic']},
+     {group:'Roux base',name:'Flour',keep:OWN,kw:['flour']},
+     {group:'Roux base',name:'Half & half',keep:'labelled “roux”',kw:['half & half']},
+     {group:'Noodles & assembly',name:'Macaroni',keep:OWN,kw:['macaroni']},
+     {group:'Noodles & assembly',name:'Salt for the water',keep:OWN,kw:['salt']},
+     {group:'Noodles & assembly',name:'Herbs',keep:TOG,kw:['chives','parsley']}
    ],
    out:[]}
 ];
@@ -118,7 +209,7 @@ function sortKit(kit, ingredients){
       if(owner[i]===null && hits(lines[i],u.kw)){owner[i]=u.to;return;}
     }
   });
-  var boxes=kit.boxes.map(function(b){return {name:b.name,keep:b.keep,side:!!b.side,lines:[]};});
+  var boxes=kit.boxes.map(function(b){return {name:b.name,keep:b.keep,side:!!b.side,group:b.group||'',lines:[]};});
   var out=[],unsorted=[];
   lines.forEach(function(l,i){
     var o=owner[i];
@@ -131,9 +222,9 @@ function sortKit(kit, ingredients){
 
 function drawKit(kit, recipe){
   var body=document.getElementById('appBody');
-  var h='<div class="kit-wrap"><div class="kit-title">'+esc(kit.name)+'</div>';
+  var h='<div class="kit-wrap"><a class="kit-back" href="#" id="backLink">← All kits</a><div class="kit-title">'+esc(kit.name)+'</div>';
   if(!recipe||recipe.status==='archived'){
-    body.innerHTML=h+'<div class="kit-from">&nbsp;</div><div class="kit-unsorted"><div class="kit-unsorted-msg">Recipe not found in the Recipe Database — tell a manager.</div></div></div>';
+    body.innerHTML=h+'<div class="kit-from"></div><div class="kit-unsorted" id="notFound"><div class="kit-unsorted-msg">Recipe not found in the Recipe Database — tell a manager.</div></div></div>';
     return;
   }
   var s=sortKit(kit, recipe.ingredients);
@@ -143,8 +234,12 @@ function drawKit(kit, recipe){
     s.unsorted.forEach(function(l){h+='<div class="kit-line">'+esc(l)+'</div>';});
     h+='<div class="kit-unsorted-msg">This is in the recipe but not in the kit yet — tell a manager.</div></div>';
   }
+  /* nothing left to put in a container: never "All 0 containers" */
+  if(!s.boxes.length){body.innerHTML=h+drawOut(s)+'</div>';return;}
   h+='<div class="kit-sec">Containers</div>';
+  var part=null;
   s.boxes.forEach(function(b,i){
+    if(b.group&&b.group!==part){part=b.group;h+='<div class="kit-part">'+esc(b.group)+'</div>';}
     h+='<div class="kit-box"><div class="kit-num" aria-label="Container '+(i+1)+'">'+(i+1)+'</div><div class="kit-body">'
       +'<div class="kit-name">'+esc(b.name)+'</div><div class="kit-keep">'+esc(b.side?'next to the pan, labelled':b.keep)+'</div>';
     b.lines.forEach(function(l){h+='<div class="kit-line">'+esc(l)+'</div>';});
@@ -156,18 +251,44 @@ function drawKit(kit, recipe){
     +'<div>All '+inPan+' container'+(inPan===1?'':'s')+' into one hotel pan</div>';
   side.forEach(function(b){h+='<div>Next to the pan, labelled: '+esc(b.name)+'</div>';});
   h+='<div>Label and date the pan · into the cooler</div></div>';
-  if(s.out.length){
-    h+='<div class="kit-sec">Not in the kit — at make time</div>';
-    s.out.forEach(function(o){h+='<div class="kit-out"><div class="kit-line">'+esc(o.line)+'</div><div class="kit-why">'+esc(o.why)+'</div></div>';});
-  }
-  body.innerHTML=h+'</div>';
+  body.innerHTML=h+drawOut(s)+'</div>';
+}
+function drawOut(s){
+  if(!s.out.length)return '';
+  var h='<div class="kit-sec">Not in the kit — at make time</div>';
+  s.out.forEach(function(o){h+='<div class="kit-out"><div class="kit-line">'+esc(o.line)+'</div><div class="kit-why">'+esc(o.why)+'</div></div>';});
+  return h;
 }
 
-var loading=false;
+/* the list: every kit in Line PM order, with the containers it really has */
+function drawList(){
+  var h='<div class="kit-wrap"><div class="kit-title">Kits</div><div class="kit-from">Built on the PM shift, cooked the next morning</div><div class="kit-list" id="kitList">';
+  KITS.forEach(function(k){
+    var r=recipes[k.recipeId],n=r&&r.status!=='archived'?sortKit(k,r.ingredients).boxes.length:null;
+    h+='<a class="kit-item" href="#'+k.slug+'" data-slug="'+k.slug+'"><span class="kit-item-name">'+esc(k.name)+'</span>'
+      +(n===null?'<span class="kit-item-n kit-flag">Recipe not found</span>'
+        :n===0?'<span class="kit-item-n kit-flag">Needs sorting</span>'
+        :'<span class="kit-item-n">'+n+' container'+(n===1?'':'s')+'</span>')+'</a>';
+  });
+  document.getElementById('appBody').innerHTML=h+'</div></div>';
+}
+
+/* the address picks the kit; one that names no kit shows the list */
+function route(){
+  if(!recipes)return;
+  var slug=(location.hash||'').slice(1),kit=null;
+  KITS.forEach(function(k){if(k.slug===slug)kit=k;});
+  if(kit)drawKit(kit, recipes[kit.recipeId]); else drawList();
+  window.scrollTo(0,0);
+}
+window.addEventListener('hashchange', route);
+
+/* one read for all 8: moving between kits never asks again */
+var loading=false,recipes=null;
 function load(){
   if(loading)return;
   loading=true;
-  document.getElementById('appBody').innerHTML='<div class="loading"><div class="spinner"></div><p>Loading the kit…</p></div>';
+  document.getElementById('appBody').innerHTML='<div class="loading"><div class="spinner"></div><p>Loading the kits…</p></div>';
   var ids=KITS.map(function(k){return k.recipeId;}).join(',');
   api('Recipes','id=in.('+ids+')&location=eq.'+LOCATION+'&select=id,name,status,ingredients',function(r,s){
     loading=false;
@@ -176,8 +297,8 @@ function load(){
         +'<button class="link-btn" onclick="load()">Try again</button></div>';
       return;
     }
-    var byId={};r.forEach(function(x){byId[x.id]=x;});
-    drawKit(KITS[0], byId[KITS[0].recipeId]);
+    recipes={};r.forEach(function(x){recipes[x.id]=x;});
+    route();
   });
 }
 load();

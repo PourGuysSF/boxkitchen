@@ -315,6 +315,32 @@ function fetchOpenOrder(g,cb){
 
 function getVendors(){return guide==='birite'?biriteVendors:produceVendors;}
 
+// Bucket one vendor's items by their category text, then order the sections from the
+// managed shelf registry (active shelves first, in their order); anything left over
+// (unregistered / retired-but-still-populated / 'Other') falls in first-seen order
+// at the end. If the registry didn't load, this degrades to today's first-seen order.
+// Today and Previous both use this, so a previous order always reads shelf by shelf in
+// the same order as the guide — never by raw sort_order, which is only unique within a
+// shelf (a drag renumbers its shelf 10,20,30…, overlapping every other shelf).
+function shelvesFor(v,vItems){
+  var catMap={},seenCat={},catOrder=[];
+  for(var i=0;i<vItems.length;i++){
+    var c=vItems[i].category||'Other';
+    if(!catMap[c])catMap[c]=[];
+    catMap[c].push(vItems[i]);
+  }
+  var regList=(catRegistryLoaded&&catByVendor[v])?catByVendor[v]:[];
+  for(var ri=0;ri<regList.length;ri++){
+    var rl=regList[ri];if(!rl.active)continue;
+    if(catMap[rl.label]&&!seenCat[rl.label]){catOrder.push(rl.label);seenCat[rl.label]=true;}
+  }
+  for(var i=0;i<vItems.length;i++){
+    var c2=vItems[i].category||'Other';
+    if(!seenCat[c2]){catOrder.push(c2);seenCat[c2]=true;}
+  }
+  return {order:catOrder,map:catMap};
+}
+
 function render(){
   if(viewMode==='previous'){renderPrevious();return;}
   var vendors=getVendors(),cls=mgr?'manager-mode':'',h='';
@@ -329,26 +355,7 @@ function render(){
     if(vItems.length===0&&!mgr)continue;
     var filled=0;for(var i=0;i<vItems.length;i++)if(quantities[vItems[i].id])filled++;
     var colorCls=vendorColors[v]||'birite';
-
-    // Bucket items by their category text, then order the sections from the managed
-    // shelf registry (active shelves first, in their order); anything left over
-    // (unregistered / retired-but-still-populated / 'Other') falls in first-seen order
-    // at the end. If the registry didn't load, this degrades to today's first-seen order.
-    var catMap={},seenCat={},catOrder=[];
-    for(var i=0;i<vItems.length;i++){
-      var c=vItems[i].category||'Other';
-      if(!catMap[c])catMap[c]=[];
-      catMap[c].push(vItems[i]);
-    }
-    var regList=(catRegistryLoaded&&catByVendor[v])?catByVendor[v]:[];
-    for(var ri=0;ri<regList.length;ri++){
-      var rl=regList[ri];if(!rl.active)continue;
-      if(catMap[rl.label]&&!seenCat[rl.label]){catOrder.push(rl.label);seenCat[rl.label]=true;}
-    }
-    for(var i=0;i<vItems.length;i++){
-      var c2=vItems[i].category||'Other';
-      if(!seenCat[c2]){catOrder.push(c2);seenCat[c2]=true;}
-    }
+    var sh=shelvesFor(v,vItems),catMap=sh.map,catOrder=sh.order;
 
     h+='<div class="vendor-section open">';
     h+='<div class="vendor-header" onclick="togV(this)">';
@@ -667,10 +674,14 @@ function renderPrevious(){
     h+='<div class="prev-card-head">'+fmtDateTime(o.submitted_at)+'<span class="by">by '+esc(o.submitted_by||'—')+' · '+(o.item_count||0)+' item'+(o.item_count!==1?'s':'')+'</span></div>';
     for(var vi=0;vi<vendors.length;vi++){
       var v=vendors[vi],vItems=items.filter(function(it){return it.vendor===v;}),rows='';
-      for(var ii=0;ii<vItems.length;ii++){
-        var it=vItems[ii],q=qs[String(it.id)];
-        if(!q)continue;shown[String(it.id)]=true;
-        rows+='<div class="prev-item"><span class="pi-name">'+esc(it.name)+'</span><span class="pi-unit">'+esc(it.unit||'')+'</span><span class="pi-qty">'+esc(q)+'</span></div>';
+      var sh=shelvesFor(v,vItems);
+      for(var si=0;si<sh.order.length;si++){
+        var sItems=sh.map[sh.order[si]];
+        for(var ii=0;ii<sItems.length;ii++){
+          var it=sItems[ii],q=qs[String(it.id)];
+          if(!q)continue;shown[String(it.id)]=true;
+          rows+='<div class="prev-item"><span class="pi-name">'+esc(it.name)+'</span><span class="pi-unit">'+esc(it.unit||'')+'</span><span class="pi-qty">'+esc(q)+'</span></div>';
+        }
       }
       if(rows)h+='<div class="prev-vendor">'+esc(v)+'</div>'+rows;
     }
