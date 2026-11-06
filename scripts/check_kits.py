@@ -50,11 +50,14 @@ PAGE = "tempest_kits.html"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCENARIOS = ("ok", "amount", "renamed", "headings", "twogarlic",
              # slice 2 - all 8 kits, the list, the addresses
-             "all8", "list", "direct", "nope", "reorder")
+             "all8", "list", "direct", "nope", "reorder",
+             # slice 3 - when the recipe or the wifi lets it down
+             "missing", "archived", "lost", "emptied", "fail", "e500", "hang", "failaddr")
 # Slice 1's scenarios open Spicy Green Sauce by its address; the scenario
 # itself rides in the query string, because the address now picks the kit.
 SLICE1 = ("ok", "amount", "renamed", "headings", "twogarlic")
-HASH = {"reorder": "", "direct": "mac-and-cheese", "nope": "no-such-kit", "list": "", "all8": ""}
+HASH = {"missing": "", "archived": "", "lost": "", "emptied": "", "fail": "", "e500": "",
+        "hang": "", "failaddr": "mac-and-cheese", "reorder": "", "direct": "mac-and-cheese", "nope": "no-such-kit", "list": "", "all8": ""}
 
 
 def find_chrome():
@@ -235,10 +238,15 @@ HARNESS = r"""
   Stub.prototype.abort=function(){};
   Stub.prototype.send=function(body){
     var x=this;
-    reqs.push({method:x._m,url:x._u,body:body==null?null:String(body),headers:x._h});
+    reqs.push({method:x._m,url:x._u,body:body==null?null:String(body),headers:x._h,timeout:x.timeout});
+    var fate=FX.plan.shift();
+    /* 'err' = no answer at all; 'hang' = nothing, until the page's own timeout */
+    if(fate==='err'){setTimeout(function(){if(x.onerror)x.onerror();},20);return;}
+    if(fate==='hang'){if(x.timeout>0)setTimeout(function(){if(x.ontimeout)x.ontimeout();},50);return;}
     setTimeout(function(){
       var m=x._u.match(/\/rest\/v1\/([A-Za-z_]+)/),t=m?m[1]:'',q=query(x._u),rows=[];
-      if(x._m!=='GET'){x.status=403;x.responseText='{"message":"harness: writes are not allowed"}';}
+      if(fate==='e500'){x.status=500;x.responseText='{"message":"harness: the server says no"}';}
+      else if(x._m!=='GET'){x.status=403;x.responseText='{"message":"harness: writes are not allowed"}';}
       else if(t!=='Recipes'){x.status=404;x.responseText='[]';}
       else{
         var ids=/^in\.\((.*)\)$/.test(q.id||'')?q.id.slice(4,-1).split(','):null;
@@ -277,10 +285,9 @@ RUNNER = r"""
   function common(){
     ok('no write request of any kind', H.reqs.every(function(r){return r.method==='GET'&&!r.body;}), H.reqs);
     ok('nothing but fetch-free XHR GETs', H.reqs.every(function(r){return !r.via;}), H.reqs);
-    ok('exactly one request, however many kits were opened', H.reqs.length===1, H.reqs.length);
-    var u=H.reqs[0]?H.reqs[0].url:'';
-    ok('the one read is Recipes, all 8 ids, for Tempest, four columns only',
-       u.indexOf('/rest/v1/Recipes?id=in.('+H.fx.ids+')&location=eq.Tempest&select=id,name,status,ingredients')>-1&&/ingredients$/.test(u), u);
+    var want=H.wantReqs||1;
+    ok('exactly '+want+' request(s), however many kits were opened', H.reqs.length===want, H.reqs.length);
+    ok('every read is Recipes, all 8 ids, for Tempest, four columns only', H.reqs.every(function(r){var u=r.url;return u.indexOf('/rest/v1/Recipes?id=in.('+H.fx.ids+')&location=eq.Tempest&select=id,name,status,ingredients')>-1&&/ingredients$/.test(u);}), H.reqs.map(function(r){return r.url;}));
     ok('no header asks for a write', H.reqs.every(function(r){return !r.headers.Prefer&&!r.headers['Content-Type'];}), H.reqs);
     ok('the page has no inputs', document.querySelectorAll('input,select,textarea').length===0);
   }
@@ -330,6 +337,92 @@ RUNNER = r"""
   }
   function run(){
     var S=H.scen,E=H.fx.expect;
+    function flag(slug){var a=document.querySelector('.kit-item[data-slug="'+slug+'"] .kit-item-n');return a?[txt(a),parseInt(getComputedStyle(a).fontWeight,10),getComputedStyle(a).color]:null;}
+    var MSG='Could not load the recipes. Check the signal, then try again.';
+    function failed(tag){
+      var e=document.querySelector('.empty'),b=e&&e.querySelector('button.link-btn');
+      ok(tag+'the plain message, and no sheet or list', !!e&&txt(e).indexOf(MSG)===0&&!document.getElementById('pan')&&!document.querySelector('.kit-item'), txt(document.getElementById('appBody')));
+      ok(tag+'a Try again button', !!b&&txt(b)==='Try again');
+      return b;
+    }
+    if(S==='missing'||S==='archived'){
+      var slug=S==='missing'?'gastrique':'dumpling',K=kitBy(slug);
+      return steps([
+        function(){
+          var f=flag(slug),ink=getComputedStyle(document.body).color;
+          ok(S+': the list marks it "Recipe not found", in bold ink', !!f&&f[0]==='Recipe not found'&&f[1]>=700&&f[2]===ink, f);
+          ok(S+': the other 7 still show their counts', H.fx.kits.every(function(k,i){var g=flag(k.slug);return k.slug===slug||(g&&g[0]===H.fx.counts[i]+' containers');}));
+          document.querySelector('.kit-item[data-slug="'+slug+'"]').click();
+        },
+        function(){
+          var nf=document.getElementById('notFound');
+          ok(S+': its sheet says "Recipe not found in the Recipe Database — tell a manager."', !!nf&&txt(nf)==='Recipe not found in the Recipe Database — tell a manager.', txt(document.getElementById('appBody')));
+          ok(S+': never an empty sheet - no containers, no pan step', !document.querySelector('.kit-box')&&!document.getElementById('pan'));
+          ok(S+': the kit still says which kit it is', txt(document.querySelector('.kit-title'))===K.name);
+          ok(S+': no stray filler under the title', txt(document.querySelector('.kit-from'))==='');
+          document.getElementById('backLink').click();
+        },
+        function(){ok(S+': Back returns to the list', document.querySelectorAll('.kit-item').length===8);}
+      ]);
+    }
+    if(S==='lost'){
+      function names(){return [].map.call(document.querySelectorAll('.kit-box'),function(b){return [txt(b.querySelector('.kit-num')),txt(b.querySelector('.kit-name'))];});}
+      return steps([
+        function(){
+          ok('lost: the list counts what is left (3, 6, 10)', flag('pork-belly')[0]==='3 containers'&&flag('gastrique')[0]==='6 containers'&&flag('mac-and-cheese')[0]==='10 containers', [flag('pork-belly'),flag('gastrique'),flag('mac-and-cheese')]);
+          location.hash='pork-belly';
+        },
+        function(){
+          var b=boxes();
+          ok('lost: a deleted line just goes - its container keeps the rest', b.length===3&&JSON.stringify(b[0][1])===JSON.stringify(["6 each white onion","6 each carrot","4 each heads of garlic, halved"]), b);
+          ok('lost: and nothing goes to "Not sorted yet"', !document.getElementById('unsorted'));
+          location.hash='gastrique';
+        },
+        function(){
+          var n=names();
+          ok('lost: an emptied container disappears and the numbers close up', JSON.stringify(n)===JSON.stringify([["1","Bacon"],["2","Shallots"],["3","Herbs"],["4","Red wine"],["5","Red wine vinegar"],["6","Horseradish"]]), n);
+          ok('lost: the pan counts what is left (5 in, red wine beside)', txt(document.getElementById('pan')).indexOf('All 5 containers into one hotel pan')===0, txt(document.getElementById('pan')));
+          location.hash='mac-and-cheese';
+        },
+        function(){
+          var n=names(),parts=[].map.call(document.querySelectorAll('.kit-part'),txt);
+          ok('lost: Mac & Cheese closes up to 10, no Macaroni', n.length===10&&n.every(function(x,i){return x[0]===String(i+1)&&x[1]!=='Macaroni';}), n);
+          ok('lost: Noodles & assembly keeps its other two', n[8][1]==='Salt for the water'&&n[9][1]==='Herbs'&&JSON.stringify(parts)===JSON.stringify(['Cheese base','Roux base','Noodles & assembly']), {n:n,parts:parts});
+        }
+      ]);
+    }
+    if(S==='emptied'){
+      return steps([
+        function(){
+          var f=flag('pickled-onions-peppers');
+          ok('emptied: the list says "Needs sorting", in bold', !!f&&f[0]==='Needs sorting'&&f[1]>=700, f);
+          location.hash='pickled-onions-peppers';
+        },
+        function(){
+          var un=document.getElementById('unsorted'),app=txt(document.getElementById('appBody'));
+          ok('emptied: every unmatched line is in "Not sorted yet"', !!un&&JSON.stringify([].map.call(un.querySelectorAll('.kit-line'),txt))===JSON.stringify(['1 cup Skyr','2 Tbsp Za’atar']), un&&txt(un));
+          ok('emptied: it says to tell a manager', /tell a manager/.test(txt(un)));
+          ok('emptied: no containers and no pan step', !document.querySelector('.kit-box')&&!document.getElementById('pan'));
+          ok('emptied: never "All 0 containers"', !/All 0 container/.test(app), app);
+          ok('emptied: "Not in the kit" still shows the water', /Not in the kit/.test(app)&&/1\.5 qt Water/.test(app));
+        }
+      ]);
+    }
+    if(S==='fail'||S==='e500'||S==='hang'||S==='failaddr'){
+      H.wantReqs=2;
+      return steps([
+        function(){
+          var b=failed(S+': ');
+          if(S==='hang')ok('hang: the read carries a timeout, at most 60s', H.reqs[0]&&H.reqs[0].timeout>0&&H.reqs[0].timeout<=60000, H.reqs[0]&&H.reqs[0].timeout);
+          ok(S+': one request so far', H.reqs.length===1, H.reqs.length);
+          if(b)b.click();
+        },
+        function(){
+          if(S==='failaddr')ok('failaddr: Try again lands on the kit you were on', location.hash==='#mac-and-cheese'&&txt(document.querySelector('.kit-title'))==='Mac & cheese'&&!!document.getElementById('pan'), txt(document.getElementById('appBody')).slice(0,120));
+          else ok(S+': Try again works - the list is back', document.querySelectorAll('.kit-item').length===8&&!document.querySelector('.empty'), txt(document.getElementById('appBody')).slice(0,120));
+        }
+      ]);
+    }
     if(S==='reorder'){
       return steps([
         function(){location.hash='gastrique';},
@@ -456,8 +549,24 @@ def build_page(scen):
     recipes = RECIPES
     if scen == "reorder":
         recipes = [dict(r, ingredients=REORDER.get(r["id"], r.get("ingredients"))) for r in RECIPES]
+    if scen == "missing":      # Gastrique's recipe is gone from the table
+        recipes = [r for r in RECIPES if r["id"] != 43]
+    if scen == "archived":     # Dumpling's recipe is archived
+        recipes = [dict(r, status="archived") if r["id"] == 14 else r for r in RECIPES]
+    if scen == "lost":         # lines deleted from three recipes
+        cut = {54: "6 each celery\n", 43: "2 c. sugar\n", 46: "2 qt. dried macaroni noodles\n"}
+        recipes = []
+        for r in RECIPES:
+            if r["id"] in cut:
+                assert cut[r["id"]] in r["ingredients"]
+                r = dict(r, ingredients=r["ingredients"].replace(cut[r["id"]], ""))
+            recipes.append(r)
+    if scen == "emptied":      # Pickled rewritten so no container keyword matches
+        recipes = [dict(r, ingredients="\u2014 BRINE \u2014\n1 cup Skyr\n2 Tbsp Za\u2019atar\n1.5 qt Water")
+                   if r["id"] == 24 else r for r in RECIPES]
+    plan = {"fail": ["err"], "e500": ["e500"], "hang": ["hang"], "failaddr": ["err"]}.get(scen, [])
     fixtures = {"recipes": recipes, "text": TEXTS.get(scen, GREEN), "expect": EXPECT,
-                "kits": KITS8, "counts": LIST_COUNTS, "ids": ALL_IDS, "slice1": list(SLICE1)}
+                "kits": KITS8, "counts": LIST_COUNTS, "ids": ALL_IDS, "slice1": list(SLICE1), "plan": plan}
     src = src.replace(marker, HARNESS.replace("__FIXTURES__", json.dumps(fixtures)) + marker, 1)
     # no network, ever: the webfont links would otherwise leave the machine
     src = re.sub(r'<link rel="preconnect"[^>]*>\s*', '', src)
