@@ -344,6 +344,14 @@ Then a hand test on Stephen's iPhone, on the first real week.
 > Stephen looked on his laptop on 2026-11-05 ("everything works"), without saving: a read-only
 > count afterwards showed 0 boxes and 0 day notes on the live tables. The iPhone hand test on
 > Nov 15 – 21 waits for the merge.
+>
+> **Shipped 2026-11-07** as PR #179 (squash `5dd1fb9`). **iPhone hand test, same day, on the live
+> page, week of Nov 15 – 21:** Stephen: "everything saved and worked". Verified read-only
+> afterwards: 6 box rows, **no duplicates** — Jose V. and Rubidia OFF (11/15), Eddy V. REQUEST and
+> Ismael `9:30am-2pm` + Training (11/16), Gilberto C. `4pm-CL` from typed `4 pm-cl`, and Jose V.
+> 11/17 cleared (`kind` null, the row kept); one day note, 11/15. Every row has a server
+> `updated_at`. Noticed: the note reads `49ers home1:25` — a quick word adds no trailing space, so
+> a time typed straight after it runs on (follow-up below).
 
 ### Slice 3 — Copy last week (manager)
 
