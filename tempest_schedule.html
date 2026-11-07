@@ -59,6 +59,22 @@
 .sched-err{text-align:center;padding:60px 20px;color:var(--ink)}
 /* The PIN box: kitchen.css's .pin-input loses to .modal input[type="tel"] (15.2px); as Inventory. */
 .modal input[type="tel"].pin-input{font-size:1.4rem}
+/* Manager mode (Slice 2): boxes and notes become buttons, built at render time only. */
+.sched-mgrcount{padding:10px 18px;border-bottom:1px solid var(--hair);font-weight:600}
+.sched-boxbtn{min-height:44px;min-width:96px;padding:6px 10px;background:var(--paper);border:1px solid var(--edge);border-radius:6px;color:var(--ink);font:inherit;cursor:pointer}
+.sched-grid td.sched-celltd{padding:2px}
+.sched-cellbtn{display:block;width:100%;min-height:44px;padding:4px 6px;background:var(--paper);border:1px solid var(--edge);border-radius:4px;color:var(--ink);font:inherit;cursor:pointer}
+.sched-notebtn{display:block;width:100%;min-height:44px;margin-top:4px;padding:8px 10px;text-align:left;background:var(--paper);border:1px solid var(--edge);border-radius:6px;color:var(--ink);font:inherit;font-size:0.9rem;cursor:pointer}
+.sched-notebtn .add{color:var(--grey)}
+.sched-now{margin:-6px 0 12px;font-size:0.9rem;color:var(--grey)}
+.sched-picks{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
+.sched-pick{min-height:44px;padding:8px 12px;background:var(--paper);border:1px solid var(--ink);border-radius:6px;color:var(--ink);font-family:var(--font-cond);font-size:1rem;font-weight:600;letter-spacing:.04em;cursor:pointer}
+.sched-pick[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
+.sched-pick:disabled{border-color:var(--edge);color:var(--faint);cursor:default}
+.sched-trainbtn{margin-bottom:14px}
+/* 16px or iOS zooms: qualified, or kitchen.css's .modal input[type="text"] (15.2px) wins (#135). */
+.modal input[type="text"].sched-other,.sched-other{font-size:16px}
+.modal input[type="text"].sched-note-input,.sched-note-input{font-size:16px}
 .sched-err button{margin-top:14px;min-height:44px;padding:8px 18px;background:var(--paper);border:1px solid var(--ink);border-radius:6px;font-family:var(--font-cond);font-weight:600;letter-spacing:.08em;text-transform:uppercase;cursor:pointer}
 </style>
 </head>
@@ -83,8 +99,43 @@
   <button type="button" id="viewWeekBtn" onclick="setView('week')">Week</button>
 </div>
 <div id="dayStrip" class="sched-days"></div>
+<div class="sched-mgrcount" id="mgrCount" style="display:none"></div>
 <div id="appBody"><div class="loading"><div class="spinner"></div><p>Loading the schedule…</p></div></div>
 <div class="sched-updated" id="updatedLine"></div>
+
+<!-- Box picker (manager) -->
+<div class="modal-bg" id="boxModal">
+  <div class="modal">
+    <h3 id="boxTitle"></h3>
+    <div class="sched-now" id="boxNow"></div>
+    <div class="sched-picks" id="boxPicks"></div>
+    <label for="boxOther">Other</label>
+    <input class="sched-other" type="text" id="boxOther" maxlength="20" autocomplete="off" autocapitalize="off" placeholder="e.g. 11am-CL">
+    <button type="button" class="sched-pick sched-trainbtn" id="boxTrain" aria-pressed="false" onclick="toggleTrain()">Training</button>
+    <div class="modal-err" id="boxErr"></div>
+    <div class="modal-btns">
+      <button type="button" class="modal-btn cancel" id="boxClear" onclick="clearBox()">Clear</button>
+      <button type="button" class="modal-btn cancel" onclick="closeBox()">Cancel</button>
+      <button type="button" class="modal-btn save" id="boxSave" onclick="saveBox()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Games & events picker (manager) -->
+<div class="modal-bg" id="noteModal">
+  <div class="modal">
+    <h3 id="noteTitle"></h3>
+    <div class="sched-picks" id="notePicks"></div>
+    <label for="noteInput">Games &amp; events</label>
+    <input class="sched-note-input" type="text" id="noteInput" maxlength="60" autocomplete="off" placeholder="e.g. 49ers home 1:25">
+    <div class="modal-err" id="noteErr"></div>
+    <div class="modal-btns">
+      <button type="button" class="modal-btn cancel" id="noteClear" onclick="clearNote()">Clear</button>
+      <button type="button" class="modal-btn cancel" onclick="closeNote()">Cancel</button>
+      <button type="button" class="modal-btn save" id="noteSave" onclick="saveNote()">Save</button>
+    </div>
+  </div>
+</div>
 
 <!-- Manager PIN modal -->
 <div class="modal-bg" id="pinModal">
@@ -110,6 +161,14 @@ var VIEW_KEY='boxkitchen_schedule_view';
 var mgr=false,st=null,loadSeq=0;
 var view='day',weekStart=null,dayIdx=0,todayKey='';
 var people=[],shifts={},dayNotes={},standing=[],updatedMax=null;
+/* Slice 2: the box and note pickers, and the quick buttons' four-week read */
+var pick=null,notePick=null,quick={},quickSeq=0;
+var QUICK_MAX=8;
+var QUICK_DEFAULT={
+  day:['9am-3pm','10am-5pm','10am-3pm','10am-4pm','9am-2pm','9:30am-3pm','9:30am-2pm'],
+  night:['4pm-CL','6pm-CL','5pm-CL','10am-4pm','4:30pm-CL','4pm-10']
+};
+var NOTE_WORDS=['49ers home','Giants home','Football','Event'];
 
 var DAY_EN=['SUNDAY','MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY'];
 var DAY_ES=['DOMINGO','LUNES','MARTES','MIERCOLES','JUEVES','VIERNES','SABADO'];
@@ -238,19 +297,38 @@ function render(){
   if(!day.length&&!night.length){body.innerHTML='<div class="empty">No one on the schedule yet.</div>';}
   else body.innerHTML=view==='week'?renderWeek(day,night):renderDay(day,night);
   document.getElementById('updatedLine').textContent=updatedMax?fmtUpdated(updatedMax):'';
+  paintCount();
+  if(mgr)ensureQuick();
 }
+
+/* Manager mode only: how many of this week's boxes (active people × 7 days) are still empty. */
+function paintCount(){
+  var el=document.getElementById('mgrCount');
+  if(!mgr||!people.length){el.style.display='none';el.textContent='';return;}
+  var ds=weekDates(),n=0;
+  people.forEach(function(p){if(!p.active)return;for(var i=0;i<7;i++)if(!boxOf(p,keyOf(ds[i])))n++;});
+  el.textContent=n?n+' box'+(n===1?'':'es')+' not filled yet':'Every box filled';
+  el.style.display='';
+}
+function personById(id){for(var i=0;i<people.length;i++)if(people[i].id===id)return people[i];return null;}
+function boxBtnLabel(p,i){return 'Change '+p.name+', '+DAY_EN[i].charAt(0)+DAY_EN[i].slice(1).toLowerCase()+' '+md(weekDates()[i]);}
 
 function renderDay(day,night){
   var d=weekDates()[dayIdx],k=keyOf(d);
   var h='<div class="sched-dayhead">'+DAY_EN[dayIdx]+' · '+DAY_ES[dayIdx]+' · '+md(d)+'</div>';
   var notes=standingOn(dayIdx).map(function(s){return '<div class="sched-note">'+esc(s.label)+'</div>';}).join('');
   var dn=(dayNotes[k]||'').trim();
-  if(dn)notes+='<div class="sched-note">'+esc(dn)+'</div>';
+  if(mgr)notes+='<button type="button" class="sched-notebtn" onclick="openNote('+dayIdx+')" aria-label="Change games and events, '+md(d)+'">'+(dn?'Games &amp; events: '+esc(dn):'<span class="add">+ Add game or event</span>')+'</button>';
+  else if(dn)notes+='<div class="sched-note">'+esc(dn)+'</div>';
   if(notes)h+='<div class="sched-notes">'+notes+'</div>';
   function crew(label,list){
     if(!list.length)return '';
     var s='<div class="cat-header"><div class="cat-label">'+label+'</div></div>';
-    list.forEach(function(p){s+='<div class="sched-row"><div class="sched-name">'+esc(p.name)+'</div><div class="sched-box">'+boxHtml(boxOf(p,k),false)+'</div></div>';});
+    list.forEach(function(p){
+      var box=mgr?'<button type="button" class="sched-box sched-boxbtn" onclick="openBox('+p.id+','+dayIdx+')" aria-label="'+esc(boxBtnLabel(p,dayIdx))+'">'+boxHtml(boxOf(p,k),false)+'</button>'
+                 :'<div class="sched-box">'+boxHtml(boxOf(p,k),false)+'</div>';
+      s+='<div class="sched-row"><div class="sched-name">'+esc(p.name)+'</div>'+box+'</div>';
+    });
     return s;
   }
   return h+crew('DAY CREW',day)+crew('NIGHT CREW',night);
@@ -266,7 +344,10 @@ function renderWeek(day,night){
     var s='<tr class="crew"><th class="sticky" scope="rowgroup">'+label+'</th><th colspan="7"></th></tr>';
     list.forEach(function(p){
       s+='<tr><th class="sticky" scope="row">'+esc(p.name)+'</th>';
-      for(var i=0;i<7;i++)s+='<td>'+boxHtml(boxOf(p,keys[i]),true)+'</td>';
+      for(var i=0;i<7;i++){
+        if(mgr)s+='<td class="sched-celltd"><button type="button" class="sched-cellbtn" onclick="openBox('+p.id+','+i+')" aria-label="'+esc(boxBtnLabel(p,i))+'">'+boxHtml(boxOf(p,keys[i]),true)+'</button></td>';
+        else s+='<td>'+boxHtml(boxOf(p,keys[i]),true)+'</td>';
+      }
       s+='</tr>';
     });
     return s;
@@ -279,9 +360,200 @@ function renderWeek(day,night){
     h+='</tr>';
   });
   h+='<tr><th class="sticky" scope="row">Games &amp; events</th>';
-  for(var i=0;i<7;i++)h+='<td class="note">'+esc((dayNotes[keys[i]]||'').trim())+'</td>';
+  for(var i=0;i<7;i++){
+    var nt=esc((dayNotes[keys[i]]||'').trim());
+    if(mgr)h+='<td class="note sched-celltd"><button type="button" class="sched-cellbtn" onclick="openNote('+i+')" aria-label="Change games and events, '+md(ds[i])+'">'+(nt||'+')+'</button></td>';
+    else h+='<td class="note">'+nt+'</td>';
+  }
   h+='</tr></tbody></table></div>';
   return h;
+}
+
+/* ── MANAGER: CHANGING A BOX (Slice 2) ──────────────────────────────────
+   Pick, then Save. The box on the page changes only when the database
+   answers with the row. One save at a time. */
+
+/* Quick buttons: the crew's most-used shifts over this week and the three
+   before, topped up from the 11/8 tab. One GET, manager mode only, cached per week. */
+function ensureQuick(){
+  var wk=keyOf(weekStart);
+  if(quick[wk]||!people.length)return;
+  quick[wk]={loading:true,day:[],night:[]};
+  var seq=++quickSeq,ids=people.map(function(p){return p.id;});
+  api('GET','schedule_shifts','select=person_id,shift_text&kind=eq.shift&person_id=in.('+ids.join(',')+')&work_date=gte.'+keyOf(addDays(weekStart,-21))+'&work_date=lte.'+keyOf(addDays(weekStart,6)),null,function(r){
+    if(seq!==quickSeq||!quick[wk])return;
+    if(!Array.isArray(r)){delete quick[wk];return;}   // the defaults stand; asked again next time
+    var cnt={day:{},night:{}},order={day:[],night:[]};
+    r.forEach(function(x){var p=personById(x.person_id),t=(x.shift_text||'').trim();if(!p||!t||!cnt[p.crew])return;
+      if(!cnt[p.crew][t]){cnt[p.crew][t]=0;order[p.crew].push(t);}cnt[p.crew][t]++;});
+    ['day','night'].forEach(function(c){
+      order[c].sort(function(a,b){return cnt[c][b]-cnt[c][a];});   // stable: ties keep first-seen order
+      quick[wk][c]=order[c];
+    });
+    quick[wk].loading=false;
+    if(pick)paintPick();
+  });
+}
+function quickFor(crew){
+  var q=(quick[keyOf(weekStart)]||{})[crew]||[],out=[];
+  q.concat(QUICK_DEFAULT[crew]||[]).forEach(function(t){if(out.length<QUICK_MAX&&out.indexOf(t)<0)out.push(t);});
+  return out;
+}
+
+/* Tidy typed shift text: 4 pm-cl -> 4pm-CL, 10 AM - 4 PM -> 10am-4pm. Text, never clock times. */
+function tidyShift(s){
+  s=String(s||'').replace(/[–—]/g,'-').replace(/\s+/g,' ').trim();
+  s=s.replace(/\s*-\s*/g,'-');
+  s=s.replace(/(\d)\s*(am|pm)\b/gi,function(m,d,ap){return d+ap.toLowerCase();});
+  s=s.replace(/\b(am|pm)\b/gi,function(m){return m.toLowerCase();});
+  s=s.replace(/\bcl\b/gi,'CL');
+  return s;
+}
+function tidyNote(s){return String(s||'').replace(/\s+/g,' ').trim();}
+function nowText(b){if(!b)return 'empty';if(b.kind==='off')return 'OFF';if(b.kind==='request')return 'REQUEST';return b.shift_text+(b.training?' · Training':'');}
+
+function openBox(pid,i){
+  var p=personById(pid);if(!mgr||!p)return;
+  var k=keyOf(weekDates()[i]),b=boxOf(p,k);
+  pick={pid:pid,crew:p.crew,day:i,key:k,cur:b,sel:null,training:!!(b&&b.training),saving:false};
+  var other=document.getElementById('boxOther');other.value='';
+  if(b&&b.kind==='off')pick.sel={kind:'off'};
+  else if(b&&b.kind==='request')pick.sel={kind:'request'};
+  else if(b&&b.kind==='shift'){
+    if(quickFor(p.crew).indexOf(b.shift_text)>=0)pick.sel={kind:'shift',text:b.shift_text};
+    else{pick.sel={kind:'other'};other.value=b.shift_text;}
+  }
+  document.getElementById('boxTitle').textContent=p.name+' · '+DAY_EN[i].charAt(0)+DAY_EN[i].slice(1).toLowerCase()+' · '+DAY_ES[i].charAt(0)+DAY_ES[i].slice(1).toLowerCase()+' '+md(weekDates()[i]);
+  document.getElementById('boxNow').textContent='Now: '+nowText(b);
+  showErr('boxErr','');
+  paintPick();
+  document.getElementById('boxModal').classList.add('show');
+}
+function paintPick(){
+  if(!pick)return;
+  var s=pick.sel,h='';
+  function btn(label,kind,text){
+    var on=!!s&&s.kind===kind&&(kind!=='shift'||s.text===text);
+    return '<button type="button" class="sched-pick" aria-pressed="'+on+'" data-kind="'+kind+'" data-text="'+esc(text||'')+'" onclick="pickChoice(this)">'+esc(label)+'</button>';
+  }
+  h+=btn('OFF','off')+btn('REQUEST','request');
+  quickFor(pick.crew).forEach(function(t){h+=btn(t,'shift',t);});
+  document.getElementById('boxPicks').innerHTML=h;
+  var isShift=!!s&&(s.kind==='shift'||s.kind==='other');
+  if(!isShift)pick.training=false;
+  var tb=document.getElementById('boxTrain');
+  tb.disabled=!isShift||pick.saving;tb.setAttribute('aria-pressed',String(isShift&&pick.training));
+  document.getElementById('boxSave').disabled=pick.saving;
+  document.getElementById('boxClear').disabled=pick.saving||!pick.cur;
+  all('#boxPicks button').forEach(function(b){b.disabled=pick.saving;});
+  document.getElementById('boxOther').disabled=pick.saving;
+}
+function all(sel){return Array.prototype.slice.call(document.querySelectorAll(sel));}
+function pickChoice(el){
+  if(!pick||pick.saving)return;
+  var kind=el.getAttribute('data-kind');
+  pick.sel=kind==='shift'?{kind:'shift',text:el.getAttribute('data-text')}:{kind:kind};
+  document.getElementById('boxOther').value='';
+  showErr('boxErr','');paintPick();
+}
+function onOther(){
+  if(!pick||pick.saving)return;
+  pick.sel=document.getElementById('boxOther').value.trim()?{kind:'other'}:null;
+  paintPick();
+}
+function toggleTrain(){if(!pick||pick.saving)return;pick.training=!pick.training;paintPick();}
+function showErr(id,msg){var e=document.getElementById(id);e.textContent=msg;e.classList.toggle('show',!!msg);}
+function closeBox(){if(pick&&pick.saving)return;pick=null;document.getElementById('boxModal').classList.remove('show');}
+
+/* What Save would write, or null when nothing is picked. */
+function boxTarget(){
+  var s=pick.sel;if(!s)return null;
+  if(s.kind==='off'||s.kind==='request')return {kind:s.kind,shift_text:null,training:false};
+  var t=s.kind==='shift'?s.text:tidyShift(document.getElementById('boxOther').value);
+  if(!t)return null;
+  if(/^off$/i.test(t))return {kind:'off',shift_text:null,training:false};
+  if(/^request$/i.test(t))return {kind:'request',shift_text:null,training:false};
+  return {kind:'shift',shift_text:t,training:!!pick.training};
+}
+function saveBox(){
+  if(!pick||pick.saving)return;
+  var t=boxTarget(),c=pick.cur;
+  if(!t){if(!c){closeBox();return;}showErr('boxErr','Pick a shift, OFF or REQUEST, or press Clear.');return;}
+  if(c&&c.kind===t.kind&&(c.shift_text||null)===t.shift_text&&!!c.training===t.training){closeBox();return;}
+  writeBox(t);
+}
+function clearBox(){
+  if(!pick||pick.saving||!pick.cur)return;
+  writeBox({kind:null,shift_text:null,training:false});
+}
+function writeBox(t){
+  var P=pick;P.saving=true;showErr('boxErr','');paintPick();
+  var body={person_id:P.pid,work_date:P.key,kind:t.kind,shift_text:t.shift_text,training:t.training};
+  api('POST','schedule_shifts','on_conflict=person_id,work_date',body,function(r,s){
+    P.saving=false;
+    var row=Array.isArray(r)&&r.length===1?r[0]:null;
+    if(s>=200&&s<300&&row&&row.person_id===P.pid&&row.work_date===P.key){
+      loadSeq++;   // a quiet reload already in flight holds the old box: drop it
+      shifts[P.pid+'|'+P.key]=row;bump(row.updated_at);
+      delete quick[keyOf(weekStart)];
+      if(pick===P){pick=null;document.getElementById('boxModal').classList.remove('show');}
+      render();showToast('Saved','success');
+      return;
+    }
+    if(pick!==P)return;
+    showErr('boxErr',s===0?'No answer. Check the wifi and try again.':'Not saved (error '+s+'). Try again.');
+    paintPick();
+  },null,'resolution=merge-duplicates,return=representation');
+}
+
+/* ── MANAGER: GAMES & EVENTS (day notes) ── */
+function openNote(i){
+  if(!mgr)return;
+  var d=weekDates()[i],k=keyOf(d),cur=(dayNotes[k]||'').trim();
+  notePick={day:i,key:k,cur:cur,saving:false};
+  document.getElementById('noteTitle').textContent='Games & events · '+DAY_EN[i].charAt(0)+DAY_EN[i].slice(1).toLowerCase()+' '+md(d);
+  document.getElementById('noteInput').value=cur;
+  document.getElementById('notePicks').innerHTML=NOTE_WORDS.map(function(w){return '<button type="button" class="sched-pick" onclick="addWord(this)">'+esc(w)+'</button>';}).join('');
+  showErr('noteErr','');paintNote();
+  document.getElementById('noteModal').classList.add('show');
+}
+function paintNote(){
+  if(!notePick)return;
+  var b=notePick.saving;
+  document.getElementById('noteSave').disabled=b;
+  document.getElementById('noteClear').disabled=b||!notePick.cur;
+  document.getElementById('noteInput').disabled=b;
+  all('#notePicks button').forEach(function(x){x.disabled=b;});
+}
+function addWord(el){
+  if(!notePick||notePick.saving)return;
+  var inp=document.getElementById('noteInput'),v=inp.value.trim();
+  inp.value=(v?v+' ':'')+el.textContent;inp.focus();
+}
+function closeNote(){if(notePick&&notePick.saving)return;notePick=null;document.getElementById('noteModal').classList.remove('show');}
+function saveNote(){
+  if(!notePick||notePick.saving)return;
+  var t=tidyNote(document.getElementById('noteInput').value);
+  if(t===notePick.cur){closeNote();return;}
+  writeNote(t);
+}
+function clearNote(){if(!notePick||notePick.saving||!notePick.cur)return;writeNote('');}
+function writeNote(t){
+  var P=notePick;P.saving=true;showErr('noteErr','');paintNote();
+  api('POST','schedule_day_notes','on_conflict=location,note_date',{location:'Tempest',note_date:P.key,note:t},function(r,s){
+    P.saving=false;
+    var row=Array.isArray(r)&&r.length===1?r[0]:null;
+    if(s>=200&&s<300&&row&&row.note_date===P.key){
+      loadSeq++;
+      dayNotes[P.key]=row.note||'';bump(row.updated_at);
+      if(notePick===P){notePick=null;document.getElementById('noteModal').classList.remove('show');}
+      render();showToast('Saved','success');
+      return;
+    }
+    if(notePick!==P)return;
+    showErr('noteErr',s===0?'No answer. Check the wifi and try again.':'Not saved (error '+s+'). Try again.');
+    paintNote();
+  },null,'resolution=merge-duplicates,return=representation');
 }
 
 function showToast(msg,type){
@@ -326,6 +598,11 @@ function submitPin(){
   }
 }
 document.getElementById('pinModal').addEventListener('click',function(e){if(e.target===this)closePin();});
+document.getElementById('boxModal').addEventListener('click',function(e){if(e.target===this)closeBox();});
+document.getElementById('noteModal').addEventListener('click',function(e){if(e.target===this)closeNote();});
+document.getElementById('boxOther').addEventListener('input',onOther);
+document.getElementById('boxOther').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();saveBox();}});
+document.getElementById('noteInput').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();saveNote();}});
 document.getElementById('pinInput').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();submitPin();}});
 
 init();

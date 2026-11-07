@@ -287,6 +287,9 @@ the right week under the right dates across a month end (Nov 29 – Dec 5).
 > looks good"). Note for the next look: the local server is its own origin, so the site
 > password is asked again at `index.html` before the page opens. The phone and kitchen-tablet
 > look waits for a merge he approves.
+>
+> **Shipped 2026-11-05** as PR #172 (squash `dd33c0f`), with Slice 0's SQL; unlinked, no tile.
+> Stephen looked at the live page on his devices the same day: "it looks fine right now."
 
 ### Slice 2 — Changing a box (manager)
 
@@ -300,6 +303,47 @@ the right week under the right dates across a month end (Nov 29 – Dec 5).
 **Done when:** every write happens only in manager mode; the harness asserts each payload; a
 retry leaves exactly one row; blank and OFF are stored differently; the text box measures 16px.
 Then a hand test on Stephen's iPhone, on the first real week.
+
+> **Slice 2 as built (2026-11-05).** Manager mode only; staff-mode HTML has no box or note
+> buttons (built at render time, not hidden by CSS) and makes exactly Slice 1's four reads.
+> - **Boxes:** in Day each `.sched-box` becomes `button.sched-boxbtn`; in Week each person cell holds
+>   `button.sched-cellbtn` (≥44px). `aria-label` "Change Pablo, Tuesday 11/17". Retired people's
+>   boxes are tappable in the weeks they show.
+> - **Box picker** (`#boxModal`, static markup, shared modal classes): title "Pablo · Tuesday ·
+>   Martes 11/17", "Now: …"; OFF, REQUEST, then up to 8 quick shifts. The quick shifts are the crew's
+>   most-used `shift_text` over this week and the three before (one GET, `kind=eq.shift`, manager
+>   mode only, cached per week, dropped after a save), topped up from the 11/8 defaults. Selection is
+>   an ink fill + `aria-pressed`. Other (`.sched-other`, maxlength 20, Enter = Save) and Training
+>   (only with a shift; OFF/REQUEST turn it off). Save, Clear (disabled on an empty box), Cancel,
+>   and the backdrop closes it (not while saving).
+> - **Tidy:** dashes → `-`, spaces collapsed and removed around `-` and before am/pm, am/pm lower
+>   case, `cl` → `CL`; text that tidies to `off` / `request` saves as that kind.
+> - **Save:** `POST schedule_shifts?on_conflict=person_id,work_date`, Prefer
+>   `resolution=merge-duplicates,return=representation`, body exactly `{person_id, work_date,
+>   kind, shift_text, training}` (never `updated_at`). Clear sends `kind:null`. Success = 2xx and
+>   one row for that person and day; then `loadSeq++` (drops a quiet reload in flight), the row
+>   goes into `shifts`, "Updated" moves, the picker closes, "✓ Saved". Otherwise the picker stays
+>   open with "No answer. Check the wifi and try again." / "Not saved (error N). Try again." and
+>   nothing on the page changes. One save at a time; unchanged = no request.
+> - **Games & events** (`#noteModal`, `.sched-note-input`, maxlength 60): the Day line ("+ Add game
+>   or event" when empty) and the Week row's cells are buttons. Quick words add to the text.
+>   `POST schedule_day_notes?on_conflict=location,note_date`, body `{location:'Tempest',
+>   note_date, note}`, spaces tidied; Clear sends `note:''`. Same success/failure rules.
+> - **Count:** `#mgrCount` "N boxes not filled yet" / "Every box filled", over active people × 7.
+>
+> **`scripts/check_schedule.py`**: 151 assertions over 6 scenarios. The new `mgr` scenario (82
+> assertions) enters manager mode via `sessionStorage['boxkitchen_mgr']` + the switch (never the
+> PIN), with a stub that upserts on the real keys and can hold, drop or refuse an answer. It
+> covers every payload, unchanged = no request, a double tap = one request, both failures with
+> the box unchanged, the retry's identical upsert leaving one row, the quiet-reload race, 16px
+> on both text boxes, the count and 44px Week buttons. **Proved able to fail:** without
+> `loadSeq++` the race check fails (the stale reload painted `6pm-CL` over the save); without
+> the unchanged check, the two no-request checks fail. `check_styling.py` clean (14 pages, 98
+> inputs measured, both new ones ≥16px).
+>
+> Stephen looked on his laptop on 2026-11-05 ("everything works"), without saving: a read-only
+> count afterwards showed 0 boxes and 0 day notes on the live tables. The iPhone hand test on
+> Nov 15 – 21 waits for the merge.
 
 ### Slice 3 — Copy last week (manager)
 
