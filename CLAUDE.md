@@ -37,7 +37,7 @@ Both are shipped in public client code, so neither is real security — actual d
 
 ## Styling — one stylesheet, and rules that outlive it
 
-**The migration is finished.** All ten pages share `assets/kitchen.css` — 9 core tokens, the
+**The migration is finished.** All fifteen pages share `assets/kitchen.css` — 9 core tokens, the
 font import, the reset, and every shared component. There is no second palette anywhere in the
 repo and no page carries an inline dark `<style>` block. A page's own `<style>` holds page-only
 rules and a handful of justified overrides, nothing more.
@@ -49,7 +49,7 @@ python3 scripts/check_styling.py
 ```
 
 It is the #114 consistency sweep, made runnable. CI runs it too. **It needs Chrome**
-(`CHROME=/path/to/chrome` if it is somewhere unusual): its last check renders the ten pages and
+(`CHROME=/path/to/chrome` if it is somewhere unusual): its last check renders the fifteen pages and
 reads the computed font-size of every input, because the bug it exists to catch is a rule
 *losing the cascade*, which no amount of reading the CSS will show you.
 
@@ -69,11 +69,11 @@ are:
 
 Declaring `font-size:16px` on the bare class looks right, passes review, and renders at 15.2px.
 
-**75 inputs on nine of the ten pages are already under 16px** (69 at 15.2px, 4 at 13.12px, 2 at
+**75 inputs on nine of the fifteen pages are already under 16px** (69 at 15.2px, 4 at 13.12px, 2 at
 14.4px) and are recorded in `FS_REGISTER` in `scripts/check_styling.py` with their measured
 sizes. The guard fails a *new* one, and fails a registered one that changes size in either
 direction, so the list cannot rot. #135 is not a bug that got fixed — it is the site's default,
-and clearing it is one edit to that shared rule plus a `?v=` bump on all ten pages, waiting on
+and clearing it is one edit to that shared rule plus a `?v=` bump on all fifteen pages, waiting on
 a pass of its own that can be looked at.
 
 ### The four rules that matter

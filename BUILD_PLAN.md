@@ -126,8 +126,11 @@ libraries). PR #74 also shipped the `tempest_notes.html` delete-confirmation mes
 - **B3. Inventory Guide** (coming-soon card; roadmap #4 monthly inventory). [Cost]
 - **B4. Recipe Costing v1** (coming-soon card; roadmap #5) — manual pricing tied to
   invoices; live food cost. Depends on recipes being complete. [Cost][Sellable]
-- **B5. Kits** (coming-soon card) — mise en place per recipe; depends on the recipe
-  library. [Consistency]
+- **✅ B5. Kits — DONE 2026-11-08 (PRs #168, #174, #178, #182, #184).** Live
+  `tempest_kits.html`, unlocked in Recipes & Reference: the 8 Line PM kits, each one's
+  numbered containers read live and read-only from the Recipe Database, with what is left
+  for the stove and anything not sorted yet; printable, one kit per page. No database
+  change. Plan: `docs/kits.md`. [Consistency]
 - **✅ B6. Flash Reports — DONE 2026-07-23 (PR #77).** Live `tempest_flash.html` (PIN-gated,
   linked from the Admin card): daily food-cost entry (per-vendor invoices + food sales) with
   live daily/running %, month report (daily grid + weekly summary + vendor breakdown),
