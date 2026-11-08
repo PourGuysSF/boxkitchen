@@ -520,7 +520,7 @@ RUNNER = r"""
       ok('mgr: the note box renders at 16px or more',parseFloat(getComputedStyle(n).fontSize)>=16,getComputedStyle(n).fontSize);
       ok('mgr: note box maxlength 60',n.maxLength===60);
       all('#notePicks .sched-pick').filter(function(b){return txt(b)==='Football';})[0].click();
-      ok('mgr: a quick word adds to the text and saves nothing',n.value==='49ers <home> & party Football'&&writes().length===n0);
+      ok('mgr: a quick word adds to the text and saves nothing',n.value==='49ers <home> & party Football '&&writes().length===n0);
       n.value='  49ers   home 1:25 ';byId('noteSave').click();return 50;
     });
     step(function(){
@@ -536,6 +536,22 @@ RUNNER = r"""
     step(function(){
       ok('mgr: Clear sends an empty note',same(body(lastPost()),{location:'Tempest',note_date:D,note:''}),lastPost().body);
       ok('mgr: an empty note offers "+ Add game or event"',txt(document.querySelector('.sched-notebtn'))==='+ Add game or event');
+      /* the quick-word space: tap a word, then type where the caret is, as a keyboard would */
+      document.querySelector('.sched-notebtn').click();
+    });
+    step(function(){
+      var n=byId('noteInput');
+      all('#notePicks .sched-pick').filter(function(b){return txt(b)==='49ers home';})[0].click();
+      ok('mgr: a quick word on an empty note ends with one space, caret at the end',n.value==='49ers home '&&n.selectionStart===n.value.length&&n.selectionEnd===n.value.length,JSON.stringify(n.value));
+      n.setRangeText('1:25',n.selectionStart,n.selectionEnd,'end');
+      byId('noteSave').click();return 50;
+    });
+    step(function(){
+      ok('mgr: quick word + typed "1:25" saves as "49ers home 1:25"',same(body(lastPost()),{location:'Tempest',note_date:D,note:'49ers home 1:25'}),lastPost().body);
+      document.querySelector('.sched-notebtn').click();byId('noteClear').click();return 50;
+    });
+    step(function(){
+      ok('mgr: the note is cleared again',txt(document.querySelector('.sched-notebtn'))==='+ Add game or event');
       H.nextWrite.push('err0');
       document.querySelector('.sched-notebtn').click();byId('noteInput').value='Event';byId('noteSave').click();return 50;
     });

@@ -528,7 +528,8 @@ function paintNote(){
 function addWord(el){
   if(!notePick||notePick.saving)return;
   var inp=document.getElementById('noteInput'),v=inp.value.trim();
-  inp.value=(v?v+' ':'')+el.textContent;inp.focus();
+  inp.value=(v?v+' ':'')+el.textContent+' ';inp.focus();
+  var len=inp.value.length;inp.setSelectionRange(len,len);
 }
 function closeNote(){if(notePick&&notePick.saving)return;notePick=null;document.getElementById('noteModal').classList.remove('show');}
 function saveNote(){
