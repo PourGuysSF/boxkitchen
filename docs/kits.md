@@ -1,7 +1,8 @@
 # Kits — what goes in each kit
 
-Status: **plan v1, approved by Stephen 2026-11-02**, with one change: the build is split into
-five small slices, so each can be checked before the next starts ("Slices"). Written from
+Status: **built and shipped.** The plan (v1) was approved by Stephen on 2026-11-02, with one
+change: the build is split into five small slices, so each can be checked before the next
+starts ("Slices"). All five are built; see each slice's "as built". Written from
 Stephen's interview in the Kits window (2026-10-28 and 2026-11-02). Every decision below is
 Stephen's.
 
@@ -9,8 +10,10 @@ Stephen's.
 #169). Stephen checked Slice 1 on a phone and on the kitchen tablet before Slice 2 began. See
 "Slice 1 as built". **Slice 2 is live** (`d399dda`, #174); Stephen walked all 8 kits on
 2026-11-05 and approved them. **Slice 3 is live** (`fcfd09d`, #178); Stephen passed the
-Airplane Mode test on 2026-11-07. **Slice 4 BUILT 2026-11-08** on `kits-slice4`, not pushed —
-see "Slice 4 as built". Still waiting: Stephen's iPhone print-preview check once it is live.
+Airplane Mode test on 2026-11-07. **Slice 4 is live** (`b092421`, #182); Stephen passed the
+iPhone print-preview check on 2026-11-08. **Slice 5 BUILT 2026-11-08** on `kits-slice5`, not
+pushed: the home-page tile goes live with it. See "Slice 5 as built". Still waiting: Stephen's
+phone check of the tile once it is live.
 
 Target file: a new page, `tempest_kits.html`. At the very end, and only then: the Kits tile in
 `index.html`, `BUILD_PLAN.md` (B5), and the page count in `CLAUDE.md`. This plan needs **no
@@ -515,7 +518,8 @@ line** at the bottom of every sheet ("Printed Nov 8, 2026 · from the Recipe Dat
   print, the list printing instead of the sheets, no page break between sheets, the Print
   button visible in print, the printed-on line missing. All caught.
 - `check_styling.py`: clean, 14 pages.
-- Not yet: Stephen's iPhone print-preview check, once it is live.
+- **Stephen's iPhone print-preview check, 2026-11-08, live:** "Print all 8 kits" showed all
+  8 kits; Mac & Cheese → "Print this kit" showed only Mac & Cheese. Passed.
 
 ### Slice 5 — Ship it into the site *(shared files, last)*
 
@@ -533,6 +537,44 @@ line** at the bottom of every sheet ("Printed Nov 8, 2026 · from the Recipe Dat
   uses. Banners only, no rule changes.
 - **Stephen opens the home page on a phone and taps the tile.** That push is the one that puts
   Kits in front of the staff.
+
+### Slice 5 as built
+
+`index.html`, `BUILD_PLAN.md`, `CLAUDE.md`, `assets/kitchen.css` (one comment), and this
+file. `tempest_kits.html` and the guards are untouched; no database change.
+
+**Decided by Stephen (2026-11-08):** the tile keeps its subtitle, **"Mise en place per
+recipe"**.
+
+**What changed.**
+- `index.html`: the Kits tile in "Recipes & Reference" is now `<a class="tile"
+  href="tempest_kits.html">`, as the Inventory tile became in #166: the same title and
+  subtitle, no "Coming soon" pill, no `soon` class, no lock (staff use it), no
+  `.tile-status` (the page has no daily state to report). No other tile changed.
+- `BUILD_PLAN.md`: B5 marked done, with its PRs.
+- `CLAUDE.md`: "ten" pages became **fifteen**, in all four places. Counted with
+  `ls *.html | wc -l` at the repo root on 2026-11-08, `index.html` included, which is how
+  `check_styling.py` counts (`glob("*.html")`); all fifteen link `kitchen.css`. The "75
+  inputs on nine…" figures still match `FS_REGISTER` (75 entries on 9 pages), so they stayed.
+- `assets/kitchen.css`: one banner. Every shared class the page uses (including those built in
+  JS strings) was mapped to its section: `.header`, `.header-row` and `.home-link` sit in
+  HEADER ("every page"); `.empty`, `.loading` and `.spinner` in EMPTY / LOADING ("every tool
+  page"); print and reduced motion carry no `used by:` line. The one gap was **`.link-btn`**
+  (Try again, the Print buttons), in COSTING MODAL, whose banner said `used by: costing`. It
+  now says `used by: costing — .link-btn also kits`. Comment only: no rule change and no `?v=`
+  bump, because nothing a browser draws changes. Every other `kit-*` class is the page's own.
+
+**Proved**
+
+- `check_kits.py`: **455 assertions, 19 scenarios, clean** (unchanged from Slice 4).
+- `check_styling.py`: **clean, 15 pages** + `kitchen.css`; 99 inputs measured, 75 on the #135
+  register.
+- The home page rendered in headless Chrome: the Kits tile is an `<a>` to `tempest_kits.html`
+  with the subtitle, and no pill, lock or status inside it.
+- `git diff --stat` touched only the named files; `git diff assets/kitchen.css` is one
+  comment line.
+- Pending: Stephen's phone check (home page → Recipes & Reference → **Kits** → a kit →
+  **← All kits** → back to home), once it is live.
 
 ---
 
