@@ -11,9 +11,9 @@ Stephen's.
 "Slice 1 as built". **Slice 2 is live** (`d399dda`, #174); Stephen walked all 8 kits on
 2026-11-05 and approved them. **Slice 3 is live** (`fcfd09d`, #178); Stephen passed the
 Airplane Mode test on 2026-11-07. **Slice 4 is live** (`b092421`, #182); Stephen passed the
-iPhone print-preview check on 2026-11-08. **Slice 5 BUILT 2026-11-08** on `kits-slice5`, not
-pushed: the home-page tile goes live with it. See "Slice 5 as built". Still waiting: Stephen's
-phone check of the tile once it is live.
+iPhone print-preview check on 2026-11-08. **Slice 5 is live** (`464aa5c`, #184): the Kits tile is
+on the home page, and Stephen checked it on his phone on 2026-11-08. See "Slice 5 as built".
+**B5 is done.** The next step is the Line PM link ("Later"), which needs a new plan.
 
 Target file: a new page, `tempest_kits.html`. At the very end, and only then: the Kits tile in
 `index.html`, `BUILD_PLAN.md` (B5), and the page count in `CLAUDE.md`. This plan needs **no
@@ -573,8 +573,10 @@ recipe"**.
   with the subtitle, and no pill, lock or status inside it.
 - `git diff --stat` touched only the named files; `git diff assets/kitchen.css` is one
   comment line.
-- Pending: Stephen's phone check (home page → Recipes & Reference → **Kits** → a kit →
-  **← All kits** → back to home), once it is live.
+- **Live as #184 (`464aa5c`), 2026-11-08.** The live `index.html` had the link about 40s
+  after the merge.
+- **Stephen's phone check, 2026-11-08, live:** home page → Recipes & Reference → **Kits** →
+  a kit → **← All kits** → back to home. "Tile works on my phone." Passed.
 
 ---
 
