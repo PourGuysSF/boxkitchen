@@ -784,7 +784,7 @@ body.manager-mode .card-mgr-actions{display:flex}
 .uc-unit{font-size:0.68rem;color:var(--grey);margin-top:1px}
 
 /* ── COSTING MODAL ────────────────────────────────────────── */
-/* used by: costing */
+/* used by: costing — .link-btn also kits */
 .modal .msub{font-size:0.78rem;color:var(--grey);margin-bottom:14px}
 .field-row{display:flex;gap:10px}
 .field-row>div{flex:1}
