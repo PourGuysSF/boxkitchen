@@ -54,12 +54,17 @@ SCENARIOS = ("ok", "amount", "renamed", "headings", "twogarlic",
              # slice 3 - when the recipe or the wifi lets it down
              "missing", "archived", "lost", "emptied", "fail", "e500", "hang", "failaddr",
              # slice 4 - the paper backup
-             "print")
+             "print",
+             # Line PM link, slice 1 - opened from Line PM (?from=line)
+             "fromline", "fromlinemissing", "fromlineemptied")
+# opened from Line PM: "&from=line" rides in the query beside the scenario
+FROM_LINE = ("fromline", "fromlinemissing", "fromlineemptied")
 # Slice 1's scenarios open Spicy Green Sauce by its address; the scenario
 # itself rides in the query string, because the address now picks the kit.
 SLICE1 = ("ok", "amount", "renamed", "headings", "twogarlic")
 HASH = {"missing": "", "archived": "", "lost": "", "emptied": "", "fail": "", "e500": "",
-        "hang": "", "failaddr": "mac-and-cheese", "reorder": "", "direct": "mac-and-cheese", "nope": "no-such-kit", "list": "", "all8": "", "print": ""}
+        "hang": "", "failaddr": "mac-and-cheese", "reorder": "", "direct": "mac-and-cheese", "nope": "no-such-kit", "list": "", "all8": "", "print": "",
+        "fromline": "pork-belly", "fromlinemissing": "gastrique", "fromlineemptied": "pickled-onions-peppers"}
 
 
 def find_chrome():
@@ -141,6 +146,20 @@ EXPECT = [
 # boxes: [part, name, keep, [lines]]; out: [line, why]; side: next to the pan.
 OWN, TOG, SIDE = "own container", "together", "next to the pan, labelled"
 KITS8 = [
+    {"slug": "mac-and-cheese", "name": "Mac & cheese", "recipe": "Mac & Cheese", "boxes": [
+        ["Cheese base", "Half & half", "labelled \u201ccheese base\u201d", ["1.5 qt. half & half"]],
+        ["Cheese base", "Cheeses", TOG, ["2.5 lb. Velveeta cheese", "4 c. mixed cheese"]],
+        ["Cheese base", "Seasoning", TOG, ["\u00bd can chipotle peppers and juice, minced", "2 tsp. salt",
+                                           "\u00bd tsp. chipotle chili powder", "\u00bd tsp. ancho chili powder"]],
+        ["Roux base", "Butter", OWN, ["8 oz. butter"]],
+        ["Roux base", "Onion", OWN, ["2 ea. white onion"]],
+        ["Roux base", "Roasted garlic", OWN, ["2 Tb. roasted garlic"]],
+        ["Roux base", "Flour", OWN, ["\u00bc c. flour"]],
+        ["Roux base", "Half & half", "labelled \u201croux\u201d", ["4 c. half & half"]],
+        ["Noodles & assembly", "Macaroni", OWN, ["2 qt. dried macaroni noodles"]],
+        ["Noodles & assembly", "Salt for the water", OWN, ["\u00bd c. salt"]],
+        ["Noodles & assembly", "Herbs", TOG, ["1 bu. chives", "\u00bc bu. parsley"]]],
+     "out": [], "side": []},
     {"slug": "buffalo-sauce", "name": "Buffalo sauce", "recipe": "Honey Harissa Buffalo", "boxes": [
         ["", "Butter", "own container, melts first", ["1 ea. butter"]],
         ["", "Harissa + garlic", TOG, ["1 c. garlic", "1 tube harissa paste"]],
@@ -165,11 +184,6 @@ KITS8 = [
         ["", "Sugar", OWN, ["2 c. sugar"]],
         ["", "Horseradish", OWN, ["2 cup horseradish"]]],
      "out": [], "side": ["Red wine"]},
-    {"slug": "dumpling", "name": "Dumpling", "recipe": "Dumpling", "boxes": [
-        ["", "Dry mix", TOG, ["4 tsp. baking powder", "\u00bd tsp. baking soda", "2 tsp. salt", "\u00bd tsp. black pepper", "2 cup flour"]],
-        ["", "Butter", OWN, ["6 TB. butter"]],
-        ["", "Buttermilk", OWN, ["1\u00bc cup buttermilk"]]],
-     "out": [], "side": []},
     {"slug": "chicken-dumpling-soup", "name": "Chicken & dumpling soup", "recipe": "Chicken & Dumpling (Soup Base)", "boxes": [
         ["", "Olive oil", OWN, ["\u00bd cup olive oil"]],
         ["", "Butter", OWN, ["\u00bd cup butter"]],
@@ -179,6 +193,11 @@ KITS8 = [
      "out": [["5# chicken thigh", "raw meat \u2014 pull from the meat shelf"],
              ["Salt", "to taste, at the stove"], ["Black pepper", "to taste, at the stove"],
              ["6 qt. chicken stock", "cans, from the shelf"]], "side": []},
+    {"slug": "dumpling", "name": "Dumpling", "recipe": "Dumpling", "boxes": [
+        ["", "Dry mix", TOG, ["4 tsp. baking powder", "\u00bd tsp. baking soda", "2 tsp. salt", "\u00bd tsp. black pepper", "2 cup flour"]],
+        ["", "Butter", OWN, ["6 TB. butter"]],
+        ["", "Buttermilk", OWN, ["1\u00bc cup buttermilk"]]],
+     "out": [], "side": []},
     {"slug": "spicy-green-sauce", "name": "Spicy green sauce", "recipe": "Spicy Green Sauce", "boxes": [
         ["", "Spices", "measure together", ["2 Tbsp Ground coriander", "4 tsp Ground cumin", "4 tsp Salt"]],
         ["", "Herbs & veg", TOG, ["2 cups Parsley leaves, rough chop", "2 cups Cilantro leaves, rough chop",
@@ -192,22 +211,8 @@ KITS8 = [
         ["", "Pickling spices", TOG, ["\u00be cup Sugar", "1 Tbsp Salt", "1 Tbsp Coriander"]],
         ["", "Cider vinegar", OWN, ["1.5 qt Cider vinegar"]]],
      "out": [["1.5 qt Water", "from the tap"]], "side": []},
-    {"slug": "mac-and-cheese", "name": "Mac & cheese", "recipe": "Mac & Cheese", "boxes": [
-        ["Cheese base", "Half & half", "labelled \u201ccheese base\u201d", ["1.5 qt. half & half"]],
-        ["Cheese base", "Cheeses", TOG, ["2.5 lb. Velveeta cheese", "4 c. mixed cheese"]],
-        ["Cheese base", "Seasoning", TOG, ["\u00bd can chipotle peppers and juice, minced", "2 tsp. salt",
-                                           "\u00bd tsp. chipotle chili powder", "\u00bd tsp. ancho chili powder"]],
-        ["Roux base", "Butter", OWN, ["8 oz. butter"]],
-        ["Roux base", "Onion", OWN, ["2 ea. white onion"]],
-        ["Roux base", "Roasted garlic", OWN, ["2 Tb. roasted garlic"]],
-        ["Roux base", "Flour", OWN, ["\u00bc c. flour"]],
-        ["Roux base", "Half & half", "labelled \u201croux\u201d", ["4 c. half & half"]],
-        ["Noodles & assembly", "Macaroni", OWN, ["2 qt. dried macaroni noodles"]],
-        ["Noodles & assembly", "Salt for the water", OWN, ["\u00bd c. salt"]],
-        ["Noodles & assembly", "Herbs", TOG, ["1 bu. chives", "\u00bc bu. parsley"]]],
-     "out": [], "side": []},
 ]
-LIST_COUNTS = [5, 3, 7, 3, 5, 5, 3, 11]
+LIST_COUNTS = [11, 5, 3, 7, 5, 3, 5, 3]
 
 
 def swap(text, a, b):
@@ -220,7 +225,7 @@ def swap(text, a, b):
 # line comes first; only longest-first keeps each line in its own container.
 REORDER = {43: swap(LIVE[43], "1 bottle red wine", "4 c. red wine vinegar"),
            14: swap(LIVE[14], "6 TB. butter", "1\u00bc cup buttermilk")}
-ALL_IDS = "5,54,43,14,19,25,24,46"
+ALL_IDS = "46,5,54,43,19,14,25,24"
 
 # ------------------------------------------------------------ page surgery --
 GATE_RE = re.compile(r"window\.location\.replace\('index\.html'\)")
@@ -232,7 +237,7 @@ HARNESS = r"""
   var SCEN=(/[?&]scen=([a-z0-9]+)/.exec(location.search)||[0,'ok'])[1];
   var FX=__FIXTURES__;
   var reqs=[];
-  window.__h={scen:SCEN,reqs:reqs,fx:FX};
+  window.__h={scen:SCEN,reqs:reqs,fx:FX,fromLine:/[?&]from=line(&|$)/.test(location.search)};
   function query(u){var q={},s=u.split('?')[1]||'';s.split('&').forEach(function(kv){var i=kv.indexOf('=');if(i>0)q[kv.slice(0,i)]=decodeURIComponent(kv.slice(i+1));});return q;}
   function Stub(){this.readyState=0;this.status=0;this.responseText='';this._h={};}
   Stub.prototype.open=function(m,u){this._m=String(m).toUpperCase();this._u=String(u);};
@@ -317,8 +322,14 @@ RUNNER = r"""
     var parts=[].map.call(document.querySelectorAll('.kit-part'),txt),wantParts=[];
     K.boxes.forEach(function(b){if(b[0]&&wantParts.indexOf(b[0])<0)wantParts.push(b[0]);});
     ok(tag+'sub-headings are the kit\u2019s own parts', JSON.stringify(parts)===JSON.stringify(wantParts), parts);
-    ok(tag+'a Back link to the list', !!document.getElementById('backLink')&&document.getElementById('backLink').getAttribute('href')==='#');
+    backChecks(tag);
     return got;
+  }
+  /* Back: "← All kits" to the list; opened from Line PM, "← Line PM" to its PM list */
+  function backChecks(tag){
+    var b=document.getElementById('backLink');
+    if(H.fromLine)ok(tag+'from Line PM: Back says "← Line PM" and goes to tempest_line.html#pm', !!b&&b.classList.contains('kit-back')&&txt(b)==='← Line PM'&&b.getAttribute('href')==='tempest_line.html#pm', b&&b.outerHTML);
+    else ok(tag+'Back says "← All kits" and goes to the list', !!b&&b.classList.contains('kit-back')&&txt(b)==='← All kits'&&b.getAttribute('href')==='#', b&&b.outerHTML);
   }
   function kitBy(slug){return H.fx.kits.filter(function(k){return k.slug===slug;})[0];}
   function isList(){
@@ -410,6 +421,27 @@ RUNNER = r"""
         function(){printChecks('print, back on the list: ',ALL8,'Print all 8 kits');}
       ]);
     }
+    if(S==='fromline'){
+      return steps([
+        function(){sheet(kitBy('pork-belly'));printChecks('fromline, pork-belly: ',['pork-belly'],'Print this kit');},
+        function(){location.hash='mac-and-cheese';},
+        function(){sheet(kitBy('mac-and-cheese'));ok('fromline: still "← Line PM" after moving to another kit', txt(document.getElementById('backLink'))==='← Line PM');}
+      ]);
+    }
+    if(S==='fromlinemissing'){
+      return steps([function(){
+        var nf=document.getElementById('notFound');
+        ok('fromlinemissing: the "Recipe not found" sheet', !!nf&&/tell a manager/.test(txt(nf)), txt(document.getElementById('appBody')).slice(0,160));
+        backChecks('fromlinemissing: ');
+      }]);
+    }
+    if(S==='fromlineemptied'){
+      return steps([function(){
+        var un=document.getElementById('unsorted');
+        ok('fromlineemptied: the empty-kit sheet', !!un&&!document.querySelector('.kit-box')&&!document.getElementById('pan'), txt(document.getElementById('appBody')).slice(0,160));
+        backChecks('fromlineemptied: ');
+      }]);
+    }
     if(S==='missing'||S==='archived'){
       var slug=S==='missing'?'gastrique':'dumpling',K=kitBy(slug);
       return steps([
@@ -426,6 +458,7 @@ RUNNER = r"""
           ok(S+': never an empty sheet - no containers, no pan step', !document.querySelector('.kit-box')&&!document.getElementById('pan'));
           ok(S+': the kit still says which kit it is', txt(document.querySelector('.kit-title'))===K.name);
           ok(S+': no stray filler under the title', txt(document.querySelector('.kit-from'))==='');
+          backChecks(S+': ');
           document.getElementById('backLink').click();
         },
         function(){ok(S+': Back returns to the list', document.querySelectorAll('.kit-item').length===8);}
@@ -471,6 +504,7 @@ RUNNER = r"""
           ok('emptied: no containers and no pan step', !document.querySelector('.kit-box')&&!document.getElementById('pan'));
           ok('emptied: never "All 0 containers"', !/All 0 container/.test(app), app);
           ok('emptied: "Not in the kit" still shows the water', /Not in the kit/.test(app)&&/1\.5 qt Water/.test(app));
+          backChecks('emptied: ');
         }
       ]);
     }
@@ -525,7 +559,7 @@ RUNNER = r"""
         st.push(function(){ok(K.slug+': Back returns to the list', isList().length===8&&!document.getElementById('pan'), txt(document.getElementById('appBody')).slice(0,120));});
       });
       st.push(function(){history.back();});
-      st.push(function(){ok('the browser\u2019s own back works too', !!document.getElementById('pan')&&txt(document.querySelector('.kit-title'))==='Mac & cheese', txt(document.querySelector('.kit-title')));});
+      st.push(function(){var last=H.fx.kits[H.fx.kits.length-1].name;ok('the browser\u2019s own back works too', !!document.getElementById('pan')&&txt(document.querySelector('.kit-title'))===last, txt(document.querySelector('.kit-title')));});
       return steps(st);
     }
     if(S==='list'){
@@ -617,6 +651,10 @@ def build_page(scen):
     recipes = RECIPES
     if scen == "reorder":
         recipes = [dict(r, ingredients=REORDER.get(r["id"], r.get("ingredients"))) for r in RECIPES]
+    if scen == "fromlinemissing":
+        scen = "missing"
+    if scen == "fromlineemptied":
+        scen = "emptied"
     if scen == "missing":      # Gastrique's recipe is gone from the table
         recipes = [r for r in RECIPES if r["id"] != 43]
     if scen == "archived":     # Dumpling's recipe is archived
@@ -647,7 +685,7 @@ RESULT_RE = re.compile(r'<div id="harnessResults">(.*?)</div>', re.S)
 
 def run_scenario(chrome, path, scen):
     """One Chrome per scenario; poll --dump-dom output for the results div."""
-    url = "file://" + path + "?scen=" + scen + "#" + (
+    url = "file://" + path + "?scen=" + scen + ("&from=line" if scen in FROM_LINE else "") + "#" + (
         "spicy-green-sauce" if scen in SLICE1 else HASH[scen])
     dom = os.path.join(os.path.dirname(path), "dom-" + scen + ".html")
     err = os.path.join(os.path.dirname(path), "err-" + scen + ".txt")
