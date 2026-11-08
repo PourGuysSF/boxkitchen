@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<script>
+  // Site-password gate (same as every inner page): bounce to hub if not authed.
+  (function(){
+    var raw = localStorage.getItem('boxkitchen_auth');
+    var ts = raw ? parseInt(raw, 10) : 0;
+    var TTL = 30 * 24 * 60 * 60 * 1000; // 30 days
+    if (!ts || isNaN(ts) || (Date.now() - ts) > TTL) {
+      window.location.replace('index.html');
+    }
+  })();
+</script>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#fbfaf6">
+<title>Tempest Recipe Costing</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=Playfair+Display:wght@700;900&display=swap">
+<link rel="stylesheet" href="assets/kitchen.css?v=2026-09-19">
+<script src="assets/recipe-math.js?v=1"></script>
+<style>
+  /* Recipe Costing (B4.3, docs/recipe-costing.md) — page-level rules only.
+     Every component lives in assets/kitchen.css. Unlinked until Slice 7. */
+
+  /* Slice 2 — used by: renderRecipe() (.rc-back, .rc-title, .rc-sub, .rc-line,
+     .rc-text, .rc-read). One ingredient line: the recipe's own words first,
+     exactly as written; what costing reads from them underneath. Not a tap
+     target in this slice, so no hover or press state. */
+  .rc-back{display:inline-flex;align-items:center;min-height:44px;margin:10px 20px 0;padding:0 2px;
+           background:transparent;border:none;color:var(--ink);font-family:var(--font-cond);
+           font-size:14px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;cursor:pointer}
+  .rc-title{padding:4px 20px 2px;font-family:var(--font-display);font-size:1.4rem;font-weight:700;line-height:1.2}
+  .rc-sub{padding:0 20px 8px;font-size:0.8rem;color:var(--grey)}
+  .rc-line{padding:10px 20px;border-bottom:1px solid var(--hair)}
+  .rc-text{font-size:0.95rem;color:var(--ink);overflow-wrap:anywhere}
+  .rc-read{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-top:3px;
+           font-size:0.78rem;color:var(--grey)}
+  .rc-read b{color:var(--ink);font-weight:700}
+  /* the list's rows wrap rather than ellipse: a recipe name is short, and
+     the line count beside it is the reason to look */
+  #listBody .ing-name{white-space:normal}
+</style>
+</head>
+<body>
+
+<!-- PIN gate — shown until unlocked -->
+<div class="gate hide" id="gate">
+  <h2>Recipe Costing</h2>
+  <p>Manager PIN required.</p>
+  <input class="pin-input" type="tel" inputmode="numeric" pattern="[0-9]*" maxlength="4" id="gateInput" autocomplete="off">
+  <div class="gate-err" id="gateErr">Incorrect PIN</div>
+  <div class="gate-btns">
+    <a class="gate-btn back" href="index.html">← Home</a>
+    <button class="gate-btn go" onclick="submitGate()">Unlock</button>
+  </div>
+</div>
+
+<div class="header">
+  <div class="header-row">
+    <a class="home-link" href="index.html">← Home</a>
+    <h1>Recipe <span>Costing</span></h1>
+    <div class="lock-tag">🔒 Manager</div>
+  </div>
+  <div class="subrow">
+    <div class="count-tag" id="countTag">—</div>
+  </div>
+</div>
+
+<div id="listBody"><div class="loading"><div class="spinner"></div><p>Loading…</p></div></div>
+<div id="recipeBody" style="display:none"></div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+var SB='https://sxppuyarecqkgkrsrefc.supabase.co',SK='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN4cHB1eWFyZWNxa2drcnNyZWZjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczOTA4MzAsImV4cCI6MjA5Mjk2NjgzMH0.GM8OfcR68_JjdPeQ3k7j6L3ulJFaeS1xnSLBcdtYXtU';
+var MANAGER_PIN='4316';
+var LOCATION='Tempest';
+
+/* Slice 2: this page reads only "Recipes" and writes nothing. Every amount
+   and unit comes from RecipeMath (assets/recipe-math.js); the page does no
+   arithmetic of its own. */
+var recipes=[];   // active Recipes rows, by name
+var loadGen=0;
+
+var LOAD_TIMEOUT=60000;
+/* status 0 = no answer at all (network error or timeout). One callback per
+   request, whichever of load/error/timeout comes first. */
+function api(m,t,q,d,cb,ms){var x=new XMLHttpRequest(),fired=false;function fire(r,s){if(fired)return;fired=true;if(cb)cb(r,s);}
+  x.open(m,SB+'/rest/v1/'+t+(q?'?'+q:''));x.timeout=ms||LOAD_TIMEOUT;x.setRequestHeader('apikey',SK);x.setRequestHeader('Authorization','Bearer '+SK);if(d){x.setRequestHeader('Content-Type','application/json');x.setRequestHeader('Prefer','return=representation');}
+  x.onload=function(){var r=null;try{r=JSON.parse(x.responseText);}catch(e){}fire(r,x.status);};x.onerror=function(){fire(null,0);};x.ontimeout=function(){fire(null,0);};x.send(d?JSON.stringify(d):null);}
+
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+
+/* ---- PIN gate ---- */
+function revealApp(){document.getElementById('gate').classList.add('hide');init();}
+function submitGate(){
+  var v=(document.getElementById('gateInput').value||'').trim();
+  if(v===MANAGER_PIN){try{sessionStorage.setItem('boxkitchen_mgr','1');}catch(e){}revealApp();}
+  else{document.getElementById('gateErr').classList.add('show');var inp=document.getElementById('gateInput');inp.value='';inp.focus();}
+}
+document.getElementById('gateInput').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();submitGate();}});
+function boot(){
+  var already=false;try{already=sessionStorage.getItem('boxkitchen_mgr')==='1';}catch(e){}
+  if(already){revealApp();}
+  else{document.getElementById('gate').classList.remove('hide');setTimeout(function(){document.getElementById('gateInput').focus();},120);}
+}
+
+/* ---- Load ---- */
+function init(){
+  var gen=++loadGen;
+  document.getElementById('listBody').innerHTML='<div class="loading"><div class="spinner"></div><p>Loading…</p></div>';
+  api('GET','Recipes','select=id,name,category,station,status,ingredients&location=eq.'+LOCATION+'&order=name.asc',null,function(r,status){
+    if(gen!==loadGen)return;
+    if(!Array.isArray(r)||status<200||status>=300){
+      document.getElementById('countTag').textContent='—';
+      document.getElementById('listBody').innerHTML='<div class="empty-state"><h3>Could not load recipes</h3><p>Check the connection.</p><p><button class="link-btn" onclick="init()">Try again</button></p></div>';
+      showToast('Could not load recipes',true);
+      return;
+    }
+    recipes=r.filter(function(x){return x.status!=='archived';});
+    renderList();
+  });
+}
+
+/* ---- The list ---- */
+function linesOf(rec){
+  var out=[],part=null,raw=String(rec.ingredients||'').split(/\r?\n/);
+  for(var i=0;i<raw.length;i++){
+    var t=raw[i].trim();
+    if(!t)continue;
+    if(RecipeMath.isPartHeader(t)){part=t;out.push({header:true,text:t});continue;}
+    out.push({header:false,text:t,part:part,read:RecipeMath.readAmount(t)});
+  }
+  return out;
+}
+function lineCount(rec){return linesOf(rec).filter(function(l){return !l.header;}).length;}
+
+function renderList(){
+  document.getElementById('countTag').innerHTML='<b>'+recipes.length+'</b> recipes';
+  if(!recipes.length){document.getElementById('listBody').innerHTML='<div class="empty-state"><h3>No recipes</h3><p>Active recipes in the Recipe Database appear here.</p></div>';return;}
+  var html='';
+  recipes.forEach(function(rec){
+    var n=lineCount(rec);
+    var meta=[rec.category,rec.station].filter(Boolean).map(esc).join(' · ');
+    html+='<div class="ing-row" data-id="'+esc(rec.id)+'" onclick="openRecipe('+Number(rec.id)+')">'
+        +'<div class="ing-main"><div class="ing-name">'+esc(rec.name)+'</div>'
+        +'<div class="ing-pack">'+(meta?meta+' · ':'')+n+' line'+(n===1?'':'s')+'</div></div></div>';
+  });
+  document.getElementById('listBody').innerHTML=html;
+}
+
+/* ---- One recipe ---- */
+function fmtAmount(a){return String(+a.toFixed(3));}   // display only; the value stays unrounded
+function readText(rd){
+  if(rd.amount===null){
+    return rd.why==='two amounts'?'reads: <b>no amount</b> — two amounts on one line':'reads: <b>no amount</b>';
+  }
+  return 'reads: <b>'+esc(fmtAmount(rd.amount)+' '+rd.unit)+'</b>'+(rd.unitWord?'':' — no unit word');
+}
+function openRecipe(id){
+  var rec=null;
+  for(var i=0;i<recipes.length;i++)if(Number(recipes[i].id)===id){rec=recipes[i];break;}
+  if(!rec)return;
+  var lines=linesOf(rec),n=0;
+  var html='<button class="rc-back" onclick="closeRecipe()">← Recipes</button>'
+          +'<div class="rc-title">'+esc(rec.name)+'</div>';
+  var meta=[rec.category,rec.station].filter(Boolean).map(esc).join(' · ');
+  lines.forEach(function(l){if(!l.header)n++;});
+  html+='<div class="rc-sub">'+(meta?meta+' · ':'')+n+' line'+(n===1?'':'s')+'</div>';
+  if(!n)html+='<div class="empty-state"><h3>No ingredients</h3><p>This recipe has no ingredient lines yet.</p></div>';
+  lines.forEach(function(l){
+    if(l.header){html+='<div class="vhead">'+esc(l.text)+'</div>';return;}
+    html+='<div class="rc-line"><div class="rc-text">'+esc(l.text)+'</div>'
+        +'<div class="rc-read"><span>'+readText(l.read)+'</span><span class="ing-pack unset">not linked</span></div></div>';
+  });
+  document.getElementById('listBody').style.display='none';
+  document.getElementById('countTag').parentNode.style.display='none';
+  var body=document.getElementById('recipeBody');
+  body.innerHTML=html;body.style.display='';
+  window.scrollTo(0,0);
+}
+function closeRecipe(){
+  document.getElementById('recipeBody').style.display='none';
+  document.getElementById('listBody').style.display='';
+  document.getElementById('countTag').parentNode.style.display='';
+}
+
+var st;
+function showToast(msg,isErr,ms){var t=document.getElementById('toast');t.textContent=(isErr?'⚠ ':'✓ ')+msg;t.classList.toggle('error',!!isErr);t.classList.add('show');clearTimeout(st);st=setTimeout(function(){t.classList.remove('show');},ms||1600);}
+
+boot();
+</script>
+</body>
+</html>

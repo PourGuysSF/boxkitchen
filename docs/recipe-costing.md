@@ -1,7 +1,7 @@
 # Recipe Costing — what a batch costs (B4.3)
 
 Status: **plan v1, approved by Stephen 2026-11-02. Slice 0 is closed (tables live, 0 rows); Slice 1
-is shipped (PR #171, 2026-11-05). Slice 2 is next.** It is built in a separate window: this plan is owned by the planning window, the build window
+is shipped (PR #171, 2026-11-05). Slice 2 is built (2026-11-08, branch `recipe-costing-slice2`, awaiting PR and phone check); Slice 3 is next.** It is built in a separate window: this plan is owned by the planning window, the build window
 records each slice "as built" here, and any change to the design goes back to the planner. Every
 decision in "Decisions" was Stephen's, in the interview that produced this document. The design
 choices made without asking are listed under "Decided in planning, not asked" so they can be
@@ -650,6 +650,51 @@ against a stubbed `api()` in `check_costing.py`, with all of its existing assert
 (268) appears, in order, under its part; the proposed amount and unit are right on hand-checked lines (including
 `5#`, `1½`, `1 1/2`, `Salt TT`, `32 oz. soy`, `2 bay leaves`) — read by the shared file and proved in
 `check_recipe_math.py`; the `CLAUDE.md` line is corrected; nothing is written.
+
+**As built (2026-11-08, build window).**
+
+- **Live counts moved before the build:** *Chilorio Sauce* (#58, 12 lines) was added on
+  2026-11-06, so the slice was built and proved against **37 active recipes, 280 lines, 11 part
+  headers** (Stephen's OK). By kind, as read: volume 160, count 77, weight 17, no amount 26; none
+  unreadable; two read as `each` with no unit word (`2 bay leaves`, `20 large guajillo chiles`).
+- **Two rulings by Stephen, 2026-11-08,** on text the plan did not settle (both in Chilorio):
+  `1 Tbsp + 1 tsp dried Mexican oregano` — two amounts added — reads as **no amount** (why
+  `two amounts`), entered by a person in Slice 3; never summed, never half-read. Any Unicode
+  fraction (`⅓`, `¼`, `¾`, `⅛` …) reads as `½` does.
+- **`assets/recipe-math.js?v=1`** — one object, `RecipeMath`, pure, unrounded:
+  - `normaliseUnit(spelling)` → the unit's canonical name (`g kg oz lb tsp tbsp 'fl oz' cup pt
+    qt '1/2 gal' gal ml L each dozen` and the own-unit count words), or `null`. Case, a trailing
+    dot and a plural `s`/`es` are ignored; `#` = lb, `bu` = bunch, `C`/`c` = cup, `TB`/`Tb` = tbsp,
+    `pint` = pt, `quart` = qt. Accepts every live `pack_unit`, `1/2 gal` and `Lb` included.
+  - `unitKind(spelling)` → `'weight' | 'volume' | 'count'` or `null`.
+  - `convert(amount, from, to)` → within a kind, exact US factors (1 fl oz = 29.5735295625 ml,
+    1 lb = 453.59237 g); `null` across kinds, and between two different own-unit count words.
+  - `units()` → `[{unit, kind}]` in table order, for a unit box.
+  - `isPartHeader(line)` → `/^—.+—$/`, as `recipe_dashboard.html`'s `formatIngredients()`.
+  - `readAmount(line)` → `{amount, unit, kind, words, unitWord}`; `unitWord:false` when `each`
+    was assumed. No amount → `{amount:null, unit:null, kind:null, words, why}`, `why` one of
+    `'no number' | 'two amounts' | 'unreadable'`. `words` is the rest of the line (Slice 3's
+    picker filter). The reader never proposes `1/2 gal` from a recipe line.
+- **`scripts/check_recipe_math.py`** — 167 assertions in headless Chrome (every spelling, every
+  unit, 54 lines including every hand-checked one, 27 conversions) and 6 deliberate breaks, each
+  caught: oz as volume; `#` not lb (twice: the spelling and the `5#` reader); `1 1/2` read as 1,
+  as 2, as ½. Every page's `src="assets/recipe-math.js?v=N"` must agree. `--scan FILE` prints
+  the live report.
+- **`tempest_recipe_costing.html`** — unlinked; frame from `tempest_costing.html` (gate,
+  `sessionStorage['boxkitchen_mgr']`, `api()` with its timeout, toast). One GET:
+  `Recipes?select=id,name,category,station,status,ingredients&location=eq.Tempest&order=name.asc`;
+  archived filtered out in the page. The list → tap a recipe → each line as written, `reads: 2 tbsp`
+  (display rounds to 3 places; the value stays unrounded), part headers as `.vhead`, *not linked*
+  as `.ing-pack.unset`. New classes `rc-back rc-title rc-sub rc-line rc-text rc-read`, page-only.
+- **`scripts/check_recipe_costing.py`** — 67 assertions, scenarios `ok`, `fail`, `gate`: no
+  request but a GET, ever; archived left out; Mac & Cheese's 9 rows and Chilorio's 4 in order
+  under their parts with their reads; markup in recipe text shown as text; tap targets ≥44px;
+  failed load → Try again → reads again; nothing read before the PIN. `--live` (local only,
+  refuses under `CI`) rendered **37 recipes, 280 lines, 11 headers**, no writes.
+- **`.github/workflows/recipe-costing-guard.yml`** runs both checks. `CLAUDE.md`: only the
+  "no shared JS" line changed. `check_costing.py` and `check_styling.py` clean; `FS_REGISTER`
+  unchanged (75).
+- **Not proved here:** the phone check (after merge); the webfonts (the harness strips them).
 
 ### Slice 3 — Link a line
 
