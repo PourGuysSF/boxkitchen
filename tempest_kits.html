@@ -57,7 +57,44 @@
   .kit-item-name{font-weight:600;font-size:1.1rem}
   /* a kit that needs a manager: bold ink, never a colour (CLAUDE.md rule 4) */
   .kit-item-n.kit-flag{color:var(--ink);font-weight:700}
+  /* Print (Slice 4): a real button, the shared outline look, 44px to tap */
+  .kit-print-btn{display:block;min-height:44px;margin:14px 18px 0;padding:0 16px;color:var(--ink)}
+  .kit-print-all,.kit-printed{display:none}
   .kit-item-n{font-family:var(--font-cond);font-size:14px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--grey);white-space:nowrap}
+  /* Paper is the backup (CLAUDE.md). Greys from PRINT_PALETTE only; state
+     stays border and weight, never a fill. From the list the list hides and
+     the 8 sheets print, one per page; from a kit, that kit prints. */
+  @media print{
+    .header,.kit-back,.kit-print-btn,#kitList,.kit-list-head{display:none !important}
+    .kit-wrap{max-width:none;padding:0}
+    .kit-print-all{display:block}
+    .kit-print-all .kit-sheet+.kit-sheet{break-before:page;page-break-before:always}
+    .kit-title{padding-top:0}
+    .kit-box,.kit-pan,.kit-unsorted,.kit-out{break-inside:avoid;page-break-inside:avoid}
+    .kit-sec,.kit-part{break-after:avoid;page-break-after:avoid}
+    .kit-num{border:2px solid #000;background:transparent}
+    .kit-unsorted{border:4px solid #000}
+    /* paper spacing: tighter than the screen, so each kit fits one page */
+    .kit-title{font-size:18pt}
+    .kit-from{padding-bottom:6px}
+    .kit-sec{padding:8px 18px 2px;font-size:10pt}
+    .kit-part{padding:8px 18px 2px;font-size:12pt}
+    .kit-box{padding:5px 18px;gap:10px}
+    .kit-num{width:26px;height:26px;font-size:14px}
+    .kit-name{font-size:11pt}
+    .kit-keep,.kit-why{font-size:9pt}
+    /* "together" sits beside the name on paper: one line saved per container */
+    .kit-name,.kit-keep{display:inline}
+    .kit-keep{margin-left:8px}
+    .kit-keep::before{content:"· "}
+    .kit-line{padding:0;font-size:10.5pt}
+    .kit-pan{margin-top:4px;padding:6px 10px}
+    .kit-pan div{padding:0;font-size:10.5pt}
+    .kit-out{padding:3px 18px}
+    .kit-unsorted{margin-top:8px;padding:6px 10px}
+    .kit-printed{break-before:avoid;page-break-before:avoid}
+    .kit-printed{display:block;margin:10px 18px 0;padding-top:6px;border-top:1px solid #bbb;font-size:9pt;color:#555}
+  }
 </style>
 </head>
 <body>
@@ -220,22 +257,33 @@ function sortKit(kit, ingredients){
   return {boxes:boxes.filter(function(b){return b.lines.length;}),out:out,unsorted:unsorted};
 }
 
+/* "Printed Nov 8, 2026 · from the Recipe Database": print-only */
+function printedLine(){
+  var d=new Date(),M=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return '<div class="kit-printed">Printed '+M[d.getMonth()]+' '+d.getDate()+', '+d.getFullYear()+' · from the Recipe Database</div>';
+}
 function drawKit(kit, recipe){
-  var body=document.getElementById('appBody');
-  var h='<div class="kit-wrap"><a class="kit-back" href="#" id="backLink">← All kits</a><div class="kit-title">'+esc(kit.name)+'</div>';
+  document.getElementById('appBody').innerHTML='<div class="kit-wrap"><a class="kit-back" href="#" id="backLink">← All kits</a>'
+    +'<button type="button" class="link-btn kit-print-btn" id="printBtn" onclick="window.print()">Print this kit</button>'
+    +kitHtml(kit, recipe, true)+'</div>';
+}
+/* one kit sheet, the same markup on screen and on paper. ids: true on the
+   screen kit only, so the 8 printed sheets never repeat an id. */
+function kitHtml(kit, recipe, ids){
+  function id(x){return ids?' id="'+x+'"':'';}
+  var h='<div class="kit-sheet" data-slug="'+kit.slug+'"><div class="kit-title">'+esc(kit.name)+'</div>';
   if(!recipe||recipe.status==='archived'){
-    body.innerHTML=h+'<div class="kit-from"></div><div class="kit-unsorted" id="notFound"><div class="kit-unsorted-msg">Recipe not found in the Recipe Database — tell a manager.</div></div></div>';
-    return;
+    return h+'<div class="kit-from"></div><div class="kit-unsorted"'+id('notFound')+'><div class="kit-unsorted-msg">Recipe not found in the Recipe Database — tell a manager.</div></div>'+printedLine()+'</div>';
   }
   var s=sortKit(kit, recipe.ingredients);
   h+='<div class="kit-from">from '+esc(recipe.name)+'</div>';
   if(s.unsorted.length){
-    h+='<div class="kit-unsorted" id="unsorted"><div class="kit-sec">Not sorted yet</div>';
+    h+='<div class="kit-unsorted"'+id('unsorted')+'><div class="kit-sec">Not sorted yet</div>';
     s.unsorted.forEach(function(l){h+='<div class="kit-line">'+esc(l)+'</div>';});
     h+='<div class="kit-unsorted-msg">This is in the recipe but not in the kit yet — tell a manager.</div></div>';
   }
   /* nothing left to put in a container: never "All 0 containers" */
-  if(!s.boxes.length){body.innerHTML=h+drawOut(s)+'</div>';return;}
+  if(!s.boxes.length)return h+drawOut(s)+printedLine()+'</div>';
   h+='<div class="kit-sec">Containers</div>';
   var part=null;
   s.boxes.forEach(function(b,i){
@@ -247,11 +295,11 @@ function drawKit(kit, recipe){
   });
   var side=s.boxes.filter(function(b){return b.side;});
   var inPan=s.boxes.length-side.length;
-  h+='<div class="kit-sec">Into the hotel pan</div><div class="kit-pan" id="pan">'
+  h+='<div class="kit-sec">Into the hotel pan</div><div class="kit-pan"'+id('pan')+'>'
     +'<div>All '+inPan+' container'+(inPan===1?'':'s')+' into one hotel pan</div>';
   side.forEach(function(b){h+='<div>Next to the pan, labelled: '+esc(b.name)+'</div>';});
   h+='<div>Label and date the pan · into the cooler</div></div>';
-  body.innerHTML=h+drawOut(s)+'</div>';
+  return h+drawOut(s)+printedLine()+'</div>';
 }
 function drawOut(s){
   if(!s.out.length)return '';
@@ -262,7 +310,8 @@ function drawOut(s){
 
 /* the list: every kit in Line PM order, with the containers it really has */
 function drawList(){
-  var h='<div class="kit-wrap"><div class="kit-title">Kits</div><div class="kit-from">Built on the PM shift, cooked the next morning</div><div class="kit-list" id="kitList">';
+  var h='<div class="kit-wrap"><div class="kit-list-head"><div class="kit-title">Kits</div><div class="kit-from">Built on the PM shift, cooked the next morning</div>'
+    +'<button type="button" class="link-btn kit-print-btn" id="printBtn" onclick="window.print()">Print all 8 kits</button></div><div class="kit-list" id="kitList">';
   KITS.forEach(function(k){
     var r=recipes[k.recipeId],n=r&&r.status!=='archived'?sortKit(k,r.ingredients).boxes.length:null;
     h+='<a class="kit-item" href="#'+k.slug+'" data-slug="'+k.slug+'"><span class="kit-item-name">'+esc(k.name)+'</span>'
@@ -270,6 +319,9 @@ function drawList(){
         :n===0?'<span class="kit-item-n kit-flag">Needs sorting</span>'
         :'<span class="kit-item-n">'+n+' container'+(n===1?'':'s')+'</span>')+'</a>';
   });
+  /* print-only: all 8 sheets, drawn by the same kitHtml(), one per page */
+  h+='</div><div class="kit-print-all" id="printAll">';
+  KITS.forEach(function(k){h+=kitHtml(k, recipes[k.recipeId], false);});
   document.getElementById('appBody').innerHTML=h+'</div></div>';
 }
 

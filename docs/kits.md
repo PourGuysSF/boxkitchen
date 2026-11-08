@@ -8,8 +8,9 @@ Stephen's.
 **Slice 1 is live** (`8e6f3ea`, #168), and so is the one-keyword-one-line rule (`72dfef2`,
 #169). Stephen checked Slice 1 on a phone and on the kitchen tablet before Slice 2 began. See
 "Slice 1 as built". **Slice 2 is live** (`d399dda`, #174); Stephen walked all 8 kits on
-2026-11-05 and approved them. **Slice 3 BUILT 2026-11-05** on `kits-slice3`, not pushed — see
-"Slice 3 as built".
+2026-11-05 and approved them. **Slice 3 is live** (`fcfd09d`, #178); Stephen passed the
+Airplane Mode test on 2026-11-07. **Slice 4 BUILT 2026-11-08** on `kits-slice4`, not pushed —
+see "Slice 4 as built". Still waiting: Stephen's iPhone print-preview check once it is live.
 
 Target file: a new page, `tempest_kits.html`. At the very end, and only then: the Kits tile in
 `index.html`, `BUILD_PLAN.md` (B5), and the page count in `CLAUDE.md`. This plan needs **no
@@ -467,6 +468,54 @@ on**, because the load ends in `route()`.
 - Print from the list prints all 8 kit sheets, one per page. Print from a kit prints that kit.
 - Rings and borders, never background fills, so nothing disappears on paper.
 - **Checked in iOS print preview**, as Inventory's Slice 5 was.
+
+### Slice 4 as built
+
+`tempest_kits.html`, `scripts/check_kits.py`, and this file. No shared file touched; no
+database change; still one GET.
+
+**Decided by Stephen (2026-11-08):** a **Print button** — "Print all 8 kits" on the list,
+"Print this kit" on a kit — that calls `window.print()`; and a print-only **"printed on"
+line** at the bottom of every sheet ("Printed Nov 8, 2026 · from the Recipe Database"). No
+"Built by" line, no tick boxes.
+
+**What changed on the page.**
+- `drawKit()` now wraps `kitHtml(kit, recipe, ids)`, which returns one `.kit-sheet`. The
+  screen kit and all 8 printed sheets use it, so there is no second layout. Only the screen
+  kit gets ids (`pan`, `unsorted`, `notFound`), so the print sheets never repeat one.
+- The list holds a print-only `#printAll` (hidden on screen) with all 8 sheets, drawn when
+  the list is drawn. A missing or unsorted kit prints as it shows on screen, so the paper
+  says "tell a manager" too.
+- The button is a `<button class="link-btn kit-print-btn">`: the shared outline look, 44px,
+  no new colour. `kitchen.css` already hides `.link-btn` in print.
+- `@media print` in the page's `<style>`: header, Back, button and the list are hidden;
+  sheets 2–8 `break-before:page`; `break-inside:avoid` on each container, the pan step, the
+  loud box and each left-out line; rings and the 4px "Not sorted yet" stay borders; greys
+  `#000`/`#555`/`#bbb` only. Paper spacing is tighter than the screen, and on paper the
+  "together / own container" note sits beside the container name. That is what fits Mac &
+  Cheese (11 containers) on one page.
+
+**Proved**
+
+- Desktop Chrome, printed to PDF with background graphics off (US Letter): **8 pages from
+  the list**, one kit each, in Line PM order; **1 page** from Mac & Cheese and from Pork
+  belly. With Gastrique's recipe missing, or Pickled emptied, the list still prints 8.
+  Screen spacing was 11 pages first; the tighter paper spacing fixed it.
+- `check_kits.py`: **455 assertions, 19 scenarios, clean**. Headless Chrome can't switch to
+  print media from inside the page, so the harness lifts every `@media print` rule (the
+  page's and `kitchen.css`'s) into a plain `<style>` (needs `--allow-file-access-from-files`).
+  New `print` scenario: list (8 sheets, in order, list hidden, page breaks), `#pork-belly`
+  and `#mac-and-cheese` (1 sheet each, all 11 rings), and back to the list. In each: the
+  button's label, ≥44px; header, Back and button hidden in print; the printed-on line on every
+  sheet and hidden on screen; no printing element with a background fill or image; rings keep
+  their digit and border; the button calls `window.print()` once and sends no request. Print
+  checks added to `renamed`, `missing` and `archived` (the loud box prints with its heavy
+  border). Every scenario still ends in `common()`: GETs only, exactly 1.
+- **It fails when it should**, each in a throwaway copy: a background fill left on a ring in
+  print, the list printing instead of the sheets, no page break between sheets, the Print
+  button visible in print, the printed-on line missing. All caught.
+- `check_styling.py`: clean, 14 pages.
+- Not yet: Stephen's iPhone print-preview check, once it is live.
 
 ### Slice 5 — Ship it into the site *(shared files, last)*
 

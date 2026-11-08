@@ -16,7 +16,7 @@ Boxkitchen is a live production site used during service. Never run write/deploy
 api(method, table, query, data, cb)  // XMLHttpRequest to /rest/v1/<table>?<query>
 ```
 
-**This `api()` helper and the anon key are duplicated in each file — there is no shared JS.** A change to any shared pattern must be applied per-file, and a new page is best created by copying an existing one as a template. Note the per-page `api()` copies differ: flash/orders/counts pass the HTTP status to their callback, the others don't.
+**This `api()` helper and the anon key are duplicated in each file — no page shares them.** The one in-house shared script is `assets/recipe-math.js`: pure costing math under a single `RecipeMath` object (no `api()`, no DOM, no table), loaded with `?v=` (every page that loads it must load the same `?v=`), checked by `scripts/check_recipe_math.py`, and changed only through `docs/recipe-costing.md`. Any other change to a shared pattern must be applied per-file, and a new page is best created by copying an existing one as a template. Note the per-page `api()` copies differ: flash/orders/counts pass the HTTP status to their callback, the others don't.
 
 ## Data model conventions
 

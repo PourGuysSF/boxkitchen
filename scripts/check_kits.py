@@ -52,12 +52,14 @@ SCENARIOS = ("ok", "amount", "renamed", "headings", "twogarlic",
              # slice 2 - all 8 kits, the list, the addresses
              "all8", "list", "direct", "nope", "reorder",
              # slice 3 - when the recipe or the wifi lets it down
-             "missing", "archived", "lost", "emptied", "fail", "e500", "hang", "failaddr")
+             "missing", "archived", "lost", "emptied", "fail", "e500", "hang", "failaddr",
+             # slice 4 - the paper backup
+             "print")
 # Slice 1's scenarios open Spicy Green Sauce by its address; the scenario
 # itself rides in the query string, because the address now picks the kit.
 SLICE1 = ("ok", "amount", "renamed", "headings", "twogarlic")
 HASH = {"missing": "", "archived": "", "lost": "", "emptied": "", "fail": "", "e500": "",
-        "hang": "", "failaddr": "mac-and-cheese", "reorder": "", "direct": "mac-and-cheese", "nope": "no-such-kit", "list": "", "all8": ""}
+        "hang": "", "failaddr": "mac-and-cheese", "reorder": "", "direct": "mac-and-cheese", "nope": "no-such-kit", "list": "", "all8": "", "print": ""}
 
 
 def find_chrome():
@@ -331,6 +333,58 @@ RUNNER = r"""
     ok(tag+'each links to its own address', [].every.call(document.querySelectorAll('.kit-item'),function(a,i){return a.getAttribute('href')==='#'+K[i].slug;}));
     ok(tag+'each is a big tap target (\u226544px)', [].every.call(document.querySelectorAll('.kit-item'),function(a){return a.getBoundingClientRect().height>=44;}));
   }
+  /* --- Slice 4: print. Chrome headless cannot switch to print media from
+     inside the page, so printOn() lifts every @media print rule (the page's
+     own and kitchen.css's) into a plain <style>, which is what print media
+     does; printOff() takes it away. Needs --allow-file-access-from-files. --- */
+  function printOn(){
+    var css='';
+    [].forEach.call(document.styleSheets,function(sh){
+      var rules;try{rules=sh.cssRules;}catch(e){fails.push('print: cannot read the rules of '+sh.href);return;}
+      [].forEach.call(rules,function(r){
+        if(r.type===CSSRule.MEDIA_RULE&&/\bprint\b/.test(r.media.mediaText))[].forEach.call(r.cssRules,function(x){css+=x.cssText+'\n';});
+      });
+    });
+    var st=document.createElement('style');st.id='__printSim';st.textContent=css;document.head.appendChild(st);
+  }
+  function printOff(){var st=document.getElementById('__printSim');if(st)st.remove();}
+  function shown(el){return !!el&&el.getClientRects().length>0&&getComputedStyle(el).visibility!=='hidden';}
+  var PRINTED=/^Printed (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{1,2}, \d{4} · from the Recipe Database$/;
+  function printChecks(tag, want, label){
+    var own=[].map.call(document.querySelectorAll('head style'),function(x){return x.textContent;}).join('\n');
+    ok(tag+'the page’s own <style> has an @media print block', /@media\s+print\s*\{/.test(own));
+    var btn=document.getElementById('printBtn');
+    ok(tag+'a Print button says "'+label+'"', !!btn&&btn.tagName==='BUTTON'&&btn.type==='button'&&txt(btn)===label&&shown(btn), btn&&txt(btn));
+    ok(tag+'the Print button is a big tap target (≥44px)', !!btn&&btn.getBoundingClientRect().height>=44, btn&&btn.getBoundingClientRect().height);
+    ok(tag+'on screen the printed-on line is hidden', [].every.call(document.querySelectorAll('.kit-printed'),function(e){return !shown(e);}));
+    ok(tag+'on screen the all-kits print sheets are hidden', !shown(document.getElementById('printAll')));
+    printOn();
+    try{
+      var sheets=[].filter.call(document.querySelectorAll('.kit-sheet'),shown);
+      var slugs=sheets.map(function(x){return x.getAttribute('data-slug');});
+      ok(tag+'in print: exactly '+want.length+' sheet(s), the right one(s), in order', JSON.stringify(slugs)===JSON.stringify(want), slugs);
+      ok(tag+'in print: the list is hidden', !shown(document.getElementById('kitList'))&&!document.querySelector('.kit-item')||[].every.call(document.querySelectorAll('.kit-item'),function(a){return !shown(a);}));
+      ok(tag+'in print: the Print button, Back link and header are hidden', !shown(btn)&&!shown(document.getElementById('backLink'))&&!shown(document.querySelector('.header')));
+      ok(tag+'in print: each sheet after the first starts a new page', sheets.every(function(x,i){var b=getComputedStyle(x).breakBefore;return i===0?b!=='page':b==='page';}), sheets.map(function(x){return getComputedStyle(x).breakBefore;}));
+      ok(tag+'in print: every sheet carries the printed-on line', sheets.length>0&&sheets.every(function(x){var l=x.querySelector('.kit-printed');return shown(l)&&PRINTED.test(txt(l));}), sheets.map(function(x){return txt(x.querySelector('.kit-printed'));}));
+      var filled=[].filter.call(document.body.querySelectorAll('*'),function(e){
+        if(!shown(e))return false;var cs=getComputedStyle(e),bg=cs.backgroundColor;
+        return cs.backgroundImage!=='none'||!(bg==='rgba(0, 0, 0, 0)'||bg==='transparent'||bg==='rgb(255, 255, 255)');
+      }).map(function(e){return e.className+' '+getComputedStyle(e).backgroundColor;});
+      ok(tag+'in print: nothing that prints has a background fill', filled.length===0, filled.slice(0,5));
+      var rings=[].filter.call(document.querySelectorAll('.kit-num'),shown);
+      ok(tag+'in print: rings keep their digit and an ink border', rings.every(function(n){var cs=getComputedStyle(n);return /^\d+$/.test(txt(n))&&parseFloat(cs.borderTopWidth)>=2&&cs.borderTopStyle==='solid'&&cs.borderTopColor!=='rgba(0, 0, 0, 0)';}));
+      var loud=[].filter.call(document.querySelectorAll('.kit-unsorted'),shown);
+      ok(tag+'in print: "Not sorted yet" / "Recipe not found" keep the heavy border', loud.every(function(u){return parseFloat(getComputedStyle(u).borderTopWidth)>=3;}));
+      H.printLoud=loud.length;H.printRings=rings.length;
+    }finally{printOff();}
+    /* the button prints and asks the server nothing */
+    var n=0,orig=window.print,before=H.reqs.length;window.print=function(){n++;};
+    if(btn)btn.click();
+    window.print=orig;
+    ok(tag+'the Print button calls window.print() once, and sends no request', n===1&&H.reqs.length===before, [n,H.reqs.length-before]);
+  }
+  var ALL8=H.fx.kits.map(function(k){return k.slug;});
   /* steps run in order, each after the page has had time to redraw */
   function steps(list){
     var i=0;(function next(){if(i>=list.length){common();finish();return;}var f=list[i++];f();setTimeout(next,150);})();
@@ -345,9 +399,21 @@ RUNNER = r"""
       ok(tag+'a Try again button', !!b&&txt(b)==='Try again');
       return b;
     }
+    if(S==='print'){
+      return steps([
+        function(){printChecks('print, list: ',ALL8,'Print all 8 kits');ok('print, list: rings print on every sheet',H.printRings===H.fx.counts.reduce(function(a,b){return a+b;},0),H.printRings);},
+        function(){location.hash='pork-belly';},
+        function(){printChecks('print, pork-belly: ',['pork-belly'],'Print this kit');},
+        function(){location.hash='mac-and-cheese';},
+        function(){printChecks('print, mac-and-cheese: ',['mac-and-cheese'],'Print this kit');ok('print, mac-and-cheese: all 11 rings print',H.printRings===11,H.printRings);},
+        function(){document.getElementById('backLink').click();},
+        function(){printChecks('print, back on the list: ',ALL8,'Print all 8 kits');}
+      ]);
+    }
     if(S==='missing'||S==='archived'){
       var slug=S==='missing'?'gastrique':'dumpling',K=kitBy(slug);
       return steps([
+        function(){printChecks(S+', list: ',ALL8,'Print all 8 kits');ok(S+': its printed sheet says "tell a manager" too',H.printLoud===1);},
         function(){
           var f=flag(slug),ink=getComputedStyle(document.body).color;
           ok(S+': the list marks it "Recipe not found", in bold ink', !!f&&f[0]==='Recipe not found'&&f[1]>=700&&f[2]===ink, f);
@@ -500,6 +566,8 @@ RUNNER = r"""
       ok('amount: nothing unsorted', !un);
     }
     if(S==='renamed'){
+      printChecks('renamed: ',['spicy-green-sauce'],'Print this kit');
+      ok('renamed: "Not sorted yet" prints with its heavy border', H.printLoud===1, H.printLoud);
       ok('renamed: the box appears', !!un&&/Not sorted yet/.test(txt(un)));
       ok('renamed: the line is in it', !!un&&[].some.call(un.querySelectorAll('.kit-line'),function(l){return txt(l)==='2 cups Skyr';}), txt(un));
       ok('renamed: it says to tell a manager', /This is in the recipe but not in the kit yet — tell a manager\./.test(txt(un)));
@@ -589,6 +657,7 @@ def run_scenario(chrome, path, scen):
              "--no-first-run", "--disable-extensions",
              "--disable-background-networking", "--disable-component-update",
              "--disable-default-apps", "--disable-sync",
+             "--allow-file-access-from-files",   # print: read kitchen.css's @media print rules
              "--host-resolver-rules=MAP * ~NOTFOUND",
              "--user-data-dir=" + os.path.join(os.path.dirname(path), "cd-" + scen),
              "--virtual-time-budget=20000", "--dump-dom", url],
