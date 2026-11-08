@@ -149,7 +149,9 @@ function stationOrder(){return shift==='PM'?['kits','salad','grill','saute']:['s
 function fmtDate(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function getDayAbbr(d){return['SUN','MON','TUE','WED','THU','FRI','SAT'][d.getDay()];}
 
-function init(){updateDateDisplay();loadData();}
+// tempest_line.html#pm (the Kits page's "← Line PM") opens on the PM list.
+// Only the shift and its button; the first draw comes from loadData() as always.
+function init(){if(location.hash==='#pm'){shift='PM';var b=document.querySelectorAll('.shift-btn');for(var i=0;i<b.length;i++)b[i].classList.toggle('active',b[i].textContent.indexOf('PM')>-1);}updateDateDisplay();loadData();}
 
 function updateDateDisplay(){
   var mn=['January','February','March','April','May','June','July','August','September','October','November','December'];
