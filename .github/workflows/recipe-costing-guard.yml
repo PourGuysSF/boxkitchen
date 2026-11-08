@@ -1,0 +1,29 @@
+# Recipe Costing (B4.3, docs/recipe-costing.md). check_recipe_math.py proves the
+# shared math in assets/recipe-math.js — fixtures, deliberate breaks, and every
+# page loading the same ?v=. check_recipe_costing.py drives the real page in
+# headless Chrome against a stubbed api() and proves it writes nothing. Its
+# --live mode reads the production table and is local only: never run it here.
+name: recipe costing guard
+
+on:
+  pull_request:
+    paths: ['tempest_recipe_costing.html', 'assets/**', 'scripts/check_recipe_math.py', 'scripts/check_recipe_costing.py']
+  push:
+    branches: [main]
+    paths: ['tempest_recipe_costing.html', 'assets/**', 'scripts/check_recipe_math.py', 'scripts/check_recipe_costing.py']
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: browser-actions/setup-chrome@v1
+        id: chrome
+        with:
+          chrome-version: stable
+      - run: python3 scripts/check_recipe_math.py
+        env:
+          CHROME: ${{ steps.chrome.outputs.chrome-path }}
+      - run: python3 scripts/check_recipe_costing.py
+        env:
+          CHROME: ${{ steps.chrome.outputs.chrome-path }}
