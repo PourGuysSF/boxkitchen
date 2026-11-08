@@ -412,6 +412,17 @@ copied over, and a double tap cannot copy twice.
 > `ok` asserts staff mode has no button on an empty future week. **Proved able to fail:**
 > skipping the second read fails the started and lost checks; letting REQUEST through fails the
 > preview, payload and toast checks. `check_styling.py` clean.
+>
+> **Shipped 2026-11-08** as PR #183 (squash `c437e03`). **Hand test part A, same day, Stephen's
+> iPhone, live page, no Copy tapped:** Nov 8 – 14 offered "Copy last week (Nov 1 – 7)" →
+> "Nothing to copy", Copy greyed; no button on Nov 1 – 7 (past) or Nov 15 – 21 (started); Nov
+> 22 – 28 offered "Copy last week (Nov 15 – 21)" with the preview "2 shifts and 2 OFF" (matches
+> the live rows: Ismael, Gilberto C. shifts; Jose V., Rubidia OFF; Eddy V.'s REQUEST and the
+> cleared Jose V. box left out); button in Week view too; gone with Manager off. Quick-word fix:
+> the real 11/15 note (49ers home game) retyped with the button and no space bar → `49ers home
+> 1:25`, still right after closing Safari. **Verified read-only:** the 11/15 note is `49ers home
+> 1:25` in one row; no `schedule_shifts` rows dated Nov 1 – 14 or Nov 22 – 28; Nov 15 – 21
+> still 6 rows. **Part B** (the first real copy, Nov 22 – 28) is recorded when it happens.
 
 ### Slice 3b — The tile *(shared files; its own ticket and PR)*
 
