@@ -48,7 +48,7 @@ CHROME_CANDIDATES = [
 ]
 PAGE = "tempest_schedule.html"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SCENARIOS = ("ok", "monthend", "yearend", "fail", "empty", "mgr")
+SCENARIOS = ("ok", "monthend", "yearend", "fail", "empty", "mgr", "copy", "dst")
 
 
 def find_chrome():
@@ -113,6 +113,8 @@ CLOCKS = {
     "fail": [2026, 10, 17, 9, 0],
     "empty": [2026, 10, 17, 9, 0],
     "mgr": [2026, 10, 17, 17, 30],
+    "copy": [2026, 10, 17, 17, 30],     # Tue Nov 17: Nov 22 - 28 is the empty week to fill
+    "dst": [2026, 10, 1, 17, 30],       # Sun Nov 1, the day the clocks went back
 }
 
 GATE_RE = re.compile(r"window\.location\.replace\('index\.html'\)")
@@ -125,7 +127,7 @@ HARNESS = r"""
   var FX=__FIXTURES__;
   try{localStorage.removeItem('boxkitchen_schedule_view');}catch(e){}
   /* manager mode is entered as staff do after the PIN once: the session flag, then the switch. The PIN is never typed. */
-  try{if(SCEN==='mgr')sessionStorage.setItem('boxkitchen_mgr','1');else sessionStorage.removeItem('boxkitchen_mgr');}catch(e){}
+  try{if(SCEN==='mgr'||SCEN==='copy'||SCEN==='dst')sessionStorage.setItem('boxkitchen_mgr','1');else sessionStorage.removeItem('boxkitchen_mgr');}catch(e){}
   /* a fixed clock: new Date() and Date.now() say the scenario's moment */
   var RD=Date,c=FX.clocks[SCEN],NOW=new RD(c[0],c[1],c[2],c[3],c[4]).getTime();
   function FD(){
@@ -137,12 +139,22 @@ HARNESS = r"""
   FD.prototype=RD.prototype;FD.now=function(){return NOW;};FD.parse=RD.parse;FD.UTC=RD.UTC;
   window.Date=FD;
 
+  if(SCEN==='copy'){
+    /* a retired person's shift last week (not copied), a cleared box in the empty week (filled by merge),
+       and a future week whose only filled box is the retired person's (never offered) */
+    FX.shifts=FX.shifts.concat([
+      {person_id:9,work_date:'2026-11-16',kind:'shift',shift_text:'5pm-CL',training:false,updated_at:'2026-11-14T20:00:00Z'},
+      {person_id:1,work_date:'2026-11-24',kind:null,shift_text:null,training:false,updated_at:'2026-11-14T20:00:00Z'},
+      {person_id:9,work_date:'2026-12-08',kind:'shift',shift_text:'5pm-CL',training:false,updated_at:'2026-11-14T20:00:00Z'}]);
+  }
   var T={schedule_people:SCEN==='empty'?[]:FX.people,schedule_shifts:SCEN==='empty'?[]:FX.shifts,
          schedule_day_notes:SCEN==='empty'?[]:FX.notes,schedule_standing:FX.standing};
   var reqs=[],plan={schedule_people:SCEN==='fail'?['err']:[]},held=[],stamp=0;
-  /* write fates, consumed in order: 'err0' no answer; 'e400' refused; 'hold' answer kept until release() */
+  /* write fates, consumed in order: 'err0' no answer; 'e400' refused; 'hold' answer kept until release();
+     'lost' written, then the answer is lost (onerror) */
   window.__h={scen:SCEN,reqs:reqs,fails:[],log:[],tables:T,plan:plan,nextWrite:[],
-    release:function(){var h=held.splice(0);h.forEach(function(f){f();});return h.length;}};
+    release:function(){var h=held.splice(0);h.forEach(function(f){f();});return h.length;},
+    releaseLast:function(){var f=held.pop();if(f)f();return !!f;}};
 
   function table(u){var m=u.match(/\/rest\/v1\/([a-z_]+)/);return m?m[1]:'';}
   function params(u){var out=[],s=u.split('?')[1]||'';s.split('&').forEach(function(kv){var i=kv.indexOf('=');if(i>0)out.push([kv.slice(0,i),decodeURIComponent(kv.slice(i+1))]);});return out;}
@@ -167,12 +179,16 @@ HARNESS = r"""
       var go=function(){
         if(wf==='err0'){self.onerror&&self.onerror();return;}
         if(wf==='e400'){self.status=400;self.responseText='{"message":"bad"}';self.onload&&self.onload();return;}
-        var b=JSON.parse(body),keys=t==='schedule_shifts'?['person_id','work_date']:['location','note_date'];
-        var row=T[t].filter(function(r){return keys.every(function(k){return r[k]===b[k];});})[0];
-        if(!row){row={};T[t].push(row);}
-        Object.keys(b).forEach(function(k){row[k]=b[k];});
-        row.updated_at=new RD(Date.UTC(2026,10,18,2,0,++stamp)).toISOString();   /* the trigger's job */
-        self.status=201;self.responseText=JSON.stringify([row]);self.onload&&self.onload();
+        var parsed=JSON.parse(body),list=Array.isArray(parsed)?parsed:[parsed],keys=t==='schedule_shifts'?['person_id','work_date']:['location','note_date'];
+        var out=list.map(function(b){
+          var row=T[t].filter(function(r){return keys.every(function(k){return r[k]===b[k];});})[0];
+          if(!row){row={};T[t].push(row);}
+          Object.keys(b).forEach(function(k){row[k]=b[k];});
+          row.updated_at=new RD(Date.UTC(2026,10,18,2,0,++stamp)).toISOString();   /* the trigger's job */
+          return row;
+        });
+        if(wf==='lost'){self.onerror&&self.onerror();return;}
+        self.status=201;self.responseText=JSON.stringify(out);self.onload&&self.onload();
       };
       if(wf==='hold'){held.push(go);return;}
       setTimeout(go,5);return;
@@ -222,7 +238,7 @@ RUNNER = r"""
   function step(fn){steps.push(fn);}
   function run(){
     if(!steps.length){
-      if(H.scen!=='mgr')ok(H.scen+': no request but GET, ever',writes().length===0,JSON.stringify(writes()));
+      if(H.scen!=='mgr'&&H.scen!=='copy'&&H.scen!=='dst')ok(H.scen+': no request but GET, ever',writes().length===0,JSON.stringify(writes()));
       var out=document.createElement('div');out.id='harnessResults';
       out.textContent=JSON.stringify({scen:H.scen,fails:F,log:H.log});
       document.body.appendChild(out);return;
@@ -327,6 +343,8 @@ RUNNER = r"""
     step(function(){return 100;});
     step(function(){
       ok('ok: ▶ keeps the same weekday',label()==='Nov 22 – 28, 2026'&&dayHead()==='FRIDAY · VIERNES · 11/27',label()+' / '+dayHead());
+      ok('ok (staff): no copy button on an empty future week, nor in the HTML at all',!byId('copyBtn')&&byId('copyWrap').innerHTML===''&&getComputedStyle(byId('copyWrap')).display==='none');
+      ok('ok (staff): never a copy read (one per week shown, no wider range)',!reads('schedule_shifts').some(function(r){return /work_date=gte\.2026-11-15&work_date=lte\.2026-11-28/.test(r.u);}));
       byId('mgrSwitch').click();
       ok('ok: Manager asks for the PIN',byId('pinModal').classList.contains('show'));
       ok('ok: the PIN box renders at 16px or more',parseFloat(getComputedStyle(byId('pinInput')).fontSize)>=16,getComputedStyle(byId('pinInput')).fontSize);
@@ -581,6 +599,244 @@ RUNNER = r"""
     step(function(){
       ok('mgr: Manager off: no buttons, no count',all('.sched-boxbtn,.sched-cellbtn,.sched-notebtn').length===0&&getComputedStyle(byId('mgrCount')).display==='none');
       ok('mgr: every write was an upsert to the two box tables',writes().every(function(r){return r.m==='POST'&&(isUpsert(r,'schedule_shifts','person_id,work_date')||isUpsert(r,'schedule_day_notes','location,note_date'));}));
+    });
+  }
+
+
+  if(H.scen==='copy'||H.scen==='dst'){
+    var T=H.tables;
+    function body(r){return r?JSON.parse(r.body):null;}
+    function same(a,b){function k(o){return JSON.stringify(o,Object.keys(o||{}).sort());}return k(a)===k(b);}
+    function sameSet(a,b){if(!Array.isArray(a)||a.length!==b.length)return false;var x=a.map(function(o){return JSON.stringify(o,Object.keys(o).sort());}).sort(),y=b.map(function(o){return JSON.stringify(o,Object.keys(o).sort());}).sort();return x.join('\n')===y.join('\n');}
+    var PREFER='resolution=merge-duplicates,return=representation';
+    function isUpsert(r,t,conflict){return !!r&&r.m==='POST'&&r.t===t&&r.u.split('?')[1]==='on_conflict='+conflict&&r.prefer===PREFER;}
+    function posts(){return writes();}
+    function lastPost(){var w=writes();return w[w.length-1];}
+    function modalOpen(id){return byId(id).classList.contains('show');}
+    function copyBtn(){return byId('copyBtn');}
+    function info(){return txt(byId('copyInfo'));}
+    function box(n){var r=rowFor(n);return r&&r.box;}
+    function rowsFor(pid,d){return T.schedule_shifts.filter(function(r){return r.person_id===pid&&r.work_date===d;});}
+    function arrow(i){document.querySelectorAll('.date-arrow')[i].click();return 100;}
+    function inWeek(d){return d>='2026-11-22'&&d<='2026-11-28';}
+    /* put Nov 22 - 28 back to empty (the cleared Jose V. box included) and reload quietly */
+    function resetWeek(){
+      for(var i=T.schedule_shifts.length-1;i>=0;i--)if(inWeek(T.schedule_shifts[i].work_date))T.schedule_shifts.splice(i,1);
+      T.schedule_shifts.push({person_id:1,work_date:'2026-11-24',kind:null,shift_text:null,training:false,updated_at:'2026-11-14T20:00:00Z'});
+      document.dispatchEvent(new Event('visibilitychange'));return 100;
+    }
+    var READY='Fill Nov 22 – 28 with Nov 15 – 21: 3 shifts and 1 OFF.';
+    var EXPECT=[
+      {person_id:1,work_date:'2026-11-22',kind:'shift',shift_text:'10am<i>-</i>4pm & on',training:false},
+      {person_id:1,work_date:'2026-11-24',kind:'shift',shift_text:'9am-3pm',training:false},
+      {person_id:2,work_date:'2026-11-24',kind:'off',shift_text:null,training:false},
+      {person_id:5,work_date:'2026-11-24',kind:'shift',shift_text:'4pm-CL',training:false}];
+    var p0,firstFail;
+  }
+
+  if(H.scen==='copy'){
+    step(function(){return 200;});
+    step(function(){
+      ok('copy (staff): no copy button on a started week',!copyBtn()&&byId('copyWrap').innerHTML==='');
+      byId('mgrSwitch').click();return 50;
+    });
+    step(function(){
+      ok('copy: not offered on a started week (Nov 15 – 21)',label()==='Nov 15 – 21, 2026'&&!copyBtn()&&getComputedStyle(byId('copyWrap')).display==='none');
+      arrow(0);return 100;
+    });
+    step(function(){arrow(0);return 100;});
+    step(function(){
+      ok('copy: not offered on a past empty week (Nov 1 – 7)',label()==='Nov 1 – 7, 2026'&&!copyBtn()&&txt(byId('mgrCount'))==='35 boxes not filled yet',label()+' / '+txt(byId('mgrCount')));
+      byId('thisWeekLink').click();return 100;
+    });
+    step(function(){
+      H.plan.schedule_shifts=['hold'];arrow(1);return 50;
+    });
+    step(function(){
+      ok('copy: not offered while the next week is loading (nor the old count)',label()==='Nov 22 – 28, 2026'&&!copyBtn()&&getComputedStyle(byId('mgrCount')).display==='none');
+      H.release();return 100;
+    });
+    step(function(){
+      var b=copyBtn();
+      ok('copy: offered on Nov 22 – 28, labelled, even with a cleared box in it',!!b&&txt(b)==='Copy last week (Nov 15 – 21)',b&&txt(b));
+      ok('copy: the count counts the cleared box as empty',txt(byId('mgrCount'))==='35 boxes not filled yet',txt(byId('mgrCount')));
+      ok('copy: the button is at least 44px high and not tomato',!!b&&b.getBoundingClientRect().height>=44&&getComputedStyle(b).backgroundColor!==getComputedStyle(byId('copyGo')).backgroundColor);
+      byId('viewWeekBtn').click();
+    });
+    step(function(){
+      ok('copy: offered in Week view too',!!copyBtn());
+      byId('viewDayBtn').click();
+      H.plan.schedule_shifts=['err'];arrow(1);return 100;
+    });
+    step(function(){
+      ok('copy: not offered after a failed load',!!document.querySelector('.sched-err')&&!copyBtn()&&getComputedStyle(byId('mgrCount')).display==='none');
+      document.querySelector('.sched-err button').click();return 100;
+    });
+    step(function(){
+      var b=copyBtn();
+      ok('copy: Nov 29 – Dec 5 is offered (from Nov 22 – 28)',label()==='Nov 29 – Dec 5, 2026'&&!!b&&txt(b)==='Copy last week (Nov 22 – 28)',b&&txt(b));
+      p0=posts().length;b&&b.click();return 50;
+    });
+    step(function(){
+      ok('copy: "Nothing to copy" when last week has no shift or OFF; Copy disabled',modalOpen('copyModal')&&info()==='Nothing to copy: Nov 22 – 28 has no shifts or OFF.'&&byId('copyGo').disabled,info());
+      byId('copyGo').click();
+      ok('copy: ...and pressing it writes nothing',posts().length===p0);
+      byId('copyCancel').click();
+      arrow(1);return 100;
+    });
+    step(function(){
+      ok('copy: not offered on a future week whose only filled box is a retired person\'s',label()==='Dec 6 – 12, 2026'&&!copyBtn());
+      arrow(0);return 100;
+    });
+    step(function(){arrow(0);return 100;});
+    step(function(){
+      ok('copy: back on Nov 22 – 28',label()==='Nov 22 – 28, 2026'&&!!copyBtn());
+      copyBtn().click();
+      ok('copy: the box opens checking, Copy disabled',modalOpen('copyModal')&&info()==='Checking last week…'&&byId('copyGo').disabled,info());
+      return 50;
+    });
+    step(function(){
+      var q=reads('schedule_shifts');q=q[q.length-1];
+      ok('copy: one read of both weeks, every person',/person_id=in\.\(1,2,3,5,6,9\)/.test(q.u)&&/work_date=gte\.2026-11-15&work_date=lte\.2026-11-28/.test(q.u),q.u);
+      ok('copy: the preview counts (REQUEST, cleared and retired left out)',info()===READY,info());
+      ok('copy: the grey line says what is not copied',txt(byId('copySub'))==='REQUEST boxes stay empty. Training and games & events are not copied.');
+      ok('copy: Copy enabled when ready',!byId('copyGo').disabled);
+      byId('copyCancel').click();
+      ok('copy: Cancel closes and writes nothing',!modalOpen('copyModal')&&posts().length===p0);
+      copyBtn().click();return 50;
+    });
+    step(function(){
+      byId('copyModal').click();
+      ok('copy: the backdrop closes and writes nothing',!modalOpen('copyModal')&&posts().length===p0);
+      /* failures: no answer, then refused */
+      copyBtn().click();return 50;
+    });
+    step(function(){
+      H.nextWrite.push('err0');byId('copyGo').click();return 50;
+    });
+    step(function(){
+      firstFail=lastPost();
+      ok('copy: no answer keeps the box open with the reason',modalOpen('copyModal')&&txt(byId('copyErr'))==='No answer. Check the wifi and try again.',txt(byId('copyErr')));
+      ok('copy: ...the page is unchanged',txt(byId('mgrCount'))==='35 boxes not filled yet'&&!!copyBtn()&&txt(box('Jose V.'))==='—');
+      ok('copy: ...and Copy works again',!byId('copyGo').disabled&&!byId('copyCancel').disabled);
+      H.nextWrite.push('e400');byId('copyGo').click();return 50;
+    });
+    step(function(){
+      var r=lastPost();
+      ok('copy: refused says the error',modalOpen('copyModal')&&txt(byId('copyErr'))==='Not copied (error 400). Try again.',txt(byId('copyErr')));
+      ok('copy: the retry is the same URL, body and Prefer',r!==firstFail&&r.u===firstFail.u&&r.body===firstFail.body&&r.prefer===firstFail.prefer);
+      ok('copy: the page is still unchanged',txt(byId('mgrCount'))==='35 boxes not filled yet');
+      /* lost answer */
+      H.nextWrite.push('lost');p0=posts().length;byId('copyGo').click();return 50;
+    });
+    step(function(){
+      ok('copy (lost): "No answer"',txt(byId('copyErr'))==='No answer. Check the wifi and try again.'&&posts().length===p0+1);
+      byId('copyGo').click();return 100;
+    });
+    step(function(){
+      ok('copy (lost): the retry reads, sees the week filled and writes nothing',posts().length===p0+1&&info()==='This week isn’t empty any more, so it can’t be copied over.'&&byId('copyGo').disabled,posts().length+' / '+info());
+      ok('copy (lost): the reload shows the copied boxes, no button',txt(box('Jose V.'))==='9am-3pm'&&!copyBtn());
+      ok('copy (lost): one row per box',rowsFor(1,'2026-11-24').length===1&&rowsFor(2,'2026-11-24').length===1);
+      byId('copyCancel').click();
+      return resetWeek();
+    });
+    step(function(){
+      ok('copy: reset week offered again',!!copyBtn()&&txt(byId('mgrCount'))==='35 boxes not filled yet');
+      p0=posts().length;copyBtn().click();return 50;
+    });
+    step(function(){
+      ok('copy (started): the preview says ready',info()===READY);
+      T.schedule_shifts.push({person_id:6,work_date:'2026-11-24',kind:'shift',shift_text:'6pm-CL',training:false,updated_at:'2026-11-18T01:00:00Z'});
+      byId('copyGo').click();return 100;
+    });
+    step(function(){
+      ok('copy (started): no POST, the started message, Copy disabled',posts().length===p0&&info()==='This week isn’t empty any more, so it can’t be copied over.'&&byId('copyGo').disabled,info());
+      ok('copy (started): the page reloaded to show that box, no copy button',txt(box('Pablo'))==='6pm-CL'&&!copyBtn());
+      byId('copyCancel').click();
+      return resetWeek();
+    });
+    step(function(){
+      ok('copy: offered again after the reset',!!copyBtn());
+      /* the quiet-reload race: a reload holds the empty week */
+      H.plan.schedule_shifts=['hold'];
+      document.dispatchEvent(new Event('visibilitychange'));return 30;
+    });
+    step(function(){
+      p0=posts().length;copyBtn().click();return 50;
+    });
+    step(function(){
+      ok('copy: ready again',info()===READY,info());
+      H.nextWrite.push('hold');byId('copyGo').click();return 50;
+    });
+    step(function(){
+      byId('copyGo').click();doCopy();
+      ok('copy (double tap): exactly one POST',posts().length===p0+1);
+      ok('copy: while copying, Copy and Cancel are disabled and it says so',byId('copyGo').disabled&&byId('copyCancel').disabled&&info()==='Copying…');
+      byId('copyModal').click();
+      ok('copy: ...and the backdrop cannot close it',modalOpen('copyModal'));
+      H.releaseLast();return 50;
+    });
+    step(function(){
+      var r=lastPost(),b=body(r);
+      ok('copy: one bulk upsert on (person_id, work_date), Slice 2\'s Prefer',isUpsert(r,'schedule_shifts','person_id,work_date'),JSON.stringify(r));
+      ok('copy: the payload, as a set (REQUEST, Training, cleared and retired left out)',sameSet(b,EXPECT),r&&r.body);
+      ok('copy: every object has five keys, never updated_at',Array.isArray(b)&&b.every(function(o){return Object.keys(o).length===5&&!('updated_at' in o);}));
+      ok('copy: box closed, toast "Copied 4 boxes"',!modalOpen('copyModal')&&txt(byId('toast'))==='✓ Copied 4 boxes',txt(byId('toast')));
+      H.release();return 50;
+    });
+    step(function(){
+      ok('copy (race): the stale reload cannot paint over the copy',txt(box('Jose V.'))==='9am-3pm'&&txt(box('Rubidia'))==='OFF'&&txt(box('Eddy V.'))==='4pm-CL',txt(box('Jose V.')));
+      ok('copy: the button is gone, the count drops (35 − 4)',!copyBtn()&&txt(byId('mgrCount'))==='31 boxes not filled yet',txt(byId('mgrCount')));
+      ok('copy: "Updated" moves',updated()===expectUpdated(rowsFor(5,'2026-11-24')[0].updated_at),updated());
+      ok('copy: one row per box in the table (Jose V. 11/24 merged)',rowsFor(1,'2026-11-24').length===1&&rowsFor(1,'2026-11-24')[0].kind==='shift'&&rowsFor(1,'2026-11-22').length===1);
+      ok('copy: Pablo\'s REQUEST and the retired person stay out of the new week',T.schedule_shifts.filter(function(r){return inWeek(r.work_date)&&(r.person_id===6||r.person_id===9);}).length===0);
+      byId('viewWeekBtn').click();
+    });
+    step(function(){
+      ok('copy: the copied shift shows escaped',txt(cells('Jose V.')[0])==='10am<i>-</i>4pm & on'&&!cells('Jose V.')[0].querySelector('i'));
+      ok('copy: the retired person is not in the new week',!gridRow('Old Timer'));
+      ok('copy: last week\'s day notes do not appear',cells('Games & events').every(function(c){return txt(c)==='+';}),cells('Games & events').map(txt).join('|'));
+      byId('viewDayBtn').click();
+      arrow(1);return 100;
+    });
+    step(function(){
+      p0=posts().length;copyBtn().click();return 50;
+    });
+    step(function(){
+      ok('copy (month end): preview from Nov 22 – 28',info()==='Fill Nov 29 – Dec 5 with Nov 22 – 28: 3 shifts and 1 OFF.',info());
+      byId('copyGo').click();return 100;
+    });
+    step(function(){
+      var b=body(lastPost())||[];
+      ok('copy (month end): rows land on 11/29 and 12/1',posts().length===p0+1&&b.map(function(o){return o.work_date;}).sort().join()==='2026-11-29,2026-12-01,2026-12-01,2026-12-01',b.map(function(o){return o.work_date;}).join());
+      ok('copy: never a write to the day notes',writes().every(function(r){return r.t==='schedule_shifts';}));
+      byId('mgrSwitch').click();
+    });
+    step(function(){
+      ok('copy: Manager off, the button is gone',!copyBtn()&&getComputedStyle(byId('copyWrap')).display==='none');
+    });
+  }
+
+  if(H.scen==='dst'){
+    step(function(){return 200;});
+    step(function(){byId('mgrSwitch').click();return 50;});
+    step(function(){
+      var b=copyBtn();
+      ok('dst: this week is offered (Oct 25 – 31)',label()==='Nov 1 – 7, 2026'&&!!b&&txt(b)==='Copy last week (Oct 25 – 31)',label()+' / '+(b&&txt(b)));
+      b&&b.click();return 50;
+    });
+    step(function(){byId('copyGo').click();return 100;});
+    step(function(){
+      var r=lastPost();
+      ok('dst: across the clock change, the dates are 11/2, 11/3 and 11/4',writes().length===1&&sameSet(body(r),[
+        {person_id:2,work_date:'2026-11-02',kind:'shift',shift_text:'11am-CL',training:false},
+        {person_id:2,work_date:'2026-11-03',kind:'shift',shift_text:'11am-CL',training:false},
+        {person_id:2,work_date:'2026-11-04',kind:'shift',shift_text:'11am-CL',training:false},
+        {person_id:6,work_date:'2026-11-02',kind:'shift',shift_text:'6pm-CL',training:false},
+        {person_id:6,work_date:'2026-11-03',kind:'shift',shift_text:'6pm-CL',training:false},
+        {person_id:5,work_date:'2026-11-04',kind:'shift',shift_text:'6pm-CL',training:false},
+        {person_id:1,work_date:'2026-11-04',kind:'off',shift_text:null,training:false}]),r&&r.body);
+      ok('dst: toast "Copied 7 boxes"',txt(byId('toast'))==='✓ Copied 7 boxes',txt(byId('toast')));
     });
   }
 
