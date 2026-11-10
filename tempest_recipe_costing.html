@@ -22,15 +22,14 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=Playfair+Display:wght@700;900&display=swap">
 <link rel="stylesheet" href="assets/kitchen.css?v=2026-09-19">
-<script src="assets/recipe-math.js?v=1"></script>
+<script src="assets/recipe-math.js?v=2"></script>
 <style>
   /* Recipe Costing (B4.3, docs/recipe-costing.md) — page-level rules only.
      Every component lives in assets/kitchen.css. Unlinked until Slice 7. */
 
   /* Slice 2 — used by: renderRecipe() (.rc-back, .rc-title, .rc-sub, .rc-line,
      .rc-text, .rc-read). One ingredient line: the recipe's own words first,
-     exactly as written; what costing reads from them underneath. Not a tap
-     target in this slice, so no hover or press state. */
+     exactly as written; what costing made of them underneath. */
   .rc-back{display:inline-flex;align-items:center;min-height:44px;margin:10px 20px 0;padding:0 2px;
            background:transparent;border:none;color:var(--ink);font-family:var(--font-cond);
            font-size:14px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;cursor:pointer}
@@ -44,6 +43,65 @@
   /* the list's rows wrap rather than ellipse: a recipe name is short, and
      the line count beside it is the reason to look */
   #listBody .ing-name{white-space:normal}
+
+  /* Slice 3 — used by: renderRecipe(). A line is now a tap target: it opens
+     the link editor. 44px and a press state, as .ing-row. */
+  .rc-line.tap{cursor:pointer;min-height:44px}
+  .rc-line.tap:active{background:var(--press)}
+  /* a linked line's cost: the headline number, ink and heavy, never green */
+  .rc-cost{margin-left:auto;font-size:0.95rem;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums}
+  /* "not costed on purpose" is a decision, not a to-do: plain grey words,
+     no highlighter */
+  .rc-skip{font-style:italic}
+  .rc-price-link{color:var(--ink);font-weight:600;text-underline-offset:3px}
+
+  /* Slice 3 — the link editor. used by: openLink(), renderPick(), showLinkState().
+     The picker reuses kitchen.css's .pick-* (as tempest_costing.html). */
+  #linkModal .modal{max-width:440px;max-height:88vh}
+  #linkModal .modal h3{margin-bottom:4px;overflow-wrap:anywhere}
+  .nb-label{margin:14px 0 7px}
+  .lk-fields{display:flex;gap:8px}
+  /* qualified to out-specify kitchen.css's .modal input[type="text"] /
+     .modal select at (0,2,1), which render 0.95rem = 15.2px and make iOS zoom
+     on focus (#135). A bare class would lose whatever the source order. */
+  .modal input[type="text"].lk-qty,.lk-qty{flex:1 1 0;min-width:0;box-sizing:border-box;height:48px;margin:0;
+           padding:9px 12px;background:var(--paper);border:1px solid var(--edge);border-radius:6px;color:var(--ink);
+           font-family:var(--font);font-size:16px;outline:none;-webkit-appearance:none;appearance:none}
+  .modal select.lk-unit,.lk-unit{flex:1 1 0;min-width:0;box-sizing:border-box;height:48px;margin:0;
+           padding:9px 12px;background:var(--paper);border:1px solid var(--edge);border-radius:6px;color:var(--ink);
+           font-family:var(--font);font-size:16px;outline:none;-webkit-appearance:none;appearance:none}
+  .lk-qty::placeholder{color:var(--grey)}
+  /* the oz hint and the live preview: words, --grey / ink, never a hue */
+  .lk-hint{margin-top:7px;font-size:0.8rem;color:var(--ink);font-weight:600}
+  .lk-preview{margin-top:12px;padding:11px 14px;border:1px solid var(--edge);border-radius:6px;
+              font-size:0.88rem;color:var(--grey);font-variant-numeric:tabular-nums}
+  .lk-preview b{color:var(--ink)}
+  .lk-skip-row{margin:14px 0}
+  .lk-skip-row .link-btn{width:100%;min-height:44px;color:var(--ink);border-color:var(--edge)}
+  /* an unpriced item is listed so you know it exists, but it cannot be picked */
+  .pick-row.pick-off{cursor:default}
+  .pick-row.pick-off:active{background:transparent}
+  .pick-row.pick-off .pick-n{color:var(--grey)}
+  /* the long badge wraps rather than running out of the row on a phone */
+  #linkModal .pick-badge{white-space:normal;max-width:45%;text-align:right}
+  #pickCount{min-height:1.3em}
+  /* step 5: locked while a write is out - --faint text and a dashed edge,
+     never a hue (as tempest_costing.html's #editActions) */
+  #linkModal .link-btn:disabled,#pickChange:disabled{color:var(--faint);border-color:var(--edge);border-style:dashed;cursor:default}
+  .pick-list.is-saving{pointer-events:none}
+  .pick-list.is-saving .pick-v,.pick-list.is-saving .pick-n{color:var(--faint)}
+  .rc-dismiss:disabled{color:var(--faint);border-style:dashed;cursor:default}
+  /* Slice 3, step 4 — used by: openRecipe() (.rc-gone-head, .rc-gone-note,
+     .rc-gone, .rc-dismiss) and renderOld() (.lk-old, .lk-old-btn). Old links
+     read as grey: they count for nothing. Dismiss is reversible-in-effect
+     (the row is kept, active=false), so it is a plain button, never --danger. */
+  .rc-gone-note{padding:0 20px 6px;font-size:0.78rem;color:var(--grey)}
+  .rc-gone .rc-text{color:var(--grey);text-decoration:line-through}
+  .rc-dismiss{margin-left:auto;min-height:44px;color:var(--ink);border-color:var(--edge)}
+  .lk-old{margin-top:12px}
+  .lk-old-btn{display:block;width:100%;min-height:44px;margin-bottom:6px;text-align:left;
+              text-transform:none;letter-spacing:0;font-family:var(--font);font-size:0.85rem;
+              color:var(--ink);border-color:var(--ink)}
 </style>
 </head>
 <body>
@@ -74,27 +132,75 @@
 <div id="listBody"><div class="loading"><div class="spinner"></div><p>Loading…</p></div></div>
 <div id="recipeBody" style="display:none"></div>
 
+<!-- Slice 3: link one line. Nothing is ever picked for you. -->
+<div class="modal-bg" id="linkModal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="lkTitle">
+    <h3 id="lkTitle"></h3>
+    <div class="msub" id="lkSub"></div>
+
+    <div class="lk-old" id="lkOld" style="display:none"></div>
+    <div class="nb-label">What it is</div>
+    <div id="pickChoose">
+      <input class="pick-filter" id="pickFilter" type="text" placeholder="Filter the price list…" autocomplete="off" oninput="renderPick()">
+      <div class="hint pick-count" id="pickCount"></div>
+      <div class="pick-list" id="pickList"></div>
+    </div>
+    <div class="pick-chosen" id="pickChosen" style="display:none">
+      <div class="pick-chosen-main">
+        <div class="pick-chosen-v" id="pickChosenV"></div>
+        <div class="pick-chosen-n" id="pickChosenN"></div>
+      </div>
+      <button class="pick-change" id="pickChange" aria-label="Change item" aria-describedby="pickChosenV pickChosenN" onclick="changePick()">Change</button>
+    </div>
+    <div class="hint" id="pickHint"></div>
+
+    <div class="nb-label">How much</div>
+    <div class="lk-fields">
+      <input class="lk-qty" id="lkQty" type="text" inputmode="decimal" placeholder="Amount" autocomplete="off" oninput="showLinkState()">
+      <select class="lk-unit" id="lkUnit" aria-label="Unit" onchange="showLinkState()"></select>
+    </div>
+    <div class="lk-hint" id="lkOzHint" style="display:none">Is this fluid ounces? Change to fl oz.</div>
+    <div class="lk-preview" id="lkPreview"></div>
+
+    <div class="lk-skip-row"><button class="link-btn" id="lkSkip" onclick="skipLine()">Not costed on purpose</button></div>
+    <div class="modal-btns" id="lkBtns">
+      <button class="modal-btn cancel" id="lkCancel" onclick="closeLink()">Cancel</button>
+      <button class="modal-btn save" id="lkSave" onclick="saveLink()" disabled>Save</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
 var SB='https://sxppuyarecqkgkrsrefc.supabase.co',SK='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN4cHB1eWFyZWNxa2drcnNyZWZjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczOTA4MzAsImV4cCI6MjA5Mjk2NjgzMH0.GM8OfcR68_JjdPeQ3k7j6L3ulJFaeS1xnSLBcdtYXtU';
 var MANAGER_PIN='4316';
 var LOCATION='Tempest';
-
-/* Slice 2: this page reads only "Recipes" and writes nothing. Every amount
-   and unit comes from RecipeMath (assets/recipe-math.js); the page does no
-   arithmetic of its own. */
-var recipes=[];   // active Recipes rows, by name
+/* Slice 2 read only "Recipes". Slice 3 also reads the price list, the order
+   guide and recipe_lines, and links a line (writes go to recipe_lines only).
+   Every amount, unit and cost comes from RecipeMath (assets/recipe-math.js);
+   the page does no arithmetic of its own — it rounds only for display. */
+var recipes=[];          // active Recipes rows, by name
+var costs=[], costById={};        // ingredient_costs rows (active and retired)
+var orderItems=[], orderById={};  // active order_items
+var links=[];            // active recipe_lines rows
+var costsLoaded=false, costsError=false;
 var loadGen=0;
+var openId=null;         // the recipe on screen, or null for the list
+var lk=null;             // the line being linked: {rec, line} ; null when closed
+var pickId=null;         // the price row tapped in the editor, or null - NEVER set by code
 
 var LOAD_TIMEOUT=60000;
+var API_TIMEOUT=15000;   // a write with no answer in 15s is given up on - and then looked for
 /* status 0 = no answer at all (network error or timeout). One callback per
-   request, whichever of load/error/timeout comes first. */
-function api(m,t,q,d,cb,ms){var x=new XMLHttpRequest(),fired=false;function fire(r,s){if(fired)return;fired=true;if(cb)cb(r,s);}
-  x.open(m,SB+'/rest/v1/'+t+(q?'?'+q:''));x.timeout=ms||LOAD_TIMEOUT;x.setRequestHeader('apikey',SK);x.setRequestHeader('Authorization','Bearer '+SK);if(d){x.setRequestHeader('Content-Type','application/json');x.setRequestHeader('Prefer','return=representation');}
+   request, whichever of load/error/timeout comes first. `pf` is the Prefer
+   header (a link is saved as an upsert). */
+function api(m,t,q,d,cb,ms,pf){var x=new XMLHttpRequest(),fired=false;function fire(r,s){if(fired)return;fired=true;if(cb)cb(r,s);}
+  x.open(m,SB+'/rest/v1/'+t+(q?'?'+q:''));x.timeout=ms||(m==='GET'?LOAD_TIMEOUT:API_TIMEOUT);x.setRequestHeader('apikey',SK);x.setRequestHeader('Authorization','Bearer '+SK);if(d){x.setRequestHeader('Content-Type','application/json');x.setRequestHeader('Prefer',pf||'return=representation');}
   x.onload=function(){var r=null;try{r=JSON.parse(x.responseText);}catch(e){}fire(r,x.status);};x.onerror=function(){fire(null,0);};x.ontimeout=function(){fire(null,0);};x.send(d?JSON.stringify(d):null);}
 
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function okRows(r,status){return Array.isArray(r)&&status>=200&&status<300;}
 
 /* ---- PIN gate ---- */
 function revealApp(){document.getElementById('gate').classList.add('hide');init();}
@@ -111,12 +217,13 @@ function boot(){
 }
 
 /* ---- Load ---- */
+var LOC='location=eq.'+encodeURIComponent(LOCATION);
 function init(){
   var gen=++loadGen;
   document.getElementById('listBody').innerHTML='<div class="loading"><div class="spinner"></div><p>Loading…</p></div>';
-  api('GET','Recipes','select=id,name,category,station,status,ingredients&location=eq.'+LOCATION+'&order=name.asc',null,function(r,status){
+  api('GET','Recipes','select=id,name,category,station,status,ingredients&'+LOC+'&order=name.asc',null,function(r,status){
     if(gen!==loadGen)return;
-    if(!Array.isArray(r)||status<200||status>=300){
+    if(!okRows(r,status)){
       document.getElementById('countTag').textContent='—';
       document.getElementById('listBody').innerHTML='<div class="empty-state"><h3>Could not load recipes</h3><p>Check the connection.</p><p><button class="link-btn" onclick="init()">Try again</button></p></div>';
       showToast('Could not load recipes',true);
@@ -125,21 +232,88 @@ function init(){
     recipes=r.filter(function(x){return x.status!=='archived';});
     renderList();
   });
+  loadCosting(gen);
 }
+/* The price list, the order guide and the stored links arrive together; a
+   line's state is not shown until all three have, because any one missing
+   would make "not linked" or "no price yet" a lie. */
+function loadCosting(gen){
+  costsLoaded=false;costsError=false;
+  var left=3,bad=false,got={};
+  function done(k,r,status){
+    if(gen!==loadGen)return;
+    if(!okRows(r,status))bad=true;else got[k]=r;
+    if(--left)return;
+    if(bad){costsError=true;rerender();return;}
+    costs=got.c;costById={};costs.forEach(function(c){costById[c.id]=c;});
+    orderItems=got.o;orderById={};orderItems.forEach(function(o){orderById[o.id]=o;});
+    links=got.l;
+    costsLoaded=true;rerender();
+  }
+  api('GET','ingredient_costs','select=id,name,order_item_id,pack_qty,pack_unit,pack_price,active&'+LOC,null,function(r,s){done('c',r,s);});
+  api('GET','order_items','select=id,name,vendor&'+LOC+'&active=eq.true&order=vendor.asc,sort_order.asc',null,function(r,s){done('o',r,s);});
+  api('GET','recipe_lines','select=id,recipe_id,line_text,occurrence,component,qty,unit,ingredient_cost_id,sub_recipe_id,skip,linked_name,active&'+LOC+'&active=eq.true',null,function(r,s){done('l',r,s);});
+}
+function rerender(){if(openId!=null)openRecipe(openId,true);if(lk)renderPick();}
 
-/* ---- The list ---- */
+/* ---- Price rows ---- */
+function nameOf(c){var o=c.order_item_id!=null?orderById[c.order_item_id]:null;return o?o.name:(c.name||'(unnamed)');}
+function vendorOf(c){var o=c.order_item_id!=null?orderById[c.order_item_id]:null;return o&&o.vendor?o.vendor:'Off-guide';}
+/* The price as values, for RecipeMath.lineCost(). null pack_price stays null:
+   "no price yet" is lineCost()'s call, never a $0 made here. */
+function priceOf(c){
+  if(!c)return null;
+  function n(v){return v==null||v===''?null:Number(v);}
+  return {pack_qty:n(c.pack_qty),pack_unit:c.pack_unit,pack_price:n(c.pack_price)};
+}
+function isPriced(c){return !!c&&RecipeMath.lineCost(1,c.pack_unit||'each',priceOf(c)).reason!=='no price yet';}
+
+/* ---- Lines ---- */
 function linesOf(rec){
-  var out=[],part=null,raw=String(rec.ingredients||'').split(/\r?\n/);
+  var out=[],part=null,seen={},raw=String(rec.ingredients||'').split(/\r?\n/);
   for(var i=0;i<raw.length;i++){
     var t=raw[i].trim();
     if(!t)continue;
     if(RecipeMath.isPartHeader(t)){part=t;out.push({header:true,text:t});continue;}
-    out.push({header:false,text:t,part:part,read:RecipeMath.readAmount(t)});
+    seen[t]=(seen[t]||0)+1;
+    out.push({header:false,text:t,occurrence:seen[t],part:part,read:RecipeMath.readAmount(t)});
   }
   return out;
 }
 function lineCount(rec){return linesOf(rec).filter(function(l){return !l.header;}).length;}
+/* The stored link for a current line: same recipe, same text, same occurrence. */
+function linkFor(rec,line){
+  for(var i=0;i<links.length;i++){var k=links[i];
+    if(Number(k.recipe_id)===Number(rec.id)&&k.line_text===line.text&&Number(k.occurrence)===line.occurrence)return k;}
+  return null;
+}
+function normName(x){return String(x||'').toLowerCase().replace(/\s+/g,' ').trim();}
+/* Stored links for this recipe that match no current line: an edit in the
+   Recipe Database unlinked them. They count for nothing. */
+function orphansOf(rec){
+  var cur={};linesOf(rec).forEach(function(l){if(!l.header)cur[l.text+'\u0000'+l.occurrence]=true;});
+  return links.filter(function(k){return Number(k.recipe_id)===Number(rec.id)&&!cur[k.line_text+'\u0000'+Number(k.occurrence)];});
+}
+function fmtAmount(a){return String(+Number(a).toFixed(3));}        // display only
+function fmtMoney(n){return '$'+Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}  // display only
+/* What a line is, in one place: the recipe screen and the tests read this. */
+function lineState(rec,line){
+  if(!costsLoaded)return {kind:'loading'};
+  var k=linkFor(rec,line);
+  if(!k)return {kind:'not linked'};
+  if(k.skip)return {kind:'skip',link:k};
+  var c=costById[k.ingredient_cost_id];
+  /* Guards, decided here and never by the math (ruling 2). Each one stops the
+     line counting, with its reason. A price row that is retired - or gone -
+     cannot cost anything; a name that changed since the link was made may be
+     the order-ID reuse (a different product under the old row). */
+  if(!c||c.active===false)return {kind:'price retired',link:k,cost:c};
+  if(normName(k.linked_name)!==normName(nameOf(c)))return {kind:'renamed',link:k,cost:c,was:k.linked_name,now:nameOf(c)};
+  var res=RecipeMath.lineCost(Number(k.qty),k.unit,priceOf(c),null);   // no conversions until Slice 4
+  return {kind:res.reason?res.reason:'costed',link:k,cost:c,res:res};
+}
 
+/* ---- The list ---- */
 function renderList(){
   document.getElementById('countTag').innerHTML='<b>'+recipes.length+'</b> recipes';
   if(!recipes.length){document.getElementById('listBody').innerHTML='<div class="empty-state"><h3>No recipes</h3><p>Active recipes in the Recipe Database appear here.</p></div>';return;}
@@ -155,17 +329,32 @@ function renderList(){
 }
 
 /* ---- One recipe ---- */
-function fmtAmount(a){return String(+a.toFixed(3));}   // display only; the value stays unrounded
 function readText(rd){
   if(rd.amount===null){
     return rd.why==='two amounts'?'reads: <b>no amount</b> — two amounts on one line':'reads: <b>no amount</b>';
   }
   return 'reads: <b>'+esc(fmtAmount(rd.amount)+' '+rd.unit)+'</b>'+(rd.unitWord?'':' — no unit word');
 }
-function openRecipe(id){
-  var rec=null;
-  for(var i=0;i<recipes.length;i++)if(Number(recipes[i].id)===id){rec=recipes[i];break;}
+function stateHtml(rec,line){
+  var s=lineState(rec,line);
+  if(s.kind==='loading')return costsError
+    ?'<span>'+readText(line.read)+'</span><span class="ing-pack unset">links didn’t load</span>'
+    :'<span>'+readText(line.read)+'</span><span>checking links…</span>';
+  if(s.kind==='not linked')return '<span>'+readText(line.read)+'</span><span class="ing-pack unset">not linked</span>';
+  if(s.kind==='skip')return '<span class="rc-skip">not costed on purpose</span>';
+  var who=s.cost?esc(nameOf(s.cost)+' · '+vendorOf(s.cost)):'(price row missing)';
+  var amt='<b>'+esc(fmtAmount(s.link.qty)+' '+s.link.unit)+'</b>';
+  if(s.kind==='costed')return '<span>'+who+' · '+amt+'</span><span class="rc-cost">'+esc(fmtMoney(s.res.cost))+'</span>';
+  if(s.kind==='no price yet')return '<span>'+who+' · '+amt+'</span><span class="ing-pack unset">no price yet</span>'
+    +'<a class="rc-price-link" href="tempest_costing.html" onclick="event.stopPropagation()">Price →</a>';
+  if(s.kind==='price retired')return '<span>'+who+' · '+amt+'</span><span class="ing-pack unset">price retired — relink</span>';
+  if(s.kind==='renamed')return '<span>'+amt+'</span><span class="ing-pack unset">renamed — linked as '+esc(s.was||'(no name)')+', now '+esc(s.now)+' — check</span>';
+  return '<span>'+who+' · '+amt+'</span><span class="ing-pack unset">'+esc(s.kind)+'</span>';
+}
+function openRecipe(id,keepScroll){
+  var rec=recipeById(id);
   if(!rec)return;
+  openId=Number(rec.id);
   var lines=linesOf(rec),n=0;
   var html='<button class="rc-back" onclick="closeRecipe()">← Recipes</button>'
           +'<div class="rc-title">'+esc(rec.name)+'</div>';
@@ -173,25 +362,299 @@ function openRecipe(id){
   lines.forEach(function(l){if(!l.header)n++;});
   html+='<div class="rc-sub">'+(meta?meta+' · ':'')+n+' line'+(n===1?'':'s')+'</div>';
   if(!n)html+='<div class="empty-state"><h3>No ingredients</h3><p>This recipe has no ingredient lines yet.</p></div>';
-  lines.forEach(function(l){
+  lines.forEach(function(l,i){
     if(l.header){html+='<div class="vhead">'+esc(l.text)+'</div>';return;}
-    html+='<div class="rc-line"><div class="rc-text">'+esc(l.text)+'</div>'
-        +'<div class="rc-read"><span>'+readText(l.read)+'</span><span class="ing-pack unset">not linked</span></div></div>';
+    html+='<div class="rc-line tap" role="button" tabindex="0" data-i="'+i+'" onclick="openLink('+i+')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();openLink('+i+');}">'
+        +'<div class="rc-text">'+esc(l.text)+'</div>'
+        +'<div class="rc-read">'+stateHtml(rec,l)+'</div></div>';
   });
+  if(costsLoaded){
+    var gone=orphansOf(rec);
+    if(gone.length){
+      html+='<div class="vhead rc-gone-head">No longer in the recipe</div>'
+          +'<div class="rc-gone-note">These were linked, but the recipe no longer has the line. They count for nothing.</div>';
+      gone.forEach(function(k){
+        html+='<div class="rc-line rc-gone"><div class="rc-text">'+esc(k.line_text)+'</div>'
+            +'<div class="rc-read"><span>'+esc(oldLinkText(k))+'</span>'
+            +'<button class="link-btn rc-dismiss" data-id="'+Number(k.id)+'" onclick="dismissLink('+Number(k.id)+')"'+(dismissing[k.id]?' disabled>Dismissing…':'>Dismiss')+'</button></div></div>';
+      });
+    }
+  }
   document.getElementById('listBody').style.display='none';
   document.getElementById('countTag').parentNode.style.display='none';
   var body=document.getElementById('recipeBody');
   body.innerHTML=html;body.style.display='';
-  window.scrollTo(0,0);
+  if(!keepScroll)window.scrollTo(0,0);
 }
+function oldLinkText(k){
+  if(k.skip)return 'not costed on purpose';
+  var c=costById[k.ingredient_cost_id];
+  return (c?nameOf(c)+' · '+vendorOf(c):(k.linked_name||'(price row missing)'))+', '+fmtAmount(k.qty)+' '+k.unit;
+}
+function recipeById(id){for(var i=0;i<recipes.length;i++)if(Number(recipes[i].id)===Number(id))return recipes[i];return null;}
 function closeRecipe(){
+  openId=null;
   document.getElementById('recipeBody').style.display='none';
   document.getElementById('listBody').style.display='';
   document.getElementById('countTag').parentNode.style.display='';
 }
 
+/* ---- The link editor ---- */
+function unitOptions(sel){
+  var h='<option value="">Unit…</option>';
+  RecipeMath.units().forEach(function(u){h+='<option value="'+esc(u.unit)+'"'+(u.unit===sel?' selected':'')+'>'+esc(u.unit)+'</option>';});
+  return h;
+}
+/* the filter starts from the line's remaining words, punctuation dropped */
+function startWords(line){return String(line.read.words||'').replace(/\([^)]*\)/g,' ').replace(/[,.;:!?()]/g,' ').replace(/\s+/g,' ').trim();}
+function openLink(i){
+  var rec=recipeById(openId);if(!rec)return;
+  var line=linesOf(rec)[i];if(!line||line.header)return;
+  if(!costsLoaded){showToast(costsError?'The price list didn’t load':'Still loading the price list',!!costsError);if(costsError)loadCosting(loadGen);return;}
+  lk={rec:rec,line:line};
+  var k=linkFor(rec,line);
+  document.getElementById('lkTitle').textContent=line.text;
+  document.getElementById('lkSub').textContent=rec.name+(line.part?' · '+line.part:'');
+  pickId=null;
+  var qty=null,unit='';
+  if(k&&!k.skip&&k.ingredient_cost_id!=null){
+    // an existing link opens showing what it is linked to - the person's own earlier pick
+    pickId=Number(k.ingredient_cost_id);qty=Number(k.qty);unit=RecipeMath.normaliseUnit(k.unit)||'';
+  }else if(line.read.amount!==null){
+    qty=line.read.amount;unit=line.read.unit;
+  }
+  setQty(qty);
+  document.getElementById('lkUnit').innerHTML=unitOptions(unit);
+  document.getElementById('pickFilter').value=startWords(line);
+  lk.oldId=null;
+  var c0=pickId!=null?costById[pickId]:null;
+  if(c0&&c0.active!==false&&isPriced(c0))showChosen();else{pickId=null;showChooser();}
+  renderOld(k);
+  document.getElementById('linkModal').classList.add('show');
+  showLinkState();
+}
+/* Ruling 9: a NOT LINKED line is offered the recipe's unmatched old links.
+   A tap fills the editor - pick, amount, unit - and nothing more; Save is
+   still the person's. Only an old link whose price row can still be picked
+   is offered. */
+function renderOld(k){
+  var box=document.getElementById('lkOld'),h='';
+  if(!k){
+    orphansOf(lk.rec).forEach(function(o){
+      var c=costById[o.ingredient_cost_id];
+      if(o.skip||!c||c.active===false||!isPriced(c))return;
+      h+='<button class="link-btn lk-old-btn" onclick="useOld('+Number(o.id)+')">Use the old link: '+esc(oldLinkText(o))+'</button>';
+    });
+  }
+  box.innerHTML=h;box.style.display=h?'':'none';
+}
+function useOld(id){
+  if(saving)return;
+  var o=null;for(var i=0;i<links.length;i++)if(Number(links[i].id)===id)o=links[i];
+  var c=o&&costById[o.ingredient_cost_id];
+  if(!o||!c||c.active===false||!isPriced(c))return;
+  pickId=Number(c.id);
+  setQty(Number(o.qty));
+  document.getElementById('lkUnit').value=RecipeMath.normaliseUnit(o.unit)||'';
+  lk.oldId=Number(o.id);
+  showChosen();showLinkState();
+  document.getElementById('pickHint').textContent='Filled from the old link. Check it, then Save.';
+}
+function closeLink(){if(saving)return;document.getElementById('linkModal').classList.remove('show');lk=null;pickId=null;}
+/* Change clears the pick and the amount, as on the costing page. */
+function changePick(){
+  if(saving)return;
+  pickId=null;if(lk)lk.oldId=null;
+  setQty(null);
+  document.getElementById('lkUnit').value='';
+  showChooser();showLinkState();
+  setTimeout(function(){document.getElementById('pickFilter').focus();},60);
+}
+function showChooser(){
+  document.getElementById('pickChoose').style.display='';
+  document.getElementById('pickChosen').style.display='none';
+  document.getElementById('pickHint').textContent='Tap the price-list item this line uses.';
+  renderPick();
+}
+function showChosen(){
+  var c=costById[pickId];
+  document.getElementById('pickChosenV').textContent=vendorOf(c);
+  document.getElementById('pickChosenN').textContent=nameOf(c);
+  document.getElementById('pickChoose').style.display='none';
+  document.getElementById('pickChosen').style.display='';
+  document.getElementById('pickHint').textContent='Priced at '+fmtAmount(c.pack_qty)+' '+(c.pack_unit||'')+' for '+fmtMoney(Number(c.pack_price))+'.';
+}
+function words(q){return String(q||'').toLowerCase().split(/\s+/).filter(Boolean);}
+function hasAll(hay,ws){hay=hay.toLowerCase();for(var i=0;i<ws.length;i++)if(hay.indexOf(ws[i])<0)return false;return true;}
+/* The list you tap: every active price row, priced ones tappable; an unpriced
+   row, or an order-guide item with no row, is listed but cannot be picked.
+   Retired rows are not listed. NOTHING is ever selected for you - not even
+   when exactly one row matches. */
+function renderPick(){
+  if(!lk)return;
+  var ws=words(document.getElementById('pickFilter').value);
+  var held={},rows=[];
+  costs.forEach(function(c){if(c.active===false)return;if(c.order_item_id!=null)held[c.order_item_id]=true;
+    rows.push({c:c,text:nameOf(c)+' '+vendorOf(c),priced:isPriced(c)});});
+  orderItems.forEach(function(o){if(!held[o.id])rows.push({o:o,text:(o.name||'')+' '+(o.vendor||''),priced:false});});
+  rows.sort(function(a,b){return (b.priced-a.priced)||a.text.toLowerCase().localeCompare(b.text.toLowerCase());});
+  var h='',shown=0,offered=rows.length;
+  rows.forEach(function(r){
+    if(ws.length&&!hasAll(r.text,ws))return;
+    shown++;
+    var v=r.c?vendorOf(r.c):(r.o.vendor||''),n=r.c?nameOf(r.c):r.o.name;
+    if(r.priced)h+='<div class="pick-row" role="button" tabindex="0" onclick="pickItem('+Number(r.c.id)+')"><div class="pick-row-main"><div class="pick-v">'+esc(v)+'</div><div class="pick-n">'+esc(n)+'</div></div></div>';
+    else h+='<div class="pick-row pick-off" aria-disabled="true"><div class="pick-row-main"><div class="pick-v">'+esc(v)+'</div><div class="pick-n">'+esc(n)+'</div></div><div class="pick-badge">no price yet — price it first</div></div>';
+  });
+  document.getElementById('pickCount').textContent=ws.length?(shown+' of '+offered+' match'):(offered+' to choose from');
+  if(!shown)h='<div class="pick-empty">'+(ws.length?'Nothing on the price list matches. Shorten the filter.':'The price list is empty.')+'</div>';
+  document.getElementById('pickList').innerHTML=h;
+}
+/* A tap is the pick. This is the ONLY place pickId is set to a row. */
+function pickItem(id){
+  if(saving)return;
+  var c=costById[id];if(!c||c.active===false||!isPriced(c))return;
+  pickId=Number(id);showChosen();showLinkState();
+  document.getElementById('pickChange').focus();
+}
+/* The box shows an amount to 3 places (ruling 11); the exact value it stands
+   for is kept beside it, and used for as long as the box still shows it -
+   so 1⅓ is saved as 1⅓, not 1.333. Typing in the box replaces it. */
+var qtyExact=null;
+function setQty(v){
+  var ok=typeof v==='number'&&isFinite(v)&&v>0;
+  document.getElementById('lkQty').value=ok?fmtAmount(v):'';
+  qtyExact=ok?{shown:fmtAmount(v),value:v}:null;
+}
+function editorValues(){
+  var raw=String(document.getElementById('lkQty').value||'').trim();
+  var qty=qtyExact&&raw===qtyExact.shown?qtyExact.value:(/^\d*\.?\d+$/.test(raw)?Number(raw):null);
+  var unit=document.getElementById('lkUnit').value||null;
+  return {qty:qty,unit:unit,pick:pickId};
+}
+function showLinkState(){
+  if(!lk)return;
+  var v=editorValues(),c=v.pick!=null?costById[v.pick]:null;
+  var pv=document.getElementById('lkPreview');
+  var oz=!!c&&v.unit==='oz'&&RecipeMath.unitKind(c.pack_unit)==='volume';
+  document.getElementById('lkOzHint').style.display=oz?'':'none';
+  if(!c)pv.innerHTML='Pick an item to see the cost.';
+  else if(v.qty===null||!(v.qty>0)||!v.unit)pv.innerHTML='Enter the amount and unit.';
+  else{
+    var r=RecipeMath.lineCost(v.qty,v.unit,priceOf(c),null);
+    pv.innerHTML=r.reason
+      ?esc(fmtAmount(v.qty)+' '+v.unit)+' · <b>'+esc(r.reason)+'</b>'+(r.reason==='needs a conversion'?' — '+esc(c.pack_unit)+' is measured another way; conversions come next':'')
+      :esc(fmtAmount(v.qty)+' '+v.unit)+' → <b>'+esc(fmtMoney(r.cost))+'</b>';
+  }
+  document.getElementById('lkSave').disabled=saving||!(c&&v.qty>0&&v.unit);
+}
+/* ---- The write path (Slice 3, step 5) -------------------------------------
+   As tempest_costing.html's slice 4 left it, ported the way tempest_inventory
+   did: every control locked while a write is out; a 15s timeout; and a
+   no-answer is NOT "failed" - the write may have landed - so the page reads
+   the row back before saying anything. A link is an upsert on
+   (recipe_id, line_text, occurrence): a retry lands on the same row, never a
+   second one. Writes go to recipe_lines only; nothing is ever deleted. */
+var saving=false;
+var UPSERT='on_conflict=recipe_id,line_text,occurrence';
+var LINE_COLS='select=id,recipe_id,line_text,occurrence,component,qty,unit,ingredient_cost_id,sub_recipe_id,skip,linked_name,active';
+function lockEditor(on){
+  saving=on;
+  ['lkQty','lkUnit','pickFilter','pickChange','lkSkip','lkSave','lkCancel'].forEach(function(id){var el=document.getElementById(id);if(el)el.disabled=on;});
+  [].forEach.call(document.querySelectorAll('#lkOld .lk-old-btn'),function(b){b.disabled=on;});
+  document.getElementById('pickList').classList.toggle('is-saving',on);
+  document.getElementById('lkSave').textContent=on?'Saving…':'Save';
+  if(!on)showLinkState();
+}
+/* what a write's answer says: 'ok' it landed (here is the row); 'no' the server
+   refused and wrote nothing; 'unknown' no answer, an unreadable one, or a 5xx a
+   gateway may have sent after the row committed - look before speaking. */
+function answerOf(r,status){
+  if(status>=200&&status<300&&Array.isArray(r)&&r.length)return 'ok';
+  if(status>=400&&status<500)return 'no';
+  return 'unknown';
+}
+function payloadFor(skip){
+  var v=editorValues(),line=lk.line,c=skip?null:costById[v.pick];
+  return {location:LOCATION,recipe_id:Number(lk.rec.id),line_text:line.text,occurrence:line.occurrence,
+          component:line.part||null,
+          qty:skip?null:v.qty,unit:skip?null:v.unit,
+          ingredient_cost_id:skip?null:Number(c.id),
+          skip:!!skip,linked_name:skip?null:nameOf(c),
+          active:true,updated_at:new Date().toISOString()};
+}
+function landLink(row){
+  for(var i=0;i<links.length;i++)if(Number(links[i].id)===Number(row.id)||(Number(links[i].recipe_id)===Number(row.recipe_id)&&links[i].line_text===row.line_text&&Number(links[i].occurrence)===Number(row.occurrence))){
+    if(row.active===false)links.splice(i,1);else links[i]=row;return;}
+  if(row.active!==false)links.push(row);
+}
+/* the row a write was for, read fresh, compared with what was sent */
+function readBack(p,cb){
+  api('GET','recipe_lines',LINE_COLS+'&'+LOC+'&recipe_id=eq.'+p.recipe_id+'&line_text=eq.'+encodeURIComponent(p.line_text)+'&occurrence=eq.'+p.occurrence,null,function(r,status){
+    if(!okRows(r,status)){cb(null,false);return;}
+    var row=r[0]||null;
+    var same=!!row&&row.active===true&&!!row.skip===p.skip&&Number(row.ingredient_cost_id||0)===Number(p.ingredient_cost_id||0)
+      &&(p.skip||(Number(row.qty)===p.qty&&row.unit===p.unit));
+    cb(row,same);
+  });
+}
+function saveLink(){writeLink(false);}
+function skipLine(){writeLink(true);}
+function writeLink(skip){
+  if(saving||!lk)return;                      // a second tap while one is out does nothing
+  var v=editorValues();
+  if(!skip&&!(v.pick!=null&&costById[v.pick]&&v.qty>0&&v.unit))return;
+  var p=payloadFor(skip),oldId=skip?null:lk.oldId,mine=lk;
+  lockEditor(true);
+  api('POST','recipe_lines',UPSERT,p,function(r,status){
+    var a=answerOf(r,status);
+    if(a==='ok'){saved(r[0]);return;}
+    if(a==='no'){lockEditor(false);showToast('Not saved — the server refused it. Nothing changed.',true,6000);return;}
+    readBack(p,function(row,same){
+      if(row&&same){saved(row);return;}
+      lockEditor(false);
+      showToast(row===null&&same===false?'Could not confirm the save. Tap Save to try again — it cannot make a second row.':'Not saved. Tap Save to try again.',true,6000);
+    });
+  },API_TIMEOUT,'resolution=merge-duplicates,return=representation');
+  function saved(row){
+    landLink(row);
+    lockEditor(false);
+    if(lk===mine)closeLink();
+    showToast(skip?'Marked not costed on purpose':'Linked');
+    if(oldId!=null)retireOld(oldId);
+    rerender();
+  }
+}
+/* ruling 9: after a save made from an old link, the old row is set inactive.
+   If that fails, say so; the old row just stays under No longer in the recipe. */
+function retireOld(id){
+  api('PATCH','recipe_lines','id=eq.'+id+'&'+LOC,{active:false,updated_at:new Date().toISOString()},function(r,status){
+    if(answerOf(r,status)==='ok'){landLink(r[0]);rerender();return;}
+    showToast('Linked — but the old link could not be cleared. It stays under “No longer in the recipe” and counts for nothing.',true,6000);
+  },API_TIMEOUT);
+}
+var dismissing={};
+function dismissLink(id){
+  if(dismissing[id])return;
+  dismissing[id]=true;
+  setDismissBusy(id,true);
+  api('PATCH','recipe_lines','id=eq.'+id+'&'+LOC,{active:false,updated_at:new Date().toISOString()},function(r,status){
+    var a=answerOf(r,status);
+    if(a==='ok'){delete dismissing[id];landLink(r[0]);rerender();showToast('Dismissed');return;}
+    if(a==='no'){delete dismissing[id];setDismissBusy(id,false);showToast('Not dismissed — the server refused it.',true,6000);return;}
+    api('GET','recipe_lines','select=id,active&'+LOC+'&id=eq.'+id,null,function(r2,s2){
+      delete dismissing[id];
+      if(okRows(r2,s2)&&r2[0]&&r2[0].active===false){links=links.filter(function(k){return Number(k.id)!==id;});rerender();showToast('Dismissed');return;}
+      setDismissBusy(id,false);showToast('Could not confirm. Tap Dismiss to try again.',true,6000);
+    });
+  },API_TIMEOUT);
+}
+function setDismissBusy(id,on){var b=document.querySelector('.rc-dismiss[data-id="'+id+'"]');if(b){b.disabled=on;b.textContent=on?'Dismissing…':'Dismiss';}}
+
+
 var st;
 function showToast(msg,isErr,ms){var t=document.getElementById('toast');t.textContent=(isErr?'⚠ ':'✓ ')+msg;t.classList.toggle('error',!!isErr);t.classList.add('show');clearTimeout(st);st=setTimeout(function(){t.classList.remove('show');},ms||1600);}
+document.getElementById('linkModal').addEventListener('click',function(e){if(e.target===this)closeLink();});
 
 boot();
 </script>

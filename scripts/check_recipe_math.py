@@ -177,6 +177,63 @@ CONVERSIONS = [
     (1, "lb", "splodge", None),
 ]
 
+# lineCost(qty, unit, price, conversion) -> (cost, reason, soft, was, now).
+# Slice 3, the Menu Builder math contract. cost is compared UNROUNDED.
+def P(q, u, pr, guess=False):
+    d = {"pack_qty": q, "pack_unit": u, "pack_price": pr}
+    if guess:
+        d["guess"] = True
+    return d
+
+
+def CONV(kind, fq, fu, tq, tu, est=False):
+    return {"from_kind": kind, "from_qty": fq, "from_unit": fu,
+            "to_qty": tq, "to_unit": tu, "estimate": est}
+
+
+LINE_COSTS = [
+    # same kind: weight, volume, count, dozen, own count word, spellings
+    ("weight", 2.5, "lb", P(5, "lb", 18.47), None, (9.235, None, [], None, None)),
+    ("weight oz->lb", 8, "oz", P(36, "lb", 72), None, (1.0, None, [], None, None)),
+    ("weight # vs Lb", 5, "#", P(50, "Lb", 30), None, (3.0, None, [], None, None)),
+    ("volume", 4, "cup", P(1, "gal", 16.40), None, (4.10, None, [], None, None)),
+    ("volume, unrounded", 1, "tsp", P(1, "gal", 16.40), None, (16.40 / 768, None, [], None, None)),
+    ("volume 1/2 gal", 1, "qt", P(1, "1/2 gal", 6), None, (3.0, None, [], None, None)),
+    ("count", 10, "each", P(115, "each", 45), None, (450 / 115, None, [], None, None)),
+    ("dozen", 18, "ea", P(15, "dozen", 54), None, (5.4, None, [], None, None)),
+    ("own count word", 1, "bunch", P(1, "bunch", 2.25), None, (2.25, None, [], None, None)),
+    # cross kind, no conversion
+    ("qt vs lb, none", 2, "qt", P(50, "lb", 30), None, (None, "needs a conversion", [], None, None)),
+    ("bunch vs each, none", 1, "bunch", P(12, "each", 9), None, (None, "needs a conversion", [], None, None)),
+    ("oz is weight", 32, "oz", P(1, "gal", 20), None, (None, "needs a conversion", [], None, None)),
+    ("conversion for another measure", 2, "each", P(50, "lb", 30), CONV("volume", 1, "qt", 1.1, "lb"),
+     (None, "needs a conversion", [], None, None)),
+    # cross kind, with a conversion
+    ("qt -> lb, estimated", 2, "qt", P(50, "lb", 30), CONV("volume", 1, "qt", 1.1, "lb", True),
+     (1.32, None, ["estimated conversion"], None, None)),
+    ("cup -> oz via qt = lb", 1, "cup", P(16, "oz", 5), CONV("volume", 1, "qt", 2, "lb"),
+     (2.5, None, [], None, None)),
+    ("jug -> lb", 1, "jug", P(5, "lb", 20), CONV("jug", 1, "jug", 5, "lb"), (20.0, None, [], None, None)),
+    ("dozen -> lb via each", 1, "dozen", P(30, "lb", 60), CONV("each", 4, "each", 1, "lb"),
+     (6.0, None, [], None, None)),
+    # the pack unit changed kind since the conversion was made
+    ("conversion no longer matches", 2, "qt", P(1, "case", 40), CONV("volume", 1, "qt", 1.1, "lb"),
+     (None, "conversion no longer matches", [], "lb", "case")),
+    # no price: never $0
+    ("no price row", 2, "cup", None, None, (None, "no price yet", [], None, None)),
+    ("price missing", 2, "cup", {"pack_qty": 1, "pack_unit": "gal", "pack_price": None}, None,
+     (None, "no price yet", [], None, None)),
+    ("pack qty missing", 2, "cup", {"pack_qty": None, "pack_unit": "gal", "pack_price": 5}, None,
+     (None, "no price yet", [], None, None)),
+    # soft inputs
+    ("guessed price", 4, "cup", P(1, "gal", 10, True), None, (2.5, None, ["guessed price"], None, None)),
+    ("guess + estimate", 2, "qt", P(50, "lb", 30, True), CONV("volume", 1, "qt", 1.1, "lb", True),
+     (1.32, None, ["estimated conversion", "guessed price"], None, None)),
+    # no amount
+    ("no amount", None, "cup", P(1, "gal", 10), None, (None, "no amount", [], None, None)),
+    ("unknown unit", 2, "splodge", P(1, "gal", 10), None, (None, "no amount", [], None, None)),
+]
+
 # deliberate breaks: (name, exact text in recipe-math.js, replacement)
 BREAKS = [
     ("oz read as volume", "'oz':      { kind: 'weight', factor: 28.349523125 }",
@@ -186,6 +243,12 @@ BREAKS = [
     ("1 1/2 read as 1", "amount = +m[1] + (+m[2]) / (+m[3]);", "amount = +m[1];"),
     ("1 1/2 read as 2", "amount = +m[1] + (+m[2]) / (+m[3]);", "amount = +m[2];"),
     ("1 1/2 read as 1/2", "'^(?:(\\\\d+)\\\\s+(\\\\d+)\\\\/(\\\\d+)|", "'^(?:(\\\\d+)\\\\s+(\\\\d+)\\\\/(\\\\d+)(?!)|"),
+    ("$0 for an unpriced line", "out.reason = 'no price yet'; return out;",
+     "out.reason = 'no price yet'; out.cost = 0; return out;"),
+    ("a rounded result", "out.cost = inPack / price.pack_qty * price.pack_price;",
+     "out.cost = Math.round(inPack / price.pack_qty * price.pack_price * 100) / 100;"),
+    ("an estimate not reported", "if (c.estimate) out.soft.push('estimated conversion');", ""),
+    ("a guess not reported", "if (price.guess) out.soft.push('guessed price');", ""),
 ]
 
 HTML = """<!doctype html><html><head><meta charset="utf-8">
@@ -198,7 +261,7 @@ HTML = """<!doctype html><html><head><meta charset="utf-8">
   function near(a, b){ return a === b || (a !== null && b !== null && Math.abs(a - b) <= 1e-9 * Math.max(1, Math.abs(b))); }
   try {
     var R = RecipeMath;
-    var SP = __SPELLINGS__, UN = __UNITS__, LN = __LINES__, CV = __CONV__, SCAN = __SCAN__;
+    var SP = __SPELLINGS__, UN = __UNITS__, LN = __LINES__, CV = __CONV__, LC = __LC__, SCAN = __SCAN__;
     Object.keys(SP).forEach(function(s){
       out.n++;
       var u = R.normaliseUnit(s), k = R.unitKind(s);
@@ -223,6 +286,13 @@ HTML = """<!doctype html><html><head><meta charset="utf-8">
       var r = R.convert(x[0], x[1], x[2]);
       if (!near(r, x[3])) fail('convert ' + x[0] + ' ' + x[1] + ' -> ' + x[2] + ' = ' + r + ', want ' + x[3]);
     });
+    LC.forEach(function(x){
+      out.n++;
+      var r = R.lineCost(x[1], x[2], x[3], x[4]), w = x[5];
+      if (!near(r.cost, w[0]) || r.reason !== w[1] || JSON.stringify(r.soft) !== JSON.stringify(w[2]) || r.was !== w[3] || r.now !== w[4])
+        fail('lineCost ' + x[0] + ' -> ' + JSON.stringify(r) + ', want ' + JSON.stringify(w));
+      if (w[0] === null && r.cost === 0) fail('lineCost ' + x[0] + ' returned $0 for a line that is not costed');
+    });
     out.n++;
     if (!R.isPartHeader('— CHEESE BASE —') || R.isPartHeader('2 C Lentils') || R.isPartHeader('—')) fail('isPartHeader');
     if (SCAN) out.scan = SCAN.map(function(l){ var r = R.readAmount(l.text); r.recipe = l.recipe; r.text = l.text; return r; });
@@ -241,6 +311,7 @@ def run(chrome, js_src, scan=None):
                     .replace("__UNITS__", json.dumps(UNITS))
                     .replace("__LINES__", json.dumps(LINES))
                     .replace("__CONV__", json.dumps(CONVERSIONS))
+                    .replace("__LC__", json.dumps(LINE_COSTS))
                     .replace("__SCAN__", json.dumps(scan)))
         path = os.path.join(td, "t.html")
         open(path, "w", encoding="utf-8").write(page)
