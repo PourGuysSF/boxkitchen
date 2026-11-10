@@ -1,7 +1,7 @@
 # Recipe Costing — what a batch costs (B4.3)
 
 Status: **plan v1, approved by Stephen 2026-11-02. Slice 0 is closed (tables live, 0 rows); Slice 1
-is shipped (PR #171, 2026-11-05). Slice 2 is built (2026-11-08, branch `recipe-costing-slice2`, awaiting PR and phone check); Slice 3 is next.** It is built in a separate window: this plan is owned by the planning window, the build window
+is shipped (PR #171, 2026-11-05). Slice 2 is shipped (PR #181, 2026-11-08). Slice 3 is built (2026-11-09, branch `recipe-costing-slice3`, awaiting PR and phone check); Slice 4 is next.** It is built in a separate window: this plan is owned by the planning window, the build window
 records each slice "as built" here, and any change to the design goes back to the planner. Every
 decision in "Decisions" was Stephen's, in the interview that produced this document. The design
 choices made without asking are listed under "Decided in planning, not asked" so they can be
@@ -695,6 +695,9 @@ against a stubbed `api()` in `check_costing.py`, with all of its existing assert
   "no shared JS" line changed. `check_costing.py` and `check_styling.py` clean; `FS_REGISTER`
   unchanged (75).
 - **Not proved here:** the phone check (after merge); the webfonts (the harness strips them).
+- **Shipped as #181 (squash 29c91b1).** Phone check passed on 2026-11-08 (iPhone, Safari, by the
+  page's address): the list, a recipe, its lines and parts as described. 40 recipes shown because
+  Stephen added three that day; the iPhone "go" key isn't blue.
 
 ### Slice 3 — Link a line
 
@@ -714,6 +717,67 @@ against a stubbed `api()` in `check_costing.py`, with all of its existing assert
 **Done when:** no code path picks an ingredient; a line can be linked, changed and skipped; a
 renamed item, an edited recipe line and a retired price each stop a line counting, each with its
 reason; a dropped response cannot make two rows — all against a stubbed `api()`.
+
+**As built (2026-11-09, build window).**
+
+- **Live counts moved before the build:** proved against **43 active recipes, 340 lines, 15 part
+  headers** (Stephen, 2026-11-09); by the end of the build it was 44 / 343 / 15 (*Meyer Lemon
+  Aioli*, #65). `check_recipe_costing.py --live` defaults to 43/340/15, overridable with
+  `LIVE_RECIPES`, `LIVE_LINES`, `LIVE_HEADERS`.
+- **Flagged, not acted on:** two TEST recipes (#60, #61) are active; *Rice wine vinegar*
+  (Birite) has no price, so *Cashew Dressing*'s first line cannot be linked yet; *Meyer Lemon
+  Aioli* uses "garlic aioli", a recipe inside a recipe (Slice 6). Nine live lines read as
+  `two amounts` and need a person's amount.
+- **`assets/recipe-math.js?v=2`** adds, exactly:
+  `lineCost(qty, unit, price, conversion)` — `price` `{pack_qty, pack_unit, pack_price, guess}`
+  (absent = no price); `conversion` `{from_kind, from_qty, from_unit, to_qty, to_unit, estimate}`
+  (optional) → `{cost, reason, soft, was, now}`. `cost` is unrounded, or `null` — never 0 for a
+  line not costed. `reason`: `null | 'no amount' | 'no price yet' | 'needs a conversion' |
+  'conversion no longer matches'`. `soft`: the soft inputs used, `'estimated conversion'`,
+  `'guessed price'`. `was`/`now`: the conversion's unit and the pack unit, on a mismatch. A
+  conversion's `from_kind` is the unit's kind, or its own count word, or `each`. Looks nothing
+  up, touches no table.
+- **`scripts/check_recipe_math.py`** — 192 assertions, 10 deliberate breaks (4 new: $0 for an
+  unpriced line, a rounded result, an estimate not reported, a guess not reported).
+- **`tempest_recipe_costing.html`** reads three more tables, all `location=eq.Tempest`:
+  `ingredient_costs` (`id,name,order_item_id,pack_qty,pack_unit,pack_price,active`),
+  `order_items` (active, `id,name,vendor`), `recipe_lines` (active). Each line is keyed by
+  `(recipe_id, line_text, occurrence)` — `occurrence` counts repeats of the same text.
+  - **States on a line:** costed (to the cent, ink, heavy), *not linked*, *not costed on
+    purpose*, *no price yet* with **Price →** to the price list, *needs a conversion*, *price
+    retired — relink*, *renamed — linked as X, now Y — check* (names compared normalised).
+    All as `.ing-pack.unset` — the highlighter, no hue.
+  - **The editor** (`#linkModal`): the line as written; the price list filtered by the line's
+    words, priced rows first; unpriced rows and order-guide items without a row read *no price
+    yet — price it first* and cannot be tapped; retired rows are not listed. **Nothing is
+    picked for you**, even when one row matches. Amount and unit pre-filled from the reader
+    (unrounded behind the 3-place display — `1⅓` saves as one and a third), a preview cost, an
+    *oz against volume* hint (words only), **Change**, **Not costed on purpose**. New inputs
+    `.lk-qty`/`.lk-unit` at 16px, qualified; `FS_REGISTER` unchanged.
+  - **No longer in the recipe:** links whose line is gone, struck through, counted for
+    nothing, each with **Dismiss**. Opening a line offers an old link of the same words as one
+    tap (**Use the old link**); saving retires the old row.
+  - **Writes, `recipe_lines` only:** `POST recipe_lines?on_conflict=recipe_id,line_text,occurrence`
+    with `Prefer: resolution=merge-duplicates`, fields exactly `location, recipe_id, line_text,
+    occurrence, component, qty, unit, ingredient_cost_id, skip, linked_name, active,
+    updated_at` (the page sends `updated_at`; there is no trigger). Dismiss and retiring an old
+    link are `PATCH id=eq.X&location=eq.Tempest {active:false, updated_at}`. Nothing is ever
+    deleted. Writes time out at 15 s (reads keep 60 s). In flight every control is locked and a
+    second tap is ignored. A lost answer (no status, or 5xx) is read back by its key before
+    anything is said; unconfirmed → "Could not confirm the save. Tap Save to try again — it
+    cannot make a second row." A 4xx → "Not saved — the server refused it." A failed retire
+    says so; the old row stays under *No longer in the recipe*.
+- **`scripts/check_recipe_costing.py`** — 258 assertions, 13 scenarios (`ok fail gate links
+  guards write hang lost retry reject oldlink oldfail dismiss`) against a stateful fake server:
+  every saved field; a double tap is one write; lost answer + retry is one row; a 502 after the
+  write landed; refused; old-link retire and its failure; no DELETE and no table but
+  `recipe_lines`, ever. Three deliberate breaks, each caught: the double-tap guard removed, a
+  lost answer treated as a failure, the rounded amount saved. `--live` rendered 44 / 343 / 15,
+  every write blocked.
+- `check_costing.py` (679), `check_styling.py` clean, `FS_REGISTER` 75. `index.html`,
+  `kitchen.css`, `tempest_costing.html`, `Recipes` and `recipe_dashboard.html` untouched.
+- **Not proved here:** the phone check (after merge) — real links that stay; **Change** or
+  **Not costed on purpose** undoes a mistake.
 
 ### Slice 4 — Conversions
 
