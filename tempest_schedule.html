@@ -75,6 +75,10 @@
 /* 16px or iOS zooms: qualified, or kitchen.css's .modal input[type="text"] (15.2px) wins (#135). */
 .modal input[type="text"].sched-other,.sched-other{font-size:16px}
 .modal input[type="text"].sched-note-input,.sched-note-input{font-size:16px}
+.sched-copywrap{padding:0 18px 10px;border-bottom:1px solid var(--hair)}
+.sched-copybtn{min-height:44px;padding:8px 14px;background:var(--paper);border:1px solid var(--ink);border-radius:6px;color:var(--ink);font-family:var(--font-cond);font-size:1rem;font-weight:600;letter-spacing:.04em;cursor:pointer}
+.sched-copyinfo{margin-bottom:8px;color:var(--ink)}
+.sched-copysub{margin-bottom:12px;font-size:0.85rem;color:var(--grey)}
 .sched-err button{margin-top:14px;min-height:44px;padding:8px 18px;background:var(--paper);border:1px solid var(--ink);border-radius:6px;font-family:var(--font-cond);font-weight:600;letter-spacing:.08em;text-transform:uppercase;cursor:pointer}
 </style>
 </head>
@@ -100,6 +104,7 @@
 </div>
 <div id="dayStrip" class="sched-days"></div>
 <div class="sched-mgrcount" id="mgrCount" style="display:none"></div>
+<div class="sched-copywrap" id="copyWrap" style="display:none"></div>
 <div id="appBody"><div class="loading"><div class="spinner"></div><p>Loading the schedule…</p></div></div>
 <div class="sched-updated" id="updatedLine"></div>
 
@@ -137,6 +142,20 @@
   </div>
 </div>
 
+<!-- Copy last week (manager) -->
+<div class="modal-bg" id="copyModal">
+  <div class="modal">
+    <h3>Copy last week</h3>
+    <div class="sched-copyinfo" id="copyInfo"></div>
+    <div class="sched-copysub" id="copySub"></div>
+    <div class="modal-err" id="copyErr"></div>
+    <div class="modal-btns">
+      <button type="button" class="modal-btn cancel" id="copyCancel" onclick="closeCopy()">Cancel</button>
+      <button type="button" class="modal-btn save" id="copyGo" onclick="doCopy()">Copy</button>
+    </div>
+  </div>
+</div>
+
 <!-- Manager PIN modal -->
 <div class="modal-bg" id="pinModal">
   <div class="modal">
@@ -164,6 +183,8 @@ var people=[],shifts={},dayNotes={},standing=[],updatedMax=null;
 /* Slice 2: the box and note pickers, and the quick buttons' four-week read */
 var pick=null,notePick=null,quick={},quickSeq=0;
 var QUICK_MAX=8;
+/* Slice 3: copy last week. loadedKey = the week whose load succeeded (null while loading or after a failure). */
+var loadedKey=null,copyPick=null;
 var QUICK_DEFAULT={
   day:['9am-3pm','10am-5pm','10am-3pm','10am-4pm','9am-2pm','9:30am-3pm','9:30am-2pm'],
   night:['4pm-CL','6pm-CL','5pm-CL','10am-4pm','4:30pm-CL','4pm-10']
@@ -177,7 +198,7 @@ var DAY_SHORT=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 var MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
 /* api() with a timeout, from tempest_inventory.html: one callback, status 0
-   on no answer. This slice only ever sends GET. */
+   on no answer. Writes are manager-only upserts (box, day note, copy last week). */
 function api(m,t,q,d,cb,ms,pf){var x=new XMLHttpRequest(),fired=false;function fire(r,s){if(fired)return;fired=true;if(cb)cb(r,s);}
   x.open(m,SB+'/rest/v1/'+t+(q?'?'+q:''));x.timeout=ms||(m==='GET'?LOAD_TIMEOUT:API_TIMEOUT);x.setRequestHeader('apikey',SK);x.setRequestHeader('Authorization','Bearer '+SK);if(d){x.setRequestHeader('Content-Type','application/json');x.setRequestHeader('Prefer',pf||'return=representation');}
   x.onload=function(){var r=null;try{r=JSON.parse(x.responseText);}catch(e){}fire(r,x.status);};x.onerror=function(){fire(null,0);};x.ontimeout=function(){fire(null,0);};x.send(d?JSON.stringify(d):null);}
@@ -243,11 +264,13 @@ function setView(v){if(v===view)return;view=v;saveView(v);paintChrome();render()
 function loadWeek(opt){
   opt=opt||{};
   var seq=++loadSeq,ds=weekDates(),first=keyOf(ds[0]),last=keyOf(ds[6]);
-  if(!opt.quiet){document.getElementById('appBody').innerHTML='<div class="loading"><div class="spinner"></div><p>Loading the schedule…</p></div>';document.getElementById('updatedLine').textContent='';}
+  if(!opt.quiet){document.getElementById('appBody').innerHTML='<div class="loading"><div class="spinner"></div><p>Loading the schedule…</p></div>';document.getElementById('updatedLine').textContent='';
+    loadedKey=null;hideMgrBar();}
   var failed=false;
   function fail(){if(failed||seq!==loadSeq)return;failed=true;
     document.getElementById('appBody').innerHTML='<div class="sched-err">Couldn’t load the schedule. Check the wifi.<br><button type="button" onclick="loadWeek()">Try again</button></div>';
-    document.getElementById('updatedLine').textContent='';}
+    document.getElementById('updatedLine').textContent='';
+    loadedKey=null;hideMgrBar();}
   api('GET','schedule_people','select=id,name,crew,sort_order,active&location=eq.Tempest&order=crew.asc,sort_order.asc,id.asc',null,function(pr,s){
     if(seq!==loadSeq)return;
     if(!Array.isArray(pr)){fail();return;}
@@ -259,6 +282,7 @@ function loadWeek(opt){
       got.shifts.forEach(function(r){shifts[r.person_id+'|'+r.work_date]=r;bump(r.updated_at);});
       got.notes.forEach(function(r){dayNotes[r.note_date]=r.note||'';bump(r.updated_at);});
       standing=got.standing;
+      loadedKey=first;
       render();
     }
     function take(name){return function(r){if(seq!==loadSeq)return;if(!Array.isArray(r)){fail();return;}got[name]=r;done();};}
@@ -298,6 +322,7 @@ function render(){
   else body.innerHTML=view==='week'?renderWeek(day,night):renderDay(day,night);
   document.getElementById('updatedLine').textContent=updatedMax?fmtUpdated(updatedMax):'';
   paintCount();
+  paintCopyBtn();
   if(mgr)ensureQuick();
 }
 
@@ -528,7 +553,8 @@ function paintNote(){
 function addWord(el){
   if(!notePick||notePick.saving)return;
   var inp=document.getElementById('noteInput'),v=inp.value.trim();
-  inp.value=(v?v+' ':'')+el.textContent;inp.focus();
+  inp.value=(v?v+' ':'')+el.textContent+' ';inp.focus();
+  var len=inp.value.length;inp.setSelectionRange(len,len);
 }
 function closeNote(){if(notePick&&notePick.saving)return;notePick=null;document.getElementById('noteModal').classList.remove('show');}
 function saveNote(){
@@ -556,6 +582,114 @@ function writeNote(t){
   },null,'resolution=merge-duplicates,return=representation');
 }
 
+/* ── MANAGER: COPY LAST WEEK (Slice 3) ──────────────────────────────────
+   An empty week (no box with a kind, anyone's, retired included), this
+   week or later, fills from the week before: shifts and OFF for active
+   people. REQUEST, Training and day notes are not copied. Look, then Copy;
+   Copy reads again first, so a started week is never copied over. */
+function hideMgrBar(){
+  var c=document.getElementById('mgrCount');c.style.display='none';c.textContent='';
+  var w=document.getElementById('copyWrap');w.style.display='none';w.innerHTML='';
+}
+function shortWeek(s){return weekLabel(s).replace(/, \d{4}$/,'');}
+function canCopy(){
+  if(!mgr||!people.length||loadedKey!==keyOf(weekStart))return false;
+  if(keyOf(weekStart)<keyOf(sundayOf(new Date())))return false;
+  var ks=weekDates().map(keyOf);
+  for(var k in shifts){var r=shifts[k];if(r&&r.kind&&ks.indexOf(r.work_date)>=0)return false;}
+  return true;
+}
+function paintCopyBtn(){
+  var w=document.getElementById('copyWrap');
+  if(!canCopy()){w.style.display='none';w.innerHTML='';return;}
+  w.innerHTML='<button type="button" class="sched-copybtn" id="copyBtn" onclick="openCopy()">Copy last week ('+esc(shortWeek(addDays(weekStart,-7)))+')</button>';
+  w.style.display='';
+}
+/* One GET for last week and this one; every person, retired too. cb(result, status): null on failure. */
+function readTwo(start,cb){
+  var ids=people.map(function(p){return p.id;});
+  var last=[],cur=[];
+  for(var i=0;i<7;i++){last.push(keyOf(addDays(start,i-7)));cur.push(keyOf(addDays(start,i)));}
+  api('GET','schedule_shifts','select=person_id,work_date,kind,shift_text,training&person_id=in.('+ids.join(',')+')&work_date=gte.'+last[0]+'&work_date=lte.'+cur[6],null,function(r,s){
+    if(!Array.isArray(r)){cb(null,s);return;}
+    var started=r.some(function(x){return x.kind&&cur.indexOf(x.work_date)>=0;});
+    var rows=[];
+    r.forEach(function(x){
+      var i=last.indexOf(x.work_date),p=personById(x.person_id);
+      if(i<0||!p||!p.active)return;
+      if(x.kind==='shift')rows.push({person_id:x.person_id,work_date:cur[i],kind:'shift',shift_text:x.shift_text,training:false});
+      else if(x.kind==='off')rows.push({person_id:x.person_id,work_date:cur[i],kind:'off',shift_text:null,training:false});
+    });
+    cb({started:started,rows:rows},s);
+  },API_TIMEOUT);
+}
+function copyCounts(rows){
+  var sh=0,off=0;rows.forEach(function(r){if(r.kind==='shift')sh++;else off++;});
+  var a=[];if(sh)a.push(sh+' shift'+(sh===1?'':'s'));if(off)a.push(off+' OFF');
+  return a.join(' and ');
+}
+function openCopy(){
+  if(!canCopy()||copyPick)return;
+  var C={start:weekStart,wk:keyOf(weekStart),state:'checking',rows:null,busy:true,copying:false};
+  copyPick=C;showErr('copyErr','');paintCopy();
+  document.getElementById('copyModal').classList.add('show');
+  readTwo(C.start,function(res){
+    if(copyPick!==C)return;
+    C.busy=false;
+    if(!res)C.state='readfail';
+    else takeRead(C,res);
+    paintCopy();
+  });
+}
+function takeRead(C,res){
+  if(res.started){C.state='started';C.rows=null;loadWeek({quiet:true});}
+  else if(!res.rows.length){C.state='none';C.rows=null;}
+  else{C.state='ready';C.rows=res.rows;}
+}
+function paintCopy(){
+  var C=copyPick;if(!C)return;
+  var thisW=shortWeek(C.start),lastW=shortWeek(addDays(C.start,-7));
+  var info='',sub='';
+  if(C.copying)info='Copying…';
+  else if(C.state==='checking')info='Checking last week…';
+  else if(C.state==='ready'){info='Fill <b>'+esc(thisW)+'</b> with <b>'+esc(lastW)+'</b>: '+copyCounts(C.rows)+'.';sub='REQUEST boxes stay empty. Training and games &amp; events are not copied.';}
+  else if(C.state==='none')info='Nothing to copy: '+esc(lastW)+' has no shifts or OFF.';
+  else if(C.state==='started')info='This week isn’t empty any more, so it can’t be copied over.';
+  else if(C.state==='readfail')info='Couldn’t check last week. Check the wifi.';
+  document.getElementById('copyInfo').innerHTML=info;
+  document.getElementById('copySub').innerHTML=sub;
+  document.getElementById('copyGo').disabled=C.busy||C.state==='checking'||C.state==='none'||C.state==='started';
+  document.getElementById('copyCancel').disabled=C.copying;
+}
+function closeCopy(){if(copyPick&&copyPick.copying)return;copyPick=null;document.getElementById('copyModal').classList.remove('show');}
+function copyFailed(C,s){
+  C.busy=false;C.copying=false;
+  showErr('copyErr',s===0?'No answer. Check the wifi and try again.':'Not copied (error '+s+'). Try again.');
+  paintCopy();
+}
+function doCopy(){
+  var C=copyPick;
+  if(!C||C.busy||C.state==='checking'||C.state==='none'||C.state==='started')return;
+  C.busy=true;C.copying=true;showErr('copyErr','');paintCopy();
+  /* read again: the box may have been open for minutes */
+  readTwo(C.start,function(res,s){
+    if(copyPick!==C)return;
+    if(!res){copyFailed(C,s);return;}
+    takeRead(C,res);
+    if(C.state!=='ready'){C.busy=false;C.copying=false;paintCopy();return;}
+    api('POST','schedule_shifts','on_conflict=person_id,work_date',C.rows,function(r,s2){
+      if(copyPick!==C)return;
+      if(!(s2>=200&&s2<300&&Array.isArray(r))){copyFailed(C,s2);return;}
+      C.busy=false;C.copying=false;
+      loadSeq++;   // a quiet reload in flight holds the empty week: drop it
+      if(keyOf(weekStart)===C.wk)r.forEach(function(row){shifts[row.person_id+'|'+row.work_date]=row;bump(row.updated_at);});
+      delete quick[C.wk];
+      copyPick=null;document.getElementById('copyModal').classList.remove('show');
+      render();showToast('Copied '+r.length+' box'+(r.length===1?'':'es'),'success');
+    },null,'resolution=merge-duplicates,return=representation');
+  });
+}
+
 function showToast(msg,type){
   var t=document.getElementById('toast');
   t.textContent=(type==='success'?'✓ ':'⚠ ')+msg;
@@ -572,7 +706,7 @@ document.addEventListener('visibilitychange',function(){
   loadWeek({quiet:true});
 });
 
-// ── MANAGER MODE ── (changes nothing visible in this slice)
+// ── MANAGER MODE ── (staff view only reads; the switch turns boxes and notes into buttons)
 function toggleMgr(){
   if(mgr){mgr=false;document.getElementById('mgrSwitch').classList.remove('on');render();return;}
   if(sessionStorage.getItem('boxkitchen_mgr')==='1'){mgr=true;document.getElementById('mgrSwitch').classList.add('on');render();return;}
@@ -600,6 +734,7 @@ function submitPin(){
 document.getElementById('pinModal').addEventListener('click',function(e){if(e.target===this)closePin();});
 document.getElementById('boxModal').addEventListener('click',function(e){if(e.target===this)closeBox();});
 document.getElementById('noteModal').addEventListener('click',function(e){if(e.target===this)closeNote();});
+document.getElementById('copyModal').addEventListener('click',function(e){if(e.target===this)closeCopy();});
 document.getElementById('boxOther').addEventListener('input',onOther);
 document.getElementById('boxOther').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();saveBox();}});
 document.getElementById('noteInput').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();saveNote();}});

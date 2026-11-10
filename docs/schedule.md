@@ -204,8 +204,8 @@ box in it, retired or not.
 
 Eight slices plus one for later, each small, ordered so nothing that writes ships before the
 thing that makes it safe. **The first week can be made on the site after Slice 2.** The
-spreadsheet can be retired when Slice 7 puts the tile on the home page; until then the page is
-live but unlinked, as Inventory's was.
+spreadsheet can be retired when Slice 3b puts the tile on the home page (moved up from Slice 7,
+2026-11-08); until then the page is live but unlinked, as Inventory's was.
 
 ### Slice 0 — The tables and the eleven *(no app code)* · **blocks everything**
 
@@ -364,6 +364,72 @@ Then a hand test on Stephen's iPhone, on the first real week.
 **Done when:** the harness proves an empty week fills correctly, a started week cannot be
 copied over, and a double tap cannot copy twice.
 
+**Decisions, 2026-11-08 (Stephen):**
+- The home tile goes live right after this slice, as **Slice 3b** (its own ticket and PR).
+- The quick-word space is fixed inside this slice, as its own step and commit.
+- Planner's calls, confirmed: **(1) look before it writes** — a confirm box names both weeks and
+  the counts, nothing is written until Copy: yes. **(2) this week or later only** — a past
+  empty week never offers the button: yes, *"for now that is fine"* (may be revisited).
+  **(3) people who have left are not copied**: yes ("that's a good call").
+- Copy can't help with Nov 15 – 21 (its week before lives in the sheet, and it's started);
+  Copy starts saving time with Nov 22 – 28.
+
+> **Slice 3 as built** (commits `d58aeb4`, `39745d6`):
+>
+> - **Quick-word space:** `addWord()` adds one space after the word and leaves the caret at the
+>   end; `tidyNote()` trims on Save. "49ers home" + typed `1:25` saves `49ers home 1:25`.
+> - **The button** (`#copyWrap` / `#copyBtn`, class `sched-copybtn`, ink border, ≥44px) sits under
+>   `#mgrCount`, built at render time, so staff HTML holds none. Shown only when: manager mode;
+>   `loadedKey === keyOf(weekStart)` (set when a load succeeds, cleared when a non-quiet load
+>   starts or any load fails — the count and button hide at those moments too); there are people;
+>   no row in the week has a `kind` (anyone's, retired included); the week is this week or later.
+>   Label `Copy last week (<last week, no year>)`.
+> - **The confirm box** (`#copyModal`, shared modal classes, info line `sched-copyinfo`, grey
+>   `sched-copysub`; `.modal-err` only for failures): Checking → ready ("Fill A with B: N shifts
+>   and M OFF.") / nothing to copy / started (quiet reload behind) / read failed (Copy stays on).
+>   Cancel and the backdrop close it except while copying; a late read after closing does nothing.
+> - **The read:** one GET of `schedule_shifts` for both weeks, every person, `ms=API_TIMEOUT`,
+>   filtered in JS. Days mapped by index (`addDays(weekStart,i-7)` → `addDays(weekStart,i)`).
+>   Shift → `{person_id, work_date, kind:'shift', shift_text, training:false}`; OFF → `shift_text
+>   null`; REQUEST, `kind` null and retired people → nothing. Five keys, never `updated_at`.
+> - **Copy:** reads again; started → no write, the started message, quiet reload; else one POST
+>   `on_conflict=person_id,work_date` with `resolution=merge-duplicates,return=representation`
+>   and the array. Success (2xx + array) → `loadSeq++`, returned rows into `shifts`, `bump()`,
+>   drop the quick cache, close, render, toast "✓ Copied N boxes" (N = rows returned). Failure →
+>   box stays open, "No answer…" / "Not copied (error N)…", page unchanged.
+> - **Slice 4 must hide** `#copyWrap` and `#copyModal` in print (manager-only elements).
+> - Fixed two stale comments (`api()`, MANAGER MODE).
+>
+> **`scripts/check_schedule.py`:** 215 assertions over 8 scenarios. The stub upserts array bodies
+> row by row and has a new `'lost'` write fate (written, then `onerror`); `releaseLast()` lets the
+> POST land before a held stale reload. New `copy` scenario (Tue Nov 17 clock; fixtures: a retired
+> shift 11/16, a cleared Jose V. 11/24, a retired-only box 12/8) covers where the button shows,
+> the preview counts, Cancel/backdrop, nothing-to-copy, both failures + identical retry, the lost
+> answer (still one POST), started-at-write-time, double tap (one POST, buttons and backdrop
+> locked), the exact payload as a set, the after-state (count 31, one row per box, escaped,
+> no notes, retired absent), the quiet-reload race, month end (rows on 11/29 and 12/1) and
+> Manager off. New `dst` scenario (Sun Nov 1 clock): Oct 25 – 31 → 11/2, 11/3, 11/4 exactly.
+> `ok` asserts staff mode has no button on an empty future week. **Proved able to fail:**
+> skipping the second read fails the started and lost checks; letting REQUEST through fails the
+> preview, payload and toast checks. `check_styling.py` clean.
+>
+> **Shipped 2026-11-08** as PR #183 (squash `c437e03`). **Hand test part A, same day, Stephen's
+> iPhone, live page, no Copy tapped:** Nov 8 – 14 offered "Copy last week (Nov 1 – 7)" →
+> "Nothing to copy", Copy greyed; no button on Nov 1 – 7 (past) or Nov 15 – 21 (started); Nov
+> 22 – 28 offered "Copy last week (Nov 15 – 21)" with the preview "2 shifts and 2 OFF" (matches
+> the live rows: Ismael, Gilberto C. shifts; Jose V., Rubidia OFF; Eddy V.'s REQUEST and the
+> cleared Jose V. box left out); button in Week view too; gone with Manager off. Quick-word fix:
+> the real 11/15 note (49ers home game) retyped with the button and no space bar → `49ers home
+> 1:25`, still right after closing Safari. **Verified read-only:** the 11/15 note is `49ers home
+> 1:25` in one row; no `schedule_shifts` rows dated Nov 1 – 14 or Nov 22 – 28; Nov 15 – 21
+> still 6 rows. **Part B** (the first real copy, Nov 22 – 28) is recorded when it happens.
+
+### Slice 3b — The tile *(shared files; its own ticket and PR)*
+
+Moved up from Slice 7 on 2026-11-08 so staff can find the page and the sheet can retire.
+`index.html`: the Schedule tile, unlocked. Bring the branch up to date with `main` first. See
+`~/Developer/SCHEDULE-SLICE-3B-TICKET.md`.
+
 ### Slice 4 — The paper copy
 
 Printing the page gives the week for the wall: **one landscape page**, both crews, English and
@@ -392,15 +458,13 @@ each. Back returns to where you were.
 
 **Done when:** it works from both views and from a month-end week, and writes nothing.
 
-### Slice 7 — Ship it into the site *(shared files, last)*
+### Slice 7 — Finish in the shared files *(last)*
 
-- **Bring the branch up to date with `main` first**: the Kits and Menu Builder windows add home
-  tiles too.
-- `index.html`: the Schedule tile, unlocked, because staff read it.
-- `CLAUDE.md`: the page count wherever it is stated. `BUILD_PLAN.md`: a line for this build.
-- `assets/kitchen.css`: add *schedule* to the `used by:` banner of each shared section the page
-  uses. No rule changes.
-- `python3 scripts/check_styling.py` runs clean.
+The tile moved to Slice 3b. What's left (unless 3b's ticket already did it):
+- **Bring the branch up to date with `main` first.**
+- `BUILD_PLAN.md`: a line for this build.
+- The final shared-file check: `CLAUDE.md` page count, `assets/kitchen.css` `used by:` banners
+  (no rule changes), and `python3 scripts/check_styling.py` clean.
 
 ### Later — the home page's Today board *(its own step, after this ships)*
 
@@ -448,7 +512,7 @@ From `CLAUDE.md`, `docs/review-checklist.md`, and Stephen's rules for this windo
 | Anyone with the page's code could write to the tables | The database key is public; the PIN only hides the buttons | The same as every table on the site today. No delete policy; the database enforces the box's shape; every box keeps its last-saved time |
 | A phone shows an old week | A cook comes in on a shift that was changed | Refresh on coming back to the front; "Updated …" on every week |
 | Blank read as OFF | Someone thinks they are off when the week isn't finished | Blank is stored as *empty*, not OFF; manager mode counts empty boxes |
-| Copy last week overwrites real work | A manager's week is lost | Offered only on an empty week |
+| Copy last week overwrites real work | A manager's week is lost | Offered only on an empty week, this week or later; Copy reads the week again right before writing and refuses if any box is filled. **Accepted (2026-11-08):** in the moment between that read and the write landing (under a second on wifi), a box another manager saves in the same week could be overwritten. `ignore-duplicates` would close it but skip a cleared box, so the screen would disagree with the preview — not re-opened |
 | Eight columns on a phone | Unreadable grid | Day view first; the grid scrolls with names pinned |
 | Names on a public page | Staff names are readable by anyone | Names only, as the sheet writes them; nothing else about a person is stored |
 | Other windows change `index.html` | Conflicting tiles | Tile last; update from `main` first |
