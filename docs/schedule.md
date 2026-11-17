@@ -430,6 +430,18 @@ Moved up from Slice 7 on 2026-11-08 so staff can find the page and the sheet can
 `index.html`: the Schedule tile, unlocked. Bring the branch up to date with `main` first. See
 `~/Developer/SCHEDULE-SLICE-3B-TICKET.md`.
 
+> **Slice 3b decisions (2026-11-16, Stephen).** (1) Tile in **Communication**, full width under
+> Kitchen Notes; title **Schedule**, subtitle **Who works when: day & night crew**; unlocked, no
+> status line. (2) Merge once the current week (Nov 15 – 21) reads "Every box filled" on the
+> manager line.
+
+> **Slice 3b as built (2026-11-16).** `index.html`: one `tile wide` link to
+> `tempest_schedule.html` under Kitchen Notes in Communication, no `.lock`, no `.tile-status`.
+> `assets/kitchen.css`: `schedule` added to four `used by:` banners (BUTTONS, DATE / NAME /
+> INTRO BARS, COUNT ROWS, DATE STEPPER), comments only, no `?v=` bump; the planner's reading
+> checked against every class in the page and matched. `CLAUDE.md` left alone: still 15 pages
+> at the repo root, so "fifteen" is true. Hand test recorded here after the merge.
+
 ### Slice 4 — The paper copy
 
 Printing the page gives the week for the wall: **one landscape page**, both crews, English and
