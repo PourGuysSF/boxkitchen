@@ -305,43 +305,59 @@ RESULT_RE = re.compile(r'<div id="harnessResults">(.*?)</div>', re.S)
 
 
 def run(chrome, js_src, scan=None):
-    with tempfile.TemporaryDirectory() as td:
-        open(os.path.join(td, "recipe-math.js"), "w", encoding="utf-8").write(js_src)
-        page = (HTML.replace("__SPELLINGS__", json.dumps(SPELLINGS))
-                    .replace("__UNITS__", json.dumps(UNITS))
-                    .replace("__LINES__", json.dumps(LINES))
-                    .replace("__CONV__", json.dumps(CONVERSIONS))
-                    .replace("__LC__", json.dumps(LINE_COSTS))
-                    .replace("__SCAN__", json.dumps(scan)))
-        path = os.path.join(td, "t.html")
-        open(path, "w", encoding="utf-8").write(page)
-        dom = os.path.join(td, "dom.html")
-        with open(dom, "w") as fo, open(os.devnull, "w") as fe:
-            proc = subprocess.Popen(
-                [chrome, "--headless=new", "--disable-gpu", "--no-sandbox",
-                 "--no-first-run", "--disable-extensions",
-                 "--disable-background-networking", "--disable-component-update",
-                 "--disable-default-apps", "--disable-sync",
-                 "--user-data-dir=" + os.path.join(td, "cd"),
-                 "--virtual-time-budget=4000", "--dump-dom", "file://" + path],
-                stdout=fo, stderr=fe)
-            deadline, m = time.time() + 120, None
+    # The temp folder is removed by hand, ignoring errors: Chrome's helper
+    # processes can outlive the one we waited for and still be writing its
+    # profile, and TemporaryDirectory's cleanup then crashed with "Directory
+    # not empty: 'Default'" after every assertion had passed (PR #187 CI).
+    # check_styling.py hit and fixed the same race. (ignore_cleanup_errors
+    # needs Python 3.10; macOS ships 3.9.)
+    td = tempfile.mkdtemp()
+    try:
+        return _run_in(td, chrome, js_src, scan)
+    finally:
+        shutil.rmtree(td, ignore_errors=True)
+
+
+def _run_in(td, chrome, js_src, scan):
+    open(os.path.join(td, "recipe-math.js"), "w", encoding="utf-8").write(js_src)
+    page = (HTML.replace("__SPELLINGS__", json.dumps(SPELLINGS))
+                .replace("__UNITS__", json.dumps(UNITS))
+                .replace("__LINES__", json.dumps(LINES))
+                .replace("__CONV__", json.dumps(CONVERSIONS))
+                .replace("__LC__", json.dumps(LINE_COSTS))
+                .replace("__SCAN__", json.dumps(scan)))
+    path = os.path.join(td, "t.html")
+    open(path, "w", encoding="utf-8").write(page)
+    dom = os.path.join(td, "dom.html")
+    with open(dom, "w") as fo, open(os.devnull, "w") as fe:
+        proc = subprocess.Popen(
+            [chrome, "--headless=new", "--disable-gpu", "--no-sandbox",
+             "--no-first-run", "--disable-extensions",
+             "--disable-background-networking", "--disable-component-update",
+             "--disable-default-apps", "--disable-sync",
+             "--user-data-dir=" + os.path.join(td, "cd"),
+             "--virtual-time-budget=4000", "--dump-dom", "file://" + path],
+            stdout=fo, stderr=fe)
+        deadline, m = time.time() + 120, None
+        try:
+            while time.time() < deadline:
+                m = RESULT_RE.search(open(dom, encoding="utf-8", errors="replace").read())
+                if (m and m.group(1)) or proc.poll() is not None:
+                    break
+                time.sleep(0.25)
+        finally:
+            if proc.poll() is None:
+                proc.kill()
             try:
-                while time.time() < deadline:
-                    m = RESULT_RE.search(open(dom, encoding="utf-8", errors="replace").read())
-                    if (m and m.group(1)) or proc.poll() is not None:
-                        break
-                    time.sleep(0.25)
-            finally:
-                if proc.poll() is None:
-                    proc.kill()
-                proc.wait()
-            m = RESULT_RE.search(open(dom, encoding="utf-8", errors="replace").read())
-        if not m or not m.group(1):
-            return None
-        body = (m.group(1).replace("&amp;", "&").replace("&lt;", "<")
-                .replace("&gt;", ">").replace("&quot;", '"'))
-        return json.loads(body)
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                pass
+        m = RESULT_RE.search(open(dom, encoding="utf-8", errors="replace").read())
+    if not m or not m.group(1):
+        return None
+    body = (m.group(1).replace("&amp;", "&").replace("&lt;", "<")
+            .replace("&gt;", ">").replace("&quot;", '"'))
+    return json.loads(body)
 
 
 def check_versions():
