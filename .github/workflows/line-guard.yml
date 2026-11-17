@@ -1,0 +1,25 @@
+# The Tempest Line page is live in every service, and its promise that opening
+# it only ever reads cannot be tested against the live database. check_line.py
+# drives the real page in headless Chrome against a stubbed XMLHttpRequest, so
+# it can run here. (docs/kits-line-link.md)
+name: line guard
+
+on:
+  pull_request:
+    paths: ['tempest_line.html', 'assets/**', 'vendor/**', 'scripts/check_line.py']
+  push:
+    branches: [main]
+    paths: ['tempest_line.html', 'assets/**', 'vendor/**', 'scripts/check_line.py']
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: browser-actions/setup-chrome@v1
+        id: chrome
+        with:
+          chrome-version: stable
+      - run: python3 scripts/check_line.py
+        env:
+          CHROME: ${{ steps.chrome.outputs.chrome-path }}

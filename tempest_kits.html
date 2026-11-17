@@ -110,7 +110,8 @@
 var SB='https://sxppuyarecqkgkrsrefc.supabase.co',SK='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN4cHB1eWFyZWNxa2drcnNyZWZjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczOTA4MzAsImV4cCI6MjA5Mjk2NjgzMH0.GM8OfcR68_JjdPeQ3k7j6L3ulJFaeS1xnSLBcdtYXtU';
 var LOCATION='Tempest';
 
-/* The kits (docs/kits.md, "The 8 kits"), in Line PM order. A kit only says
+/* The kits (docs/kits.md, "The 8 kits"), in Line PM order (matched to
+   Line PM's live sort order on 2026-11-08: Mac & cheese first). A kit only says
    WHICH container each ingredient goes in, by keyword. Amounts always come
    from the recipe. keep: how it is kept. side: true = next to the pan,
    labelled. group: the kit's own sub-heading (Mac & Cheese). out: lines
@@ -118,6 +119,21 @@ var LOCATION='Tempest';
    is listed twice: each keyword picks up exactly one line. */
 var OWN='own container',TOG='together';
 var KITS=[
+  {slug:'mac-and-cheese',name:'Mac & cheese',recipeId:46,
+   boxes:[
+     {group:'Cheese base',name:'Half & half',keep:'labelled “cheese base”',kw:['half & half']},
+     {group:'Cheese base',name:'Cheeses',keep:TOG,kw:['velveeta','mixed cheese']},
+     {group:'Cheese base',name:'Seasoning',keep:TOG,kw:['chipotle peppers','salt','chipotle chili powder','ancho']},
+     {group:'Roux base',name:'Butter',keep:OWN,kw:['butter']},
+     {group:'Roux base',name:'Onion',keep:OWN,kw:['white onion']},
+     {group:'Roux base',name:'Roasted garlic',keep:OWN,kw:['roasted garlic']},
+     {group:'Roux base',name:'Flour',keep:OWN,kw:['flour']},
+     {group:'Roux base',name:'Half & half',keep:'labelled “roux”',kw:['half & half']},
+     {group:'Noodles & assembly',name:'Macaroni',keep:OWN,kw:['macaroni']},
+     {group:'Noodles & assembly',name:'Salt for the water',keep:OWN,kw:['salt']},
+     {group:'Noodles & assembly',name:'Herbs',keep:TOG,kw:['chives','parsley']}
+   ],
+   out:[]},
   {slug:'buffalo-sauce',name:'Buffalo sauce',recipeId:5,
    boxes:[
      {name:'Butter',keep:'own container, melts first',kw:['butter']},
@@ -151,13 +167,6 @@ var KITS=[
      {name:'Horseradish',keep:OWN,kw:['horseradish']}
    ],
    out:[]},
-  {slug:'dumpling',name:'Dumpling',recipeId:14,
-   boxes:[
-     {name:'Dry mix',keep:TOG,kw:['baking powder','baking soda','salt','black pepper','flour']},
-     {name:'Butter',keep:OWN,kw:['butter']},
-     {name:'Buttermilk',keep:OWN,kw:['buttermilk']}
-   ],
-   out:[]},
   {slug:'chicken-dumpling-soup',name:'Chicken & dumpling soup',recipeId:19,
    boxes:[
      {name:'Olive oil',keep:OWN,kw:['olive oil']},
@@ -172,6 +181,13 @@ var KITS=[
      {kw:'salt',why:'to taste, at the stove'},
      {kw:'black pepper',why:'to taste, at the stove'}
    ]},
+  {slug:'dumpling',name:'Dumpling',recipeId:14,
+   boxes:[
+     {name:'Dry mix',keep:TOG,kw:['baking powder','baking soda','salt','black pepper','flour']},
+     {name:'Butter',keep:OWN,kw:['butter']},
+     {name:'Buttermilk',keep:OWN,kw:['buttermilk']}
+   ],
+   out:[]},
   {slug:'spicy-green-sauce',name:'Spicy green sauce',recipeId:25,
    boxes:[
      {name:'Spices',keep:'measure together',kw:['coriander','cumin','salt']},
@@ -187,22 +203,7 @@ var KITS=[
      {name:'Pickling spices',keep:TOG,kw:['sugar','salt','coriander']},
      {name:'Cider vinegar',keep:OWN,kw:['cider vinegar']}
    ],
-   out:[{kw:'water',why:'from the tap'}]},
-  {slug:'mac-and-cheese',name:'Mac & cheese',recipeId:46,
-   boxes:[
-     {group:'Cheese base',name:'Half & half',keep:'labelled “cheese base”',kw:['half & half']},
-     {group:'Cheese base',name:'Cheeses',keep:TOG,kw:['velveeta','mixed cheese']},
-     {group:'Cheese base',name:'Seasoning',keep:TOG,kw:['chipotle peppers','salt','chipotle chili powder','ancho']},
-     {group:'Roux base',name:'Butter',keep:OWN,kw:['butter']},
-     {group:'Roux base',name:'Onion',keep:OWN,kw:['white onion']},
-     {group:'Roux base',name:'Roasted garlic',keep:OWN,kw:['roasted garlic']},
-     {group:'Roux base',name:'Flour',keep:OWN,kw:['flour']},
-     {group:'Roux base',name:'Half & half',keep:'labelled “roux”',kw:['half & half']},
-     {group:'Noodles & assembly',name:'Macaroni',keep:OWN,kw:['macaroni']},
-     {group:'Noodles & assembly',name:'Salt for the water',keep:OWN,kw:['salt']},
-     {group:'Noodles & assembly',name:'Herbs',keep:TOG,kw:['chives','parsley']}
-   ],
-   out:[]}
+   out:[{kw:'water',why:'from the tap'}]}
 ];
 
 /* this page only reads: api() knows GET and nothing else */
@@ -262,8 +263,12 @@ function printedLine(){
   var d=new Date(),M=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   return '<div class="kit-printed">Printed '+M[d.getMonth()]+' '+d.getDate()+', '+d.getFullYear()+' · from the Recipe Database</div>';
 }
+/* opened from the Line PM list (?from=line): Back returns to the PM list there */
+var FROM_LINE=/(^|[?&])from=line(&|$)/.test(location.search.slice(1));
 function drawKit(kit, recipe){
-  document.getElementById('appBody').innerHTML='<div class="kit-wrap"><a class="kit-back" href="#" id="backLink">← All kits</a>'
+  var back=FROM_LINE?'<a class="kit-back" href="tempest_line.html#pm" id="backLink">← Line PM</a>'
+                    :'<a class="kit-back" href="#" id="backLink">← All kits</a>';
+  document.getElementById('appBody').innerHTML='<div class="kit-wrap">'+back
     +'<button type="button" class="link-btn kit-print-btn" id="printBtn" onclick="window.print()">Print this kit</button>'
     +kitHtml(kit, recipe, true)+'</div>';
 }
@@ -308,7 +313,7 @@ function drawOut(s){
   return h;
 }
 
-/* the list: every kit in Line PM order, with the containers it really has */
+/* the list: every kit in Line PM order (as of 2026-11-08), with the containers it really has */
 function drawList(){
   var h='<div class="kit-wrap"><div class="kit-list-head"><div class="kit-title">Kits</div><div class="kit-from">Built on the PM shift, cooked the next morning</div>'
     +'<button type="button" class="link-btn kit-print-btn" id="printBtn" onclick="window.print()">Print all 8 kits</button></div><div class="kit-list" id="kitList">';
