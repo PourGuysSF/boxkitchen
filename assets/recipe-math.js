@@ -10,7 +10,7 @@
  * function is handed its data and returns values. Results are UNROUNDED;
  * rounding happens only on screen.
  *
- * Slice 2: the units and the amount reader.
+ * Slice 2: the units and the amount reader. Slice 3: lineCost().
  */
 var RecipeMath = (function () {
   'use strict';
@@ -181,7 +181,64 @@ var RecipeMath = (function () {
     return { amount: amount, unit: unit, kind: UNIT_TABLE[unit].kind, words: rest, unitWord: unitWord };
   }
 
+  // ---- lineCost(): one line's cost, from values only (Slice 3). ------------
+  // The Menu Builder math contract, part 2: looks nothing up, touches no table.
+  //
+  //   lineCost(qty, unit, price, conversion)
+  //     qty, unit   the line's amount and unit (any spelling)
+  //     price       { pack_qty, pack_unit, pack_price, guess }  — guess: true for a
+  //                 guessed price (Menu Builder); null/absent = no price
+  //     conversion  { from_kind, from_qty, from_unit, to_qty, to_unit, estimate }
+  //                 — "from_qty from_unit = to_qty to_unit as bought", as the
+  //                 ingredient_conversions / recipe_conversions rows; optional
+  //
+  //   -> { cost, reason, soft, was, now }
+  //     cost    unrounded number, or null — never 0 for a line that is not costed
+  //     reason  null | 'no amount' | 'no price yet' | 'needs a conversion'
+  //             | 'conversion no longer matches'
+  //     soft    the soft inputs actually used: 'guessed price', 'estimated conversion'
+  //     was/now on 'conversion no longer matches': the conversion's unit and the
+  //             price's pack unit ("was lb, now case")
+  function measureOf(u) {          // the from_kind a line's unit needs a conversion for
+    var n = normaliseUnit(u);
+    if (!n) return null;
+    var t = UNIT_TABLE[n];
+    if (t.kind !== 'count') return t.kind;
+    return t.own ? n : 'each';
+  }
+  function lineCost(qty, unit, price, conversion) {
+    var out = { cost: null, reason: null, soft: [], was: null, now: null };
+    if (typeof qty !== 'number' || !isFinite(qty) || qty <= 0 || !normaliseUnit(unit)) {
+      out.reason = 'no amount'; return out;
+    }
+    if (!price || typeof price.pack_price !== 'number' || !isFinite(price.pack_price) || price.pack_price < 0 ||
+        typeof price.pack_qty !== 'number' || !isFinite(price.pack_qty) || price.pack_qty <= 0 ||
+        !normaliseUnit(price.pack_unit)) {
+      out.reason = 'no price yet'; return out;
+    }
+    var inPack = convert(qty, unit, price.pack_unit);
+    if (inPack === null) {
+      var c = conversion;
+      if (!c || c.from_kind !== measureOf(unit)) { out.reason = 'needs a conversion'; return out; }
+      var inFrom = convert(qty, unit, c.from_unit);
+      if (inFrom === null || !(c.from_qty > 0) || !(c.to_qty > 0)) { out.reason = 'needs a conversion'; return out; }
+      var perPack = convert(1, c.to_unit, price.pack_unit);
+      if (perPack === null) {
+        out.reason = 'conversion no longer matches';
+        out.was = normaliseUnit(c.to_unit) || String(c.to_unit);
+        out.now = normaliseUnit(price.pack_unit);
+        return out;
+      }
+      inPack = inFrom / c.from_qty * c.to_qty * perPack;
+      if (c.estimate) out.soft.push('estimated conversion');
+    }
+    if (price.guess) out.soft.push('guessed price');
+    out.cost = inPack / price.pack_qty * price.pack_price;
+    return out;
+  }
+
   return {
+    lineCost: lineCost,
     normaliseUnit: normaliseUnit,
     unitKind: unitKind,
     convert: convert,
