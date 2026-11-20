@@ -3,7 +3,7 @@
 Status: **plan v1, 2026-11-20; Slice 1 built (see the end).** Written in the Last Done planner window from Stephen's requests
 and answers on 2026-11-20. Every decision in the Decisions table is Stephen's; everything under
 "Planner rulings" is the planner's, with the reason. It goes into the repo as `docs/last-done.md`
-with Slice 1's PR. Nothing is built yet.
+with Slice 1's PR. Slice 1 is built: see "Slice 1 as built" at the end.
 
 It is part of BUILD_PLAN **B1, Prep shift hand-off + history** (`~/Developer/PROJECT-LIST.md`
 item 3, "WANTED SOONER"). B2, the nightly prep email (item 2), comes later and is not in this plan.
