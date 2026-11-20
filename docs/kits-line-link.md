@@ -4,8 +4,9 @@ Status: **plan v1, approved by Stephen 2026-11-08.** Written in the Kits planner
 Stephen's answers on 2026-11-08. Every decision below is Stephen's. It goes into the repo as
 `docs/kits-line-link.md` with Slice 1's PR.
 
-**Slice 1 BUILT 2026-11-16 on `kits-line1`, not pushed** (b3e2bc3, 45b02f3). Slice 2 not
-started. See "Slice 1 as built" below.
+**Slice 1 LIVE** (#188, 2026-11-16); Stephen's phone check passed 2026-11-19.
+**Slice 2 BUILT 2026-11-19 on `kits-line2`, not pushed.** See "Slice 1 as built" and
+"Slice 2 as built" below.
 
 It is the step `docs/kits.md` names first under "Later": tapping a kit item on Line PM opens
 that kit's sheet, "so they make sure everything needed has been kitted". Kits itself (B5) is
@@ -32,25 +33,35 @@ opens that kit's sheet, and a way back to the list.
 | Getting back | **"← Line PM"** at the top of the sheet when it was opened from Line PM, and it returns to the **PM** list. Opened from the Kits tile, it still says "← All kits". The phone's back swipe works either way. |
 | Kit order | **The Kits page follows Line PM's current order**: Mac & cheese, Buffalo sauce, Pork belly, Gastrique, Chicken & dumpling soup, Dumpling, Spicy green sauce, Pickled onions & peppers. This applies to the list and to "Print all 8 kits". It's a one-time reorder, and it won't follow later moves automatically. |
 
+**Stephen, 2026-11-16** (after the November menu change; these win where they differ above):
+
+| question | decided |
+|---|---|
+| Are all 8 kit sheets still in use? | **No. Spicy green sauce is off the menu.** Row 673 stays on Line PM but gets **no button**: **7 buttons**, not 8. The Kits page and its Spicy green sauce sheet stay as they are for now. |
+| Sheets for Suadero and Chilorio? | **Yes, as their own small ticket after Slice 2** (see "Later"). That ticket adds both sheets, removes Spicy green sauce, and maps 675 and 676. |
+| Where the button sits | **On its own line under the item name**, not next to the pill: next to the pill it was cut off to "…" at phone width. Kit rows get a little taller. |
+
 ---
 
-## Ground truth — read-only, 2026-11-08
+## Ground truth — read-only, 2026-11-16
 
 **The kit items** (`prep_items`, `station='kits'`, `team=line`, `shift=PM`,
-`category=daily`). There are 11 rows, read with one GET:
+`category=daily`). There are 11 rows, read with one GET on 2026-11-16. **Since 2026-11-08** the
+November menu change renamed placeholders 675 (→ Suadero) and 676 (→ Chilorio), and Spicy
+green sauce came off the menu:
 
-| id | name on Line PM | sort | opens |
+| id | name on Line PM | sort | gets |
 |---|---|---|---|
-| 668 | Kit - Mac and Cheese | 10 | `#mac-and-cheese` |
-| 669 | Kit - Buffalo sauce | 20 | `#buffalo-sauce` |
-| 670 | Kit - Pork belly | 30 | `#pork-belly` |
-| 671 | Kit - Gastrique | 40 | `#gastrique` |
-| 672 | Kit - Chicken & Dumpling soup | 50 | `#chicken-dumpling-soup` |
-| 678 | Kit - Dumpling | 60 | `#dumpling` |
-| 673 | Kit - Spicy green sauce | 70 | `#spicy-green-sauce` |
-| 674 | Kit - Pickle onions& peppers | 80 | `#pickled-onions-peppers` |
-| 675 | Kit - New prep soon | 90 | no button (placeholder) |
-| 676 | Kit- New prep coming soon | 100 | no button (placeholder) |
+| 668 | Kit - Mac and Cheese | 10 | button → `#mac-and-cheese` |
+| 669 | Kit - Buffalo sauce | 20 | button → `#buffalo-sauce` |
+| 670 | Kit - Pork belly | 30 | button → `#pork-belly` |
+| 671 | Kit - Gastrique | 40 | button → `#gastrique` |
+| 672 | Kit - Chicken & Dumpling soup | 50 | button → `#chicken-dumpling-soup` |
+| 678 | Kit - Dumpling | 60 | button → `#dumpling` |
+| 673 | Kit - Spicy green sauce | 70 | no button: off the menu |
+| 674 | Kit - Pickle onions& peppers | 80 | button → `#pickled-onions-peppers` |
+| 675 | Kit - Suadero | 90 | no button: no kit sheet yet |
+| 676 | Kit- Chilorio | 100 | no button: no kit sheet yet |
 | 677 | Kit- New prep coming soon | 110 | no button (placeholder) |
 
 Item names don't match the kit names ("Pickle onions& peppers", "Mac and Cheese"). That's why
@@ -77,10 +88,12 @@ address is the hash (`#pork-belly`), read by `route()`. Back is `#backLink`, "�
 
 ## The design
 
-**On Line PM**, each matched kit row gets one more element after the pill:
+**On Line PM**, each matched kit row gets one more element, **on its own line under the
+name** (inside `.task-info`, after the rename input; Stephen, 2026-11-16):
 
 ```
-[✓]  Kit - Pork belly   (KIT)  (SHEET →)
+[✓]  Kit - Pork belly   (KIT)
+     (SHEET →)
 ```
 
 - It's a link, `<a class="link-btn kit-sheet-link" href="tempest_kits.html?from=line#pork-belly">SHEET →</a>`,
@@ -93,8 +106,9 @@ address is the hash (`#pork-belly`), read by `route()`. Back is `#backLink`, "�
 - **The map** is a small table in the Line page, one entry per row id: the kit's address plus
   a word the name must still contain (ignoring case, punctuation and spacing):
   668 `mac` · 669 `buffalo` · 670 `pork belly` · 671 `gastrique` · 672 `soup` ·
-  678 `dumpling` **and not** `soup` · 673 `green` · 674 `pickle`. If the word is missing, or the
-  id isn't in the map, there's no button. Placeholders have no entry.
+  678 `dumpling` **and not** `soup` · 674 `pickle` — **7 entries**. If the word is missing, or
+  the id isn't in the map, there's no button. 673 (off the menu), 675/676 (no sheet yet) and
+  677 (placeholder) have no entry.
 
 **On the Kits page:**
 - `?from=line` in the address changes the top link to **"← Line PM"**, going to
@@ -184,6 +198,49 @@ Both: GETs only, no write headers or bodies, only the four tables it always read
   Line page → **PM SHIFT** → **SHEET →** on Pork belly → the sheet → **← Line PM** → back on the
   PM list. Then the same with the back swipe.
 
+### Slice 1 phone check (Stephen, 2026-11-19)
+
+Passed: the Kits list starts with Mac & cheese in the new order; Pork belly's top link says
+"← All kits" and returns to the list; opened with `?from=line` it says "← Line PM" and lands on
+the PM SHIFT list with Kits at the top; Tempest Line from the home page still opens on AM.
+
+### Slice 2 as built (2026-11-19, `kits-line2`, not pushed)
+
+**`tempest_line.html`** — `KIT_SHEETS`, the 7-entry map above (comment: matched to Line PM
+2026-11-16, pointing to `docs/kits.md` "Adding a kit"), and `kitSheetLink(it)`, which returns
+`<a class="link-btn kit-sheet-link" href="tempest_kits.html?from=line#<slug>">SHEET →</a>`
+only for a mapped kits row whose name passes the word check, with an `onclick` that only stops
+the tap travelling (no request). `bTask()` appends it to the line that closes the name column,
+after `#ni<id>`, so `saveN()`'s `previousElementSibling` is still the name; every other row's
+HTML is unchanged. One page-only rule: `.kit-sheet-link` 44px tall, `inline-flex`, small top
+margin. Print: `kitchen.css` already hides `.link-btn`. No class renamed, no `api()` touched.
+
+**Hand check** (local copy, real data, read-only, Stephen's Chrome): 7 buttons on PM, right
+addresses, none on 673/675/676/677; at 390px each 44px tall and inside its row; SHEET → on
+Pork belly → the sheet with "← Line PM" → back on PM; the browser's back button too; AM has
+none.
+
+**`scripts/check_line.py`** — fixtures re-read 2026-11-16. New scenarios: `pm` (exactly 7, in
+order, exact addresses, no target, none on 673/675/676/677 or the non-kit row, every
+`#ni<id>` still after its `.task-name`), `phone` (page pinned to 390px because headless Chrome
+won't open a window under 500; kitchen.css has no breakpoint between: each button ≥44px and
+wholly inside its row, not clipped), `renamed` (670 "Short rib", 678 "Chicken & Dumpling
+soup" lose theirs), `mgr` (manager mode via localStorage, never the PIN: SHEET tap sends
+nothing, opens no rename box, flips no pill, ticks no box; the pill still makes one refused
+POST to `prep_logs` with `mode:'make'`; the name still opens `#ni670`), `staff` (SHEET tap
+sends nothing). Load requests in every scenario: GETs only, the four tables.
+**154 assertions, 6 scenarios, clean.** The `mgr` scenario taps the pill before the name: with
+the rename box open, the pill's redraw blurs it and saves the name, which is how the page
+always behaved.
+
+**`check_kits.py`** clean (515 / 22); **`check_styling.py`** clean (15 pages, 102 inputs
+measured, 75 on the #135 register).
+
+**Fails when it should** (scratch copies, never the worktree) — all nine caught: a wrong
+slug; `?from=line` dropped; a button on 677; a button on 673; the name check removed; the
+button inside `.task-name` (phone check fails); the button between `.task-name` and its input
+(sibling check fails); an `api()` call in the `onclick`; a button on AM.
+
 ---
 
 ## Constraints
@@ -200,6 +257,8 @@ Both: GETs only, no write headers or bodies, only the four tables it always read
 
 ## Later — not this plan
 
+- **Kits menu update — the next ticket:** add Suadero and Chilorio sheets, remove Spicy green
+  sauce, and map 675/676.
 - **Ticks** on the sheet (decided against for now; needs a table).
 - **A kit-id column on `prep_items`**, so managers can link a new kit without a code change.
   Worth it once kits change often.
