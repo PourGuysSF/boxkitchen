@@ -451,7 +451,11 @@ Moved up from Slice 7 on 2026-11-08 so staff can find the page and the sheet can
 > `assets/kitchen.css`: `schedule` added to four `used by:` banners (BUTTONS, DATE / NAME /
 > INTRO BARS, COUNT ROWS, DATE STEPPER), comments only, no `?v=` bump; the planner's reading
 > checked against every class in the page and matched. `CLAUDE.md` left alone: still 15 pages
-> at the repo root, so "fifteen" is true. Hand test recorded here after the merge.
+> at the repo root, so "fifteen" is true. Merged 2026-11-19 (#189, `c34be97`), once Nov 15 – 21
+> read "Every box filled". **Hand test (2026-11-19, Stephen):** iPhone and kitchen iPad,
+> including the iPad's home-screen shortcut: tile under Communication opens the Schedule page,
+> **← Home** returns, "everything looks correct". **Slice 3b done.** Retiring the spreadsheet
+> for Nov 15 onwards is Stephen's call (plan, Decision 1).
 
 ### Slice 4 — The paper copy
 
