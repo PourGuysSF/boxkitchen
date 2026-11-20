@@ -244,15 +244,20 @@ in "Not in the kit", every keyword finds its line, and nothing lands in "Not sor
    corrects them.
 3. A small PR adds it to the page's kit list and to the guard's fixture. Pushing it live is
    Stephen's call, as always.
+4. In the same PR, add the Line PM row id, its slug and its word to the map (`KIT_SHEETS`) in
+   `tempest_line.html`, and to the fixture in `scripts/check_line.py` (`SHEETS`), so the row
+   gets its **SHEET →** button (see `docs/kits-line-link.md`).
 
-Removing a kit is the reverse. If this happens often enough to be a chore, manager-editable
+Removing a kit is the reverse, including taking its row out of the map and the fixture, so
+no button points at a sheet that's gone. If this happens often enough to be a chore, manager-editable
 kits is the build after (see "Later").
 
 ### Addresses
 
 Each kit has its own: `tempest_kits.html#buffalo-sauce`, `#pork-belly`, `#gastrique`,
 `#dumpling`, `#chicken-dumpling-soup`, `#spicy-green-sauce`, `#pickled-onions-peppers`,
-`#mac-and-cheese`. Back returns to the list. The later Line PM link points here.
+`#mac-and-cheese`. Back returns to the list. Line PM's **SHEET →** buttons link here with `?from=line`; see
+`docs/kits-line-link.md`.
 
 ### Printing
 
