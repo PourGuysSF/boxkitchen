@@ -22,6 +22,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=Playfair+Display:wght@700;900&display=swap">
 <link rel="stylesheet" href="assets/kitchen.css?v=2026-09-19">
+<script src="assets/recipe-math.js?v=2"></script>
 <style>
   /* Menu Builder — page-level rules only. Every shared component (header,
      toolbar, gate, modal, segmented toggle, list rows, toast) lives in
@@ -67,7 +68,61 @@
   #listBody .link-btn:disabled,#app .new-btn:disabled{color:var(--faint);background:transparent;border-color:var(--edge);border-style:dashed;cursor:default}
   #listBody.is-saving .ing-row{cursor:default}
   #dStatus .filter-btn:disabled{cursor:default}
+
+  /* Slice 2 — used by: renderLines(), renderTotal(). A dish's lines sit inside
+     #dishModal below Notes; each is a tap target that opens #lineModal. */
+  .mb-lines{border:1px solid var(--edge);border-radius:6px}
+  .mb-lines:empty{display:none}
+  .mb-line{display:flex;align-items:flex-start;gap:10px;padding:10px 12px;min-height:44px;
+           border-bottom:1px solid var(--hair);cursor:pointer}
+  .mb-line:last-child{border-bottom:none}
+  .mb-line:active{background:var(--press)}
+  .mb-line-main{flex:1;min-width:0}
+  .mb-line-n{font-size:0.92rem;font-weight:600;color:var(--ink);overflow-wrap:anywhere}
+  .mb-line-s{margin-top:2px;font-size:0.78rem;color:var(--grey);overflow-wrap:anywhere}
+  .mb-line-cost{flex:0 0 auto;font-size:0.95rem;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums}
+  /* every reason a line is not counted, and "not costed on purpose", on the
+     yellow highlighter (state is never a hue) */
+  .mb-why{display:inline;background:var(--yellow);color:var(--ink);font-weight:600;padding:1px 4px;
+          -webkit-box-decoration-break:clone;box-decoration-break:clone}
+  .mb-why a{color:var(--ink);font-weight:700;text-underline-offset:3px}
+  .mb-add{display:block;width:100%;min-height:44px;margin-top:8px;color:var(--ink);border-color:var(--edge)}
+  .mb-total{margin-top:12px;padding:11px 14px;border:1px solid var(--edge);border-radius:6px;font-size:0.85rem;color:var(--grey)}
+  .mb-total-head{font-size:1.05rem;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums}
+  .mb-total-row{margin-top:5px}
+  #dLinesBox .link-btn:disabled,#lineModal .link-btn:disabled,#pickChange:disabled{color:var(--faint);background:transparent;border-color:var(--edge);border-style:dashed;cursor:default}
+  #dLines.is-saving .mb-line{cursor:default}
+
+  /* Slice 2 — the line editor (#lineModal, on top of #dishModal). used by:
+     openLine(), renderPick(), showLineState(). The picker reuses kitchen.css's
+     .pick-* as Recipe Costing's link editor does. */
+  #lineModal{z-index:1100}
+  #lineModal .modal h3{overflow-wrap:anywhere}
+  .lk-fields{display:flex;gap:8px}
+  /* qualified to out-specify kitchen.css's .modal input[type="text"] /
+     .modal select (0,2,1) = 15.2px, which zooms iOS on focus (#135) */
+  .modal input[type="text"].lk-qty,.lk-qty{flex:1 1 0;min-width:0;box-sizing:border-box;height:48px;margin:0;
+           padding:9px 12px;background:var(--paper);border:1px solid var(--edge);border-radius:6px;color:var(--ink);
+           font-family:var(--font);font-size:16px;outline:none;-webkit-appearance:none;appearance:none}
+  .modal select.lk-unit,.lk-unit{flex:1 1 0;min-width:0;box-sizing:border-box;height:48px;margin:0;
+           padding:9px 12px;background:var(--paper);border:1px solid var(--edge);border-radius:6px;color:var(--ink);
+           font-family:var(--font);font-size:16px}
+  .lk-qty::placeholder{color:var(--grey)}
+  .lk-qty.bad,.lk-unit.bad{border:2px solid var(--ink)}
+  .lk-hint{margin-top:7px;font-size:0.8rem;color:var(--ink);font-weight:600}
+  .lk-preview{margin-top:12px;padding:11px 14px;border:1px solid var(--edge);border-radius:6px;font-size:0.85rem;color:var(--grey)}
+  .lk-preview b{color:var(--ink)}
+  .lk-skip-row{margin:14px 0}
+  .lk-skip-row .link-btn{width:100%;min-height:44px;color:var(--ink);border-color:var(--edge)}
+  .pick-row.pick-off{cursor:default}
+  .pick-row.pick-off:active{background:transparent}
+  .pick-row.pick-off .pick-n{color:var(--grey)}
+  #lineModal .pick-badge{white-space:normal;max-width:45%;text-align:right}
+  #pickCount{min-height:1.3em}
+  .pick-list.is-saving{pointer-events:none}
+  .pick-list.is-saving .pick-v,.pick-list.is-saving .pick-n{color:var(--faint)}
   @media print{
+    #lineModal{display:none !important}
     /* paper is the list: no buttons, no filter, no "Show dropped" control */
     .dropped-bar .toggle{display:none !important}
   }
@@ -127,7 +182,7 @@
 <div class="modal-bg" id="dishModal">
   <div class="modal">
     <h3 id="dTitle">Dish</h3>
-    <div class="msub">Draft dish · costs come later</div>
+    <div class="msub">Draft dish</div>
 
     <label class="nb-label" for="dName">Name</label>
     <input class="dish-input" id="dName" type="text" autocomplete="off" oninput="dishEdited()">
@@ -166,9 +221,67 @@
     <label class="nb-label" for="dNotes">Notes</label>
     <textarea class="dish-notes" id="dNotes" rows="3" oninput="dishEdited()"></textarea>
 
+    <!-- Slice 2: the dish's lines, then + Add line, then the running total -->
+    <div id="dLinesBox">
+      <div class="nb-label">Lines</div>
+      <div class="mb-lines" id="dLines"></div>
+      <button class="link-btn mb-add" id="addLine" onclick="openLine(null)">＋ Add line</button>
+      <div class="mb-total" id="dTotal"></div>
+    </div>
+
     <div class="modal-btns" style="margin-top:18px">
       <button class="modal-btn cancel" id="dBack" onclick="closeDish()">← Menu</button>
       <button class="modal-btn save" id="dSave" onclick="saveDish()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Slice 2: one line. Nothing is ever picked for you. -->
+<div class="modal-bg" id="lineModal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="lnTitle">
+    <h3 id="lnTitle">Add line</h3>
+    <div class="msub" id="lnSub"></div>
+
+    <div id="lnLinked">
+      <div class="nb-label">What it is</div>
+      <div id="pickChoose">
+        <input class="pick-filter" id="pickFilter" type="text" placeholder="Filter the price list…" autocomplete="off" oninput="renderPick()">
+        <div class="hint pick-count" id="pickCount"></div>
+        <div class="pick-list" id="pickList"></div>
+      </div>
+      <div class="pick-chosen" id="pickChosen" style="display:none">
+        <div class="pick-chosen-main">
+          <div class="pick-chosen-v" id="pickChosenV"></div>
+          <div class="pick-chosen-n" id="pickChosenN"></div>
+        </div>
+        <button class="pick-change" id="pickChange" aria-label="Change item" aria-describedby="pickChosenV pickChosenN" onclick="changePick()">Change</button>
+      </div>
+      <div class="hint" id="pickHint"></div>
+    </div>
+
+    <div id="lnSkipBox" style="display:none">
+      <label class="nb-label" for="lnOwn">What is it?</label>
+      <input class="dish-input" id="lnOwn" type="text" placeholder="e.g. Salt to taste" autocomplete="off">
+    </div>
+    <div class="modal-err" id="lnErrWhat"></div>
+
+    <div class="nb-label">How much</div>
+    <div class="lk-fields">
+      <input class="lk-qty" id="lnQty" type="text" inputmode="decimal" placeholder="Amount" autocomplete="off" oninput="showLineState()">
+      <select class="lk-unit" id="lnUnit" aria-label="Unit" onchange="showLineState()"></select>
+    </div>
+    <div class="lk-hint" id="lkOzHint" style="display:none">Is this fluid ounces? Change to fl oz.</div>
+    <div class="modal-err" id="lnErrQty"></div>
+    <div class="lk-preview" id="lnPreview"></div>
+
+    <label class="nb-label" for="lnNote">Prep note</label>
+    <input class="dish-input" id="lnNote" type="text" placeholder="optional, e.g. grated" autocomplete="off">
+
+    <div class="lk-skip-row"><button class="link-btn" id="lnSkip" onclick="toggleSkip()">Not costed on purpose</button></div>
+    <div class="lk-skip-row" id="lnRemoveRow" style="display:none"><button class="link-btn" id="lnRemove" onclick="removeLine()">Remove this line</button></div>
+    <div class="modal-btns">
+      <button class="modal-btn cancel" id="lnCancel" onclick="closeLine()">Cancel</button>
+      <button class="modal-btn save" id="lnSave" onclick="saveLine()">Save</button>
     </div>
   </div>
 </div>
@@ -251,6 +364,30 @@ function load(){
     if(Array.isArray(r)){drafts=r;loaded=true;}else{loadError=true;}
     render();
   });
+  loadLines(gen);
+}
+/* Slice 2: the lines and the price list, loaded beside the dishes. Retired
+   price rows ARE loaded - a line linked to one must say "price retired" - but
+   are never offered in the picker. */
+var lines=[],costs=[],costById={},orderItems=[],orderById={};
+var linesLoaded=false,linesError=false;
+var LINE_COLS='select=id,draft_id,position,qty,unit,ingredient_cost_id,own_name,skip,linked_name,note,active,created_at';
+function loadLines(gen){
+  linesLoaded=false;linesError=false;
+  var left=3,bad=false,got={};
+  function done(k,r){
+    if(gen!==loadGen)return;
+    if(!Array.isArray(r))bad=true;else got[k]=r;
+    if(--left)return;
+    if(bad){linesError=true;renderDishLines();return;}
+    costs=got.c;costById={};costs.forEach(function(c){costById[c.id]=c;});
+    orderItems=got.o;orderById={};orderItems.forEach(function(o){orderById[o.id]=o;});
+    lines=got.l;linesLoaded=true;
+    renderDishLines();if(ln)renderPick();
+  }
+  api('GET','menu_draft_lines',LINE_COLS+'&location=eq.'+LOCATION+'&active=eq.true',null,function(r){done('l',r);});
+  api('GET','ingredient_costs','select=id,name,order_item_id,pack_qty,pack_unit,pack_price,active&location=eq.'+LOCATION,null,function(r){done('c',r);});
+  api('GET','order_items','select=id,name,vendor&location=eq.'+LOCATION+'&active=eq.true&order=vendor.asc,sort_order.asc',null,function(r){done('o',r);});
 }
 function landRow(row){
   for(var i=0;i<drafts.length;i++)if(drafts[i].id===row.id){drafts[i]=row;render();return;}
@@ -305,14 +442,17 @@ function toggleDropped(){showDropped=!showDropped;render();}
 function rowTap(el){if(busy)return;openDish(el.getAttribute('data-id'));}
 
 /* ---- one write at a time ---- */
-var LOCK_IDS=['newName','newCancel','newSave','dName','dPlates','dPrice','dLow','dHigh','dNotes','dBack','dSave','newBtn'];
+var LOCK_IDS=['newName','newCancel','newSave','dName','dPlates','dPrice','dLow','dHigh','dNotes','dBack','dSave','newBtn',
+  'addLine','pickFilter','pickChange','lnOwn','lnQty','lnUnit','lnNote','lnSkip','lnRemove','lnCancel','lnSave'];
 function setBusy(on){
   busy=on;
   for(var i=0;i<LOCK_IDS.length;i++)document.getElementById(LOCK_IDS[i]).disabled=on;
   var sb=document.querySelectorAll('#dStatus .filter-btn');for(var k=0;k<sb.length;k++)sb[k].disabled=on;
   document.getElementById('newSave').textContent=on?'Saving…':'Save';
   document.getElementById('dSave').textContent=on?'Saving…':'Save';
-  render();
+  document.getElementById('lnSave').textContent=on?'Saving…':'Save';
+  document.getElementById('pickList').classList.toggle('is-saving',on);
+  render();renderDishLines();
 }
 
 /* ---- numbers as typed ---- */
@@ -379,6 +519,7 @@ function fillDish(d){
   dStatusPick=d.status;syncStatus();
   clearErrs();
   dishSnap=snapDish();
+  renderDishLines();
 }
 function snapDish(){var s=DISH_FIELDS.map(function(f){return document.getElementById(f).value;});s.push(dStatusPick);return s.join('\u0001');}
 function dishDirty(){return curId!=null&&dishSnap!=null&&snapDish()!==dishSnap;}
@@ -389,7 +530,7 @@ function syncStatus(){
 }
 function openDish(id){
   var d=findDraft(id);if(!d)return;
-  curId=id;fillDish(d);
+  curId=id;fillDish(d);renderDishLines();
   document.getElementById('dishModal').classList.add('show');
 }
 function closeDish(force){
@@ -472,6 +613,342 @@ function restore(id){
   patchDish(id,{status:'idea'},function(row){showToast('Restored '+row.name+' as an Idea');},'the restore');
 }
 
+/* ---- Slice 2: lines from the price list --------------------------------
+   Copied from tempest_recipe_costing.html (no shared JS but recipe-math.js),
+   same behaviour. */
+function nameOf(c){var o=c.order_item_id!=null?orderById[c.order_item_id]:null;return o?o.name:(c.name||'(unnamed)');}
+function vendorOf(c){var o=c.order_item_id!=null?orderById[c.order_item_id]:null;return o&&o.vendor?o.vendor:'Off-guide';}
+/* The price as values, for RecipeMath.lineCost(). null pack_price stays null:
+   "no price yet" is lineCost()'s call, never a $0 made here. */
+function priceOf(c){
+  if(!c)return null;
+  function n(v){return v==null||v===''?null:Number(v);}
+  return {pack_qty:n(c.pack_qty),pack_unit:c.pack_unit,pack_price:n(c.pack_price)};
+}
+function isPriced(c){return !!c&&RecipeMath.lineCost(1,c.pack_unit||'each',priceOf(c)).reason!=='no price yet';}
+function normName(x){return String(x||'').toLowerCase().replace(/\s+/g,' ').trim();}
+function fmtAmount(a){return String(+Number(a).toFixed(3));}   // display only
+function fmtMoney(n){return money(n);}                          // display only
+
+/* The words after "needs a conversion — type the amount in …" (ruling 6). */
+function convWords(c){
+  var k=RecipeMath.unitKind(c&&c.pack_unit);
+  if(k==='weight')return 'weight, like oz or lb';
+  if(k==='volume')return 'volume, like cups or fl oz';
+  return RecipeMath.normaliseUnit(c&&c.pack_unit)||String(c&&c.pack_unit||'the pack unit');
+}
+/* What a line is, in one place: the dish screen, the total and the tests read
+   this. The guards are decided here, never by the math: a retired (or gone)
+   price and a renamed one each stop the line counting, with the reason. No
+   conversion is ever passed (ruling 6). */
+function lineState(line){
+  if(line.skip)return {kind:'skip',line:line};
+  var c=costById[line.ingredient_cost_id];
+  if(!c||c.active===false)return {kind:'price retired',line:line,cost:c};
+  if(normName(line.linked_name)!==normName(nameOf(c)))return {kind:'renamed',line:line,cost:c,was:line.linked_name,now:nameOf(c)};
+  var res=RecipeMath.lineCost(line.qty==null?null:Number(line.qty),line.unit,priceOf(c),null);
+  return {kind:res.reason?res.reason:'costed',line:line,cost:c,res:res};
+}
+/* The running total (ruling 7). Unrounded throughout; nothing is rounded
+   before it is summed. A line not costed adds nothing and is named. */
+function dishTotal(draft,ls){
+  var plates=Number(draft&&draft.makes_plates)||1;
+  var out={batch:0,perPlate:0,plates:plates,lines:ls.length,costed:0,skipped:0,notCosted:[]};
+  ls.forEach(function(l){
+    var s=lineState(l);
+    if(s.kind==='costed'){out.batch+=s.res.cost;out.costed++;}
+    else if(s.kind==='skip')out.skipped++;
+    else out.notCosted.push(s);
+  });
+  out.perPlate=out.batch/plates;
+  out.atLeast=out.notCosted.length>0;
+  return out;
+}
+function linesOf(id){
+  return lines.filter(function(l){return l.draft_id===id&&l.active!==false;}).sort(function(a,b){
+    return (Number(a.position)-Number(b.position))||String(a.created_at||'').localeCompare(String(b.created_at||''));});
+}
+function lineName(l){
+  if(l.skip)return l.own_name||'';
+  var c=costById[l.ingredient_cost_id];
+  return c?nameOf(c):(l.linked_name||'(unknown item)');
+}
+function amountText(l){return l.qty!=null?fmtAmount(l.qty)+(l.unit?' '+l.unit:''):'';}
+/* A reason in words, on the highlighter. */
+function whyHtml(s){
+  var w;
+  switch(s.kind){
+    case 'skip':return '<span class="mb-why">not costed on purpose</span>';
+    case 'price retired':w='price retired — relink';break;
+    case 'renamed':w='renamed — linked as '+s.was+', now '+s.now+' — check';break;
+    case 'needs a conversion':w='needs a conversion — type the amount in '+convWords(s.cost);break;
+    case 'no price yet':return '<span class="mb-why">no price yet · <a href="tempest_costing.html" onclick="event.stopPropagation()">Price →</a></span>';
+    case 'no amount':w='no amount';break;
+    default:w=s.kind;
+  }
+  return '<span class="mb-why">'+esc(w)+'</span>';
+}
+function lineRow(l){
+  var s=lineState(l),amt=amountText(l);
+  var sub=[];
+  if(s.cost&&!l.skip)sub.push(esc(vendorOf(s.cost)));
+  if(l.note)sub.push(esc(l.note));
+  var name=esc((amt?amt+' ':'')+lineName(l));
+  var tail=s.kind==='costed'?'<div class="mb-line-cost">'+esc(fmtMoney(s.res.cost))+'</div>':'';
+  var why=s.kind==='costed'?'':' · '+whyHtml(s);
+  return '<div class="mb-line" role="button" tabindex="0" data-id="'+esc(l.id)+'" onclick="lineTap(this)">'+
+    '<div class="mb-line-main"><div class="mb-line-n">'+name+why+'</div>'+(sub.length?'<div class="mb-line-s">'+sub.join(' · ')+'</div>':'')+'</div>'+tail+'</div>';
+}
+function totalHtml(t){
+  if(!t.lines)return 'No lines yet.';
+  var h='<div class="mb-total-head">'+(t.atLeast?'At least ':'')+esc(fmtMoney(t.perPlate))+' a plate'+
+    (t.plates!==1?' <span style="font-weight:500;color:var(--grey)">('+esc(fmtMoney(t.batch))+' for the batch of '+esc(fmtAmount(t.plates))+')</span>':'')+'</div>';
+  t.notCosted.forEach(function(s){h+='<div class="mb-total-row">'+esc(lineName(s.line))+' · '+whyHtml(s)+'</div>';});
+  if(t.skipped)h+='<div class="mb-total-row">'+t.skipped+' skipped on purpose</div>';
+  return h;
+}
+function renderDishLines(){
+  if(curId==null)return;
+  var box=document.getElementById('dLines'),tot=document.getElementById('dTotal'),add=document.getElementById('addLine');
+  box.classList.toggle('is-saving',busy);
+  if(linesError){box.innerHTML='';tot.innerHTML='Could not load the lines — check the connection. <button class="link-btn" onclick="load()">Retry</button>';add.disabled=true;return;}
+  if(!linesLoaded){box.innerHTML='';tot.innerHTML='Loading the lines…';add.disabled=true;return;}
+  add.disabled=busy;
+  var ls=linesOf(curId);
+  box.innerHTML=ls.map(lineRow).join('');
+  tot.innerHTML=totalHtml(dishTotal(findDraft(curId),ls));
+}
+function lineTap(el){if(busy)return;openLine(el.getAttribute('data-id'));}
+
+/* ---- the line editor ---- */
+var ln=null;        // {id, line, skip} while the editor is open
+var pickId=null;    // the price row TAPPED - only pickItem() sets it to a row
+function fillUnits(){
+  var sel=document.getElementById('lnUnit');if(sel.options.length)return;
+  var h='<option value="">Unit</option>';
+  RecipeMath.units().forEach(function(u){h+='<option value="'+esc(u.unit)+'">'+esc(u.unit)+'</option>';});
+  sel.innerHTML=h;
+}
+function findLine(id){for(var i=0;i<lines.length;i++)if(lines[i].id===id)return lines[i];return null;}
+function openLine(id){
+  if(busy||curId==null||!linesLoaded)return;
+  fillUnits();
+  var l=id?findLine(id):null;if(id&&!l)return;
+  ln={id:id,line:l,skip:!!(l&&l.skip)};
+  pickId=null;
+  document.getElementById('lnTitle').textContent=l?'Edit line':'Add line';
+  document.getElementById('lnSub').textContent=(findDraft(curId)||{}).name||'';
+  document.getElementById('pickFilter').value='';
+  document.getElementById('lnQty').value=l&&l.qty!=null?fmtAmount(l.qty):'';
+  var u=l&&l.unit?RecipeMath.normaliseUnit(l.unit):null;
+  document.getElementById('lnUnit').value=u||'';
+  document.getElementById('lnOwn').value=l&&l.skip?(l.own_name||''):'';
+  document.getElementById('lnNote').value=l&&l.note?l.note:'';
+  document.getElementById('lnRemoveRow').style.display=l?'':'none';
+  clearLineErrs();
+  if(l&&l.unit&&!u)lineErr('lnErrQty','Pick a unit from the list.',['lnUnit']);
+  /* an existing linked line opens with the person's earlier tap shown */
+  if(l&&!l.skip&&l.ingredient_cost_id!=null&&costById[l.ingredient_cost_id])pickId=l.ingredient_cost_id;
+  syncKind();
+  document.getElementById('lineModal').classList.add('show');
+}
+function closeLine(){if(busy)return;document.getElementById('lineModal').classList.remove('show');ln=null;pickId=null;}
+function syncKind(){
+  var skip=ln.skip;
+  document.getElementById('lnLinked').style.display=skip?'none':'';
+  document.getElementById('lnSkipBox').style.display=skip?'':'none';
+  document.getElementById('lnSkip').textContent=skip?'Pick from the price list instead':'Not costed on purpose';
+  if(!skip){if(pickId!=null)showChosen();else showChooser();}
+  showLineState();
+}
+/* Not costed on purpose: clears any pick and asks what it is (ruling 9). */
+function toggleSkip(){
+  if(busy||!ln)return;
+  ln.skip=!ln.skip;pickId=null;clearLineErrs();
+  if(!ln.skip)setTimeout(function(){document.getElementById('pickFilter').focus();},60);
+  else setTimeout(function(){document.getElementById('lnOwn').focus();},60);
+  syncKind();
+}
+/* Change clears the pick and the amount, and the filter restarts empty. */
+function changePick(){
+  if(busy||!ln)return;
+  pickId=null;
+  document.getElementById('lnQty').value='';
+  document.getElementById('lnUnit').value='';
+  document.getElementById('pickFilter').value='';
+  showChooser();showLineState();
+  setTimeout(function(){document.getElementById('pickFilter').focus();},60);
+}
+function showChooser(){
+  document.getElementById('pickChoose').style.display='';
+  document.getElementById('pickChosen').style.display='none';
+  document.getElementById('pickHint').textContent='Tap the price-list item this line uses.';
+  renderPick();
+}
+function showChosen(){
+  var c=costById[pickId];
+  document.getElementById('pickChosenV').textContent=vendorOf(c);
+  document.getElementById('pickChosenN').textContent=nameOf(c);
+  document.getElementById('pickChoose').style.display='none';
+  document.getElementById('pickChosen').style.display='';
+  var hint;
+  if(c.active===false)hint='This price is retired. Tap Change and pick again.';
+  else if(!isPriced(c))hint='This item has no price yet. Tap Change and pick another.';
+  else hint='Priced at '+fmtAmount(c.pack_qty)+' '+(c.pack_unit||'')+' for '+fmtMoney(Number(c.pack_price))+'.';
+  document.getElementById('pickHint').textContent=hint;
+}
+/* The list you tap: every active price row, priced ones tappable; an unpriced
+   row, or an order-guide item with no row, is listed but cannot be picked.
+   Retired rows are not listed. NOTHING is ever selected for you - not even
+   when exactly one row matches. */
+function renderPick(){
+  if(!ln||ln.skip)return;
+  var ws=words(document.getElementById('pickFilter').value);
+  var held={},rows=[];
+  costs.forEach(function(c){if(c.active===false)return;if(c.order_item_id!=null)held[c.order_item_id]=true;
+    rows.push({c:c,text:nameOf(c)+' '+vendorOf(c),priced:isPriced(c)});});
+  orderItems.forEach(function(o){if(!held[o.id])rows.push({o:o,text:(o.name||'')+' '+(o.vendor||''),priced:false});});
+  rows.sort(function(a,b){return (b.priced-a.priced)||a.text.toLowerCase().localeCompare(b.text.toLowerCase());});
+  var h='',shown=0,offered=rows.length;
+  rows.forEach(function(r){
+    if(ws.length&&!hasAll(r.text,ws))return;
+    shown++;
+    var v=r.c?vendorOf(r.c):(r.o.vendor||''),n=r.c?nameOf(r.c):r.o.name;
+    if(r.priced)h+='<div class="pick-row" role="button" tabindex="0" onclick="pickItem('+esc(JSON.stringify(r.c.id))+')"><div class="pick-row-main"><div class="pick-v">'+esc(v)+'</div><div class="pick-n">'+esc(n)+'</div></div></div>';
+    else h+='<div class="pick-row pick-off" aria-disabled="true"><div class="pick-row-main"><div class="pick-v">'+esc(v)+'</div><div class="pick-n">'+esc(n)+'</div></div><div class="pick-badge">no price yet — price it first</div></div>';
+  });
+  document.getElementById('pickCount').textContent=ws.length?(shown+' of '+offered+' match'):(offered+' to choose from');
+  if(!shown)h='<div class="pick-empty">'+(ws.length?'Nothing on the price list matches. Shorten the filter.':'The price list is empty.')+'</div>';
+  document.getElementById('pickList').innerHTML=h;
+}
+/* A tap is the pick. This is the ONLY place pickId is set to a new row. */
+function pickItem(id){
+  if(busy||!ln)return;
+  var c=costById[id];if(!c||c.active===false||!isPriced(c))return;
+  pickId=c.id;showChosen();showLineState();clearLineErrs();
+  document.getElementById('pickChange').focus();
+}
+function editorValues(){
+  var qty=parseNum(document.getElementById('lnQty').value);
+  var unit=document.getElementById('lnUnit').value||null;
+  return {qty:qty,unit:unit,pick:pickId};
+}
+function showLineState(){
+  if(!ln)return;
+  var v=editorValues(),c=!ln.skip&&v.pick!=null?costById[v.pick]:null;
+  var pv=document.getElementById('lnPreview');
+  var oz=!!c&&RecipeMath.normaliseUnit(v.unit)==='oz'&&RecipeMath.unitKind(c.pack_unit)==='volume';
+  document.getElementById('lkOzHint').style.display=oz?'':'none';
+  pv.style.display=ln.skip?'none':'';
+  if(ln.skip)return;
+  if(!c)pv.innerHTML='Pick an item to see the cost.';
+  else if(v.qty==null||isNaN(v.qty)||!(v.qty>0)||!v.unit)pv.innerHTML='Enter the amount and unit.';
+  else{
+    var r=RecipeMath.lineCost(v.qty,v.unit,priceOf(c),null);
+    pv.innerHTML=r.reason
+      ?esc(fmtAmount(v.qty)+' '+v.unit)+' · <b>'+esc(r.reason==='needs a conversion'?'needs a conversion — type the amount in '+convWords(c):r.reason)+'</b>'
+      :esc(fmtAmount(v.qty)+' '+v.unit)+' → <b>'+esc(fmtMoney(r.cost))+'</b>';
+  }
+}
+function lineErr(id,msg,fields){showErr(id,msg);(fields||[]).forEach(function(f){document.getElementById(f).classList.add('bad');});}
+function clearLineErrs(){['lnErrWhat','lnErrQty'].forEach(function(e){showErr(e,'');});['lnQty','lnUnit','lnOwn'].forEach(function(f){document.getElementById(f).classList.remove('bad');});}
+/* Every check before any write, each in words. null = not valid. */
+function readLine(){
+  clearLineErrs();
+  var bad=false;
+  var rawQ=document.getElementById('lnQty').value,qty=parseNum(rawQ);
+  var unitRaw=String(document.getElementById('lnUnit').value||'').trim();
+  var note=document.getElementById('lnNote').value.trim()||null;
+  if(qty!=null&&(isNaN(qty)||qty<=0)){bad=true;lineErr('lnErrQty','Type the amount as a number, like 2 or 0.5.',['lnQty']);}
+  else if(unitRaw&&!RecipeMath.normaliseUnit(unitRaw)){bad=true;lineErr('lnErrQty','Pick a unit from the list.',['lnUnit']);}
+  if(ln.skip){
+    var own=document.getElementById('lnOwn').value.trim();
+    if(!own){bad=true;lineErr('lnErrWhat','Say what it is, like Salt to taste.',['lnOwn']);}
+    if(bad)return null;
+    return {qty:qty,unit:qty==null?null:(unitRaw||null),ingredient_cost_id:null,linked_name:null,own_name:own,skip:true,note:note};
+  }
+  var c=pickId!=null?costById[pickId]:null;
+  if(!c){bad=true;lineErr('lnErrWhat','Tap an item from the price list.');}
+  else if(c.active===false||!isPriced(c)){bad=true;lineErr('lnErrWhat','That price can’t be used. Tap Change and pick again.');}
+  if(!bad&&qty==null){bad=true;lineErr('lnErrQty','Type the amount as a number, like 2 or 0.5.',['lnQty']);}
+  if(!bad&&!unitRaw){bad=true;lineErr('lnErrQty','Pick a unit from the list.',['lnUnit']);}
+  if(bad)return null;
+  return {qty:qty,unit:unitRaw,ingredient_cost_id:c.id,linked_name:nameOf(c),own_name:null,skip:false,note:note};
+}
+/* ---- Slice 2: the line write path (rulings 9-13) -----------------------
+   Slice 1's path, extended: one write at a time page-wide, every control on
+   both modals locked in flight, the timeout, answerOf(). An add carries a uuid
+   made here and an upsert on id, so a retry after a lost answer lands on the
+   SAME row. A no-answer is looked up by id before anything is said. Remove is
+   a PATCH to active:false - never a DELETE. Writes go to menu_draft_lines only.
+   Never written here: sub_recipe_id, guess_pack_*, estimate_cost, component,
+   created_at. */
+function lookUpLine(id,cb){api('GET','menu_draft_lines',LINE_COLS+'&id=eq.'+encodeURIComponent(id)+'&location=eq.'+LOCATION,null,function(r){cb(Array.isArray(r)?r:null);},API_TIMEOUT);}
+/* the row holds every field that was sent */
+function lineMatches(row,b){
+  function n(a,c){return (a==null)===(c==null)&&(a==null||Math.abs(Number(a)-Number(c))<1e-9);}
+  function t(a,c){return (a==null?null:String(a))===(c==null?null:String(c));}
+  for(var k in b){if(!b.hasOwnProperty(k)||k==='updated_at')continue;
+    if(k==='qty'){if(!n(row.qty,b.qty))return false;}
+    else if(k==='skip'||k==='active'){if(!!row[k]!==!!b[k])return false;}
+    else if(!t(row[k],b[k]))return false;}
+  return true;
+}
+function landLine(row){
+  for(var i=0;i<lines.length;i++)if(lines[i].id===row.id){lines.splice(i,1);break;}
+  if(row.active!==false)lines.push(row);
+  renderDishLines();
+}
+function nextPosition(draftId){
+  var m=0;linesOf(draftId).forEach(function(l){if(Number(l.position)>m)m=Number(l.position);});
+  return m+1;
+}
+/* one write; label is what the toast calls it; isAdd = a found row is enough */
+function writeLine(method,id,body,isAdd,label,onLanded){
+  setBusy(true);
+  function landed(row){setBusy(false);landLine(row);onLanded(row);}
+  function fail(msg){setBusy(false);showToast(msg,true,LONG_TOAST);}
+  var q=method==='POST'?'on_conflict=id':'id=eq.'+encodeURIComponent(id);
+  api(method,'menu_draft_lines',q,body,function(r,status){
+    var a=answerOf(r,status);
+    if(a==='ok')return landed(r[0]);
+    if(a==='no'){setBusy(false);return showToast('Could not save '+label+' — try again',true);}
+    lookUpLine(id,function(rows){
+      var row=rows&&rows[0];
+      if(row&&(isAdd||lineMatches(row,body)))return landed(row);
+      if(rows)fail(label.charAt(0).toUpperCase()+label.slice(1)+' did not save — tap Save to try again');
+      else fail('Could not confirm '+label+' saved — check the connection, then try again');
+    });
+  },null,method==='POST'?'resolution=merge-duplicates,return=representation':null);
+}
+function saveLine(){
+  if(busy||!ln||curId==null)return;
+  var v=readLine();if(!v)return;
+  var ed=ln;
+  if(!ed.id){
+    /* the SAME uuid and position on every try until one is confirmed */
+    if(!ed.newId){ed.newId=newUuid();ed.pos=nextPosition(curId);}
+    var body={id:ed.newId,location:LOCATION,draft_id:curId,position:ed.pos,qty:v.qty,unit:v.unit,
+              ingredient_cost_id:v.ingredient_cost_id,linked_name:v.linked_name,own_name:v.own_name,
+              skip:v.skip,note:v.note,active:true};
+    writeLine('POST',ed.newId,body,true,'the line',function(row){
+      if(ln===ed)closeLine();showToast('Added '+lineName(row));
+    });
+  }else{
+    var pb={qty:v.qty,unit:v.unit,ingredient_cost_id:v.ingredient_cost_id,linked_name:v.linked_name,
+            own_name:v.own_name,skip:v.skip,note:v.note,updated_at:new Date().toISOString()};
+    writeLine('PATCH',ed.id,pb,false,'the line',function(){if(ln===ed)closeLine();showToast('Saved the line');});
+  }
+}
+function removeLine(){
+  if(busy||!ln||!ln.id)return;
+  if(!confirm('Remove this line? It will be hidden, not deleted.'))return;
+  var ed=ln;
+  writeLine('PATCH',ed.id,{active:false,updated_at:new Date().toISOString()},false,'the removal',function(){
+    if(ln===ed)closeLine();showToast('Removed the line');
+  });
+}
+document.getElementById('lineModal').addEventListener('click',function(e){if(e.target===this)closeLine();});
 /* ---- toast ---- */
 var LONG_TOAST=6000;
 function showToast(msg,isErr,ms){var t=document.getElementById('toast');t.textContent=(isErr?'⚠ ':'✓ ')+msg;t.classList.toggle('error',!!isErr);t.classList.add('show');clearTimeout(st);st=setTimeout(function(){t.classList.remove('show');},ms||1600);}
