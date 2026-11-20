@@ -226,8 +226,8 @@ RUNNER = r"""
   function rowFor(n){return dayRows().filter(function(r){return r.name===n;})[0];}
   function notes(){return all('.sched-note').map(txt);}
   function crews(){return all('.cat-label').map(txt);}
-  function heads(){return all('.sched-grid thead th').slice(1);}
-  function gridRow(n){return all('.sched-grid tbody tr').filter(function(tr){return txt(tr.querySelector('th'))===n;})[0];}
+  function heads(){return all('#appBody .sched-grid thead th').slice(1);}
+  function gridRow(n){return all('#appBody .sched-grid tbody tr').filter(function(tr){return txt(tr.querySelector('th'))===n;})[0];}
   function cells(n){var r=gridRow(n);return r?all('td',r):[];}
   function updated(){return txt(byId('updatedLine'));}
   function expectUpdated(iso){var d=new Date(iso),h=d.getHours(),ap=h<12?'AM':'PM';h=h%12||12;
@@ -301,16 +301,16 @@ RUNNER = r"""
       var h=heads().map(txt);
       ok('ok: column headers, English + Spanish + date',h.join('|')==='SUNDAYDOMINGO11/15|MONDAYLUNES11/16|TUESDAYMARTES11/17|WEDNESDAYMIERCOLES11/18|THURSDAYJUEVES11/19|FRIDAYVIERNES11/20|SATURDAYSABADO11/21',h.join('|'));
       ok('ok: only today\'s column header is filled',heads().filter(function(x){return x.classList.contains('today');}).map(txt).join()==='TUESDAYMARTES11/17');
-      ok('ok: the name column is pinned',getComputedStyle(document.querySelector('.sched-grid .sticky')).position==='sticky');
-      ok('ok: the grid scrolls inside its box, not the page',document.querySelector('.sched-gridwrap').scrollWidth>document.querySelector('.sched-gridwrap').clientWidth&&document.documentElement.scrollWidth<=window.innerWidth+1,
-         document.querySelector('.sched-gridwrap').scrollWidth+' / '+document.documentElement.scrollWidth);
+      ok('ok: the name column is pinned',getComputedStyle(document.querySelector('#appBody .sched-grid .sticky')).position==='sticky');
+      ok('ok: the grid scrolls inside its box, not the page',document.querySelector('#appBody .sched-gridwrap').scrollWidth>document.querySelector('#appBody .sched-gridwrap').clientWidth&&document.documentElement.scrollWidth<=window.innerWidth+1,
+         document.querySelector('#appBody .sched-gridwrap').scrollWidth+' / '+document.documentElement.scrollWidth);
       ok('ok: Jose\'s week: Sun escaped shift, Tue shift',txt(cells('Jose V.')[0])==='10am<i>-</i>4pm & on'&&txt(cells('Jose V.')[2])==='9am-3pm');
       ok('ok: week Tue column: OFF / REQUEST / Training',txt(cells('Rubidia')[2])==='OFF'&&txt(cells('Pablo')[2])==='REQUEST'&&txt(cells('Eddy V.')[2])==='4pm-CLTRAINING');
       ok('ok: an empty box in Week is an empty box labelled "not scheduled yet"',isEmptyBox(cells('Rubidia')[0])&&txt(cells('Rubidia')[0])==='');
       ok('ok: retired person absent from Week too',!gridRow('Old Timer'));
       ok('ok: standing notes on their days only',cells('Trash out by 8pm').map(txt).join('|')==='Trash out by 8pm||Trash out by 8pm||Trash out by 8pm||'&&cells('Compost out').map(txt).join('|')==='|Compost out|||||');
       ok('ok (staff): no buttons in Week either',all('.sched-boxbtn,.sched-cellbtn,.sched-notebtn').length===0);
-      ok('ok: day notes row, escaped, blank shows nothing',cells('Games & events').map(txt).join('|')==='||49ers <home> & party||||'&&!document.querySelector('.sched-grid td home'),cells('Games & events').map(txt).join('|'));
+      ok('ok: day notes row, escaped, blank shows nothing',cells('Games & events').map(txt).join('|')==='||49ers <home> & party||||'&&!document.querySelector('#appBody .sched-grid td home'),cells('Games & events').map(txt).join('|'));
       document.querySelectorAll('.date-arrow')[0].click();
     });
     step(function(){return 100;});
