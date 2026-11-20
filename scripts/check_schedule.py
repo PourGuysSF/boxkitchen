@@ -48,7 +48,7 @@ CHROME_CANDIDATES = [
 ]
 PAGE = "tempest_schedule.html"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SCENARIOS = ("ok", "monthend", "yearend", "fail", "empty", "mgr", "copy", "dst")
+SCENARIOS = ("ok", "monthend", "yearend", "fail", "empty", "mgr", "copy", "dst", "print")
 
 
 def find_chrome():
@@ -115,6 +115,7 @@ CLOCKS = {
     "mgr": [2026, 10, 17, 17, 30],
     "copy": [2026, 10, 17, 17, 30],     # Tue Nov 17: Nov 22 - 28 is the empty week to fill
     "dst": [2026, 10, 1, 17, 30],       # Sun Nov 1, the day the clocks went back
+    "print": [2026, 10, 17, 17, 30],    # Tue Nov 17; then on to Nov 29 - Dec 5 (month end)
 }
 
 GATE_RE = re.compile(r"window\.location\.replace\('index\.html'\)")
@@ -127,7 +128,7 @@ HARNESS = r"""
   var FX=__FIXTURES__;
   try{localStorage.removeItem('boxkitchen_schedule_view');}catch(e){}
   /* manager mode is entered as staff do after the PIN once: the session flag, then the switch. The PIN is never typed. */
-  try{if(SCEN==='mgr'||SCEN==='copy'||SCEN==='dst')sessionStorage.setItem('boxkitchen_mgr','1');else sessionStorage.removeItem('boxkitchen_mgr');}catch(e){}
+  try{if(SCEN==='mgr'||SCEN==='copy'||SCEN==='dst'||SCEN==='print')sessionStorage.setItem('boxkitchen_mgr','1');else sessionStorage.removeItem('boxkitchen_mgr');}catch(e){}
   /* a fixed clock: new Date() and Date.now() say the scenario's moment */
   var RD=Date,c=FX.clocks[SCEN],NOW=new RD(c[0],c[1],c[2],c[3],c[4]).getTime();
   function FD(){
@@ -891,9 +892,101 @@ RUNNER = r"""
     step(function(){
       ok('empty: no people says so',/No one on the schedule yet/.test(txt(byId('appBody'))));
       ok('empty: no shifts asked for when there are no people',reads('schedule_shifts').length===0);
+      ok('empty: the print sheet says so too, under its title',/^Tempest Schedule · Nov 15 – 21, 2026No one on the schedule yet\.$/.test(txt(byId('printSheet'))),txt(byId('printSheet')));
     });
   }
 
+
+  /* --- Slice 4: print, as check_kits.py. Headless Chrome cannot switch to print
+     media from inside the page, so printOn() lifts every @media print rule (the
+     page's own and kitchen.css's) into a plain <style>, which is what print
+     media does; printOff() takes it away. Needs --allow-file-access-from-files. --- */
+  var EN=['SUNDAY','MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY'],ES=['DOMINGO','LUNES','MARTES','MIERCOLES','JUEVES','VIERNES','SABADO'];
+  function printOn(){
+    var css='';
+    [].forEach.call(document.styleSheets,function(sh){
+      var rules;try{rules=sh.cssRules;}catch(e){F.push('print: cannot read the rules of '+sh.href);return;}
+      [].forEach.call(rules,function(r){
+        if(r.type===CSSRule.MEDIA_RULE&&/\bprint\b/.test(r.media.mediaText))[].forEach.call(r.cssRules,function(x){css+=x.cssText+'\n';});
+      });
+    });
+    var st=document.createElement('style');st.id='__printSim';st.textContent=css;document.head.appendChild(st);
+  }
+  function printOff(){var st=byId('__printSim');if(st)st.remove();}
+  function vis(e){if(!e||!e.getClientRects().length)return false;return getComputedStyle(e).visibility!=='hidden';}
+  function edge(e,side){var cs=getComputedStyle(e);return parseFloat(cs['border'+side+'Width'])>0&&cs['border'+side+'Style']!=='none'&&cs['border'+side+'Color']!=='rgba(0, 0, 0, 0)';}
+  function printChecks(tag,o){
+    var sheet=byId('printSheet'),btn=byId('printBtn');
+    var own=all('head style').filter(function(x){return x.id!=='__printSim';}).map(function(x){return x.textContent;}).join('\n');
+    ok(tag+'the page’s own <style> has an @media print block',/@media\s+print\s*\{/.test(own));
+    ok(tag+'on screen: the print sheet and title are hidden',!vis(sheet)&&!vis(sheet&&sheet.querySelector('.sched-ptitle')));
+    ok(tag+'on screen: the Print week button shows',vis(btn)&&txt(btn)==='Print week'&&btn.tagName==='BUTTON');
+    printOn();
+    try{
+      ok(tag+'in print: the sheet shows, the list is hidden',vis(sheet)&&!vis(byId('appBody')));
+      ok(tag+'in print: the title has the week and the year',txt(sheet.querySelector('.sched-ptitle'))==='Tempest Schedule · '+o.label,txt(sheet.querySelector('.sched-ptitle')));
+      var hs=all('thead th',sheet).slice(1).map(txt),want=EN.map(function(d,i){return d+ES[i]+o.dates[i];});
+      ok(tag+'in print: 7 day columns, English + Spanish + date',hs.join('|')===want.join('|'),hs.join('|'));
+      var groups=all('tbody tr.crew th:first-child',sheet).map(txt);
+      ok(tag+'in print: both crews and the NOTES rows',groups.join(',')==='DAY CREW,NIGHT CREW,NOTES',groups.join(','));
+      ok(tag+'in print: the Games & events row',all('tbody th',sheet).some(function(t){return txt(t)==='Games & events';}));
+      var up=sheet.querySelector('.sched-pupdated');
+      if(o.updated===false)ok(tag+'in print: no Updated line when nothing in the week was saved',!up);
+      else ok(tag+'in print: the Updated line',vis(up)&&/^Updated (Sun|Mon|Tue|Wed|Thu|Fri|Sat) \d{1,2}:\d\d (AM|PM)$/.test(txt(up)),txt(up));
+      var mgrOnly=['.sched-cellbtn','.sched-boxbtn','.sched-notebtn','#mgrCount','#copyWrap','#copyModal','#boxModal','#noteModal','#pinModal','#toast','#printBtn','.header','.view-toggle','#dayStrip','.sched-week-bar','#updatedLine','#copyBtn'];
+      var seen=mgrOnly.filter(function(sel){return all(sel).some(vis);});
+      ok(tag+'in print: nothing manager-only or on-screen-only shows',seen.length===0,seen.join(','));
+      ok(tag+'in print: the sheet has no button',!sheet.querySelector('button'));
+      ok(tag+'in print: no day is marked today',!sheet.querySelector('.today'));
+      var filled=all('body *').filter(function(e){
+        if(!vis(e))return false;var cs=getComputedStyle(e),bg=cs.backgroundColor;
+        return cs.backgroundImage!=='none'||!(bg==='rgba(0, 0, 0, 0)'||bg==='transparent'||bg==='rgb(255, 255, 255)');
+      }).map(function(e){return (e.className||e.tagName)+' '+getComputedStyle(e).backgroundColor;});
+      ok(tag+'in print: nothing that prints has a background fill',filled.length===0,filled.slice(0,5).join('; '));
+      var bare=all('th,td',sheet).filter(function(c){return !(edge(c,'Top')&&edge(c,'Left')&&edge(c,'Bottom')&&edge(c,'Right'));});
+      ok(tag+'in print: every cell has a visible border',all('th,td',sheet).length>0&&bare.length===0,bare.length);
+      if(o.states){
+        function pcell(n,i){var r=all('tbody tr',sheet).filter(function(tr){return txt(tr.querySelector('th'))===n;})[0];return r?all('td',r)[i]:null;}
+        var req=pcell('Pablo',2),off=pcell('Rubidia',2),tr=pcell('Eddy V.',2),emp=pcell('Tom <b>&amp;</b> Co',3);
+        ok(tag+'in print: REQUEST is the word, with a border round it',txt(req)==='REQUEST'&&!!req.querySelector('.sched-req')&&['Top','Right','Bottom','Left'].every(function(s){return edge(req.querySelector('.sched-req'),s);}),txt(req));
+        ok(tag+'in print: OFF reads OFF',txt(off)==='OFF',txt(off));
+        ok(tag+'in print: TRAINING is a word under the shift',txt(tr)==='4pm-CLTRAINING'&&vis(tr.querySelector('.sched-train')),txt(tr));
+        ok(tag+'in print: an empty box is a bordered cell with room to write',!!emp&&txt(emp)===''&&emp.getBoundingClientRect().height>=20&&edge(emp,'Top')&&edge(emp,'Left'),emp&&emp.getBoundingClientRect().height);
+      }else{
+        var cells=all('tbody tr:not(.crew) td',sheet).slice(0,7*o.people);
+        ok(tag+'in print: every box of the empty week is blank and bordered',cells.length===7*o.people&&cells.every(function(c){return txt(c)===''&&c.getBoundingClientRect().height>=20&&edge(c,'Top');}),cells.length);
+      }
+    }finally{printOff();}
+    var n=0,orig=window.print,before=H.reqs.length;window.print=function(){n++;};
+    try{btn.click();}finally{window.print=orig;}
+    ok(tag+'Print week calls window.print() once and sends no request',n===1&&H.reqs.length===before,[n,H.reqs.length-before].join());
+  }
+  if(H.scen==='print'){
+    var WK1={label:'Nov 15 – 21, 2026',dates:['11/15','11/16','11/17','11/18','11/19','11/20','11/21'],states:true};
+    step(function(){return 200;});
+    step(function(){printChecks('print, day, staff: ',WK1);byId('viewWeekBtn').click();return 50;});
+    step(function(){printChecks('print, week, staff: ',WK1);byId('mgrSwitch').click();return 100;});
+    step(function(){
+      ok('print: manager mode is on (buttons on screen)',all('#appBody .sched-cellbtn').length>0);
+      printChecks('print, week, manager: ',WK1);byId('viewDayBtn').click();return 50;
+    });
+    step(function(){
+      ok('print: manager Day view has its buttons on screen',all('#appBody .sched-boxbtn').length>0);
+      printChecks('print, day, manager: ',WK1);
+      document.querySelector('button[aria-label="Next week"]').click();return 150;
+    });
+    step(function(){document.querySelector('button[aria-label="Next week"]').click();return 200;});
+    step(function(){
+      ok('print: on Nov 29 - Dec 5, Copy is offered on screen',vis(byId('copyBtn')));
+      /* no box in this week, so the Updated line can only come from what loaded; skip it if none */
+      var o={label:'Nov 29 – Dec 5, 2026',dates:['11/29','11/30','12/1','12/2','12/3','12/4','12/5'],states:false,people:5,updated:false};
+      printChecks('print, month end, manager: ',o);
+      byId('mgrSwitch').click();return 50;
+    });
+    step(function(){
+      printChecks('print, month end, staff: ',{label:'Nov 29 – Dec 5, 2026',dates:['11/29','11/30','12/1','12/2','12/3','12/4','12/5'],states:false,people:5,updated:false});
+    });
+  }
   window.addEventListener('load',function(){setTimeout(run,0);});
 })();
 </script>
@@ -931,6 +1024,7 @@ def run_scenario(chrome, path, scen):
              "--disable-default-apps", "--disable-sync",
              "--host-resolver-rules=MAP * ~NOTFOUND",
              "--user-data-dir=" + os.path.join(os.path.dirname(path), "cd-" + scen),
+             "--allow-file-access-from-files",
              "--virtual-time-budget=30000", "--dump-dom", url],
             stdout=fo, stderr=fe, env=env)
         deadline = time.time() + 120
