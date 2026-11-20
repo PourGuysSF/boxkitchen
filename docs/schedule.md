@@ -423,12 +423,35 @@ copied over, and a double tap cannot copy twice.
 > 1:25`, still right after closing Safari. **Verified read-only:** the 11/15 note is `49ers home
 > 1:25` in one row; no `schedule_shifts` rows dated Nov 1 – 14 or Nov 22 – 28; Nov 15 – 21
 > still 6 rows. **Part B** (the first real copy, Nov 22 – 28) is recorded when it happens.
+>
+> **Part B, the first real copy (2026-11-19).** First, Nov 15 – 21 was filled from Stephen's
+> sheet screenshot: 77 boxes upserted by the session after he checked the table line by line
+> (3 earlier boxes overwritten on his word: Ismael 11/16 test row → OFF, Gilberto 11/17 →
+> 4:30pm-CL, Isaac 11/17 → 10am-3pm), plus Football notes 11/16 and 11/19; read back 77/77,
+> manager line "Every box filled". Preview on Nov 22 – 28 read 41 shifts and 25 OFF. Copy →
+> "✓ Copied 66 boxes", button gone. **Double tap not tried by hand** (one tap); the harness
+> covers it. Read back: 66 rows, each matching Nov 15 – 21 shifted 7 days, no REQUEST, Training
+> false, `updated_at` set. Same sitting, by the session on his OK: Thanksgiving 11/26 OFF for
+> all 11, the sheet's 10 REQUESTs, notes `49ers home 5:20` (11/22) and Football (11/23,
+> 11/26); read back 77/77 against the Nov 22 – 28 sheet. Stephen: "schedule looked correct".
 
 ### Slice 3b — The tile *(shared files; its own ticket and PR)*
 
 Moved up from Slice 7 on 2026-11-08 so staff can find the page and the sheet can retire.
 `index.html`: the Schedule tile, unlocked. Bring the branch up to date with `main` first. See
 `~/Developer/SCHEDULE-SLICE-3B-TICKET.md`.
+
+> **Slice 3b decisions (2026-11-16, Stephen).** (1) Tile in **Communication**, full width under
+> Kitchen Notes; title **Schedule**, subtitle **Who works when: day & night crew**; unlocked, no
+> status line. (2) Merge once the current week (Nov 15 – 21) reads "Every box filled" on the
+> manager line.
+
+> **Slice 3b as built (2026-11-16).** `index.html`: one `tile wide` link to
+> `tempest_schedule.html` under Kitchen Notes in Communication, no `.lock`, no `.tile-status`.
+> `assets/kitchen.css`: `schedule` added to four `used by:` banners (BUTTONS, DATE / NAME /
+> INTRO BARS, COUNT ROWS, DATE STEPPER), comments only, no `?v=` bump; the planner's reading
+> checked against every class in the page and matched. `CLAUDE.md` left alone: still 15 pages
+> at the repo root, so "fifteen" is true. Hand test recorded here after the merge.
 
 ### Slice 4 — The paper copy
 

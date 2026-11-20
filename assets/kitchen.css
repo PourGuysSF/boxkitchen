@@ -104,7 +104,7 @@ a:focus-visible,button:focus-visible,[tabindex]:focus-visible{outline:2px solid 
 @media (min-width:760px){.header{padding-left:calc((100% - 720px)/2 + 18px);padding-right:calc((100% - 720px)/2 + 18px)}}
 
 /* ── BUTTONS ──────────────────────────────────────────────── */
-/* used by: notes, recipes */
+/* used by: notes, recipes, schedule */
 .new-btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 14px;background:var(--tomato);border:1px solid var(--tomato);border-radius:6px;color:#fff;font-family:var(--font-cond);font-size:1rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;flex-shrink:0;white-space:nowrap}
 .new-btn:active{opacity:0.85}
 
@@ -191,7 +191,7 @@ a:focus-visible,button:focus-visible,[tabindex]:focus-visible{outline:2px solid 
    ═══════════════════════════════════════════════════════════ */
 
 /* ── DATE / NAME / INTRO BARS ─────────────────────────────── */
-/* used by: portion, meat, orders — .date-bar also flash, line, prep */
+/* used by: portion, meat, orders, schedule — .date-bar also flash, line, prep */
 .date-bar{display:flex;justify-content:space-between;align-items:center;padding:10px 18px;border-bottom:1px solid var(--hair)}
 .date-display{font-family:var(--font-cond);font-size:1.05rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
 .date-sub{font-family:var(--font-cond);font-size:14px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--grey)}
@@ -211,7 +211,7 @@ a:focus-visible,button:focus-visible,[tabindex]:focus-visible{outline:2px solid 
 .cat-label{font-family:var(--font-cond);font-size:14px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--grey)}
 
 /* ── COUNT ROWS ───────────────────────────────────────────── */
-/* used by: portion, meat */
+/* used by: portion, meat, schedule */
 .count-row{display:flex;align-items:center;gap:12px;padding:10px 18px;border-bottom:1px solid var(--hair);min-height:56px}
 .count-info{flex:1;min-width:0}
 .count-name{font-size:0.95rem;font-weight:500;line-height:1.25}
@@ -301,7 +301,7 @@ a:focus-visible,button:focus-visible,[tabindex]:focus-visible{outline:2px solid 
 .manage-sections-btn{display:none}
 
 /* ── DATE STEPPER ─────────────────────────────────────────── */
-/* used by: flash, prep, line */
+/* used by: flash, prep, line, schedule */
 .date-left{display:flex;align-items:center;gap:10px;min-width:0}
 .date-info{text-align:center;min-width:0}
 .date-arrow{width:36px;height:36px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:var(--paper);border:1px solid var(--ink);border-radius:6px;color:var(--ink);font-size:0.85rem;cursor:pointer}
