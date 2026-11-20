@@ -39,6 +39,10 @@
   .task-name.spec-blank{color:var(--grey);font-style:italic}
   .spec-ghost{visibility:hidden}
   .task-name-input.spec-input,.modal input[type="text"].sec-special{font-size:16px}
+
+  /* Kits: SHEET → under a kit row's name, to its kit sheet (docs/kits-line-link.md).
+     Its own line so it never clips at phone width; 44px tap target (.link-btn is 40). */
+  .kit-sheet-link{display:inline-flex;align-items:center;min-height:44px;margin-top:6px}
 </style>
 <script src="vendor/sortablejs-1.15.7.min.js"></script>
 </head>
@@ -375,6 +379,17 @@ function bDaily(ti,li){
 
 function esc(s){return s?String(s).replace(/"/g,'&quot;').replace(/</g,'&lt;'):''}
 
+// Kits: Line PM row id -> its kit sheet, and a word the row's name must still contain
+// (case, punctuation and spacing ignored), so a renamed row loses its button. Matched to
+// Line PM on 2026-11-16. Adding or removing a kit: docs/kits.md "Adding a kit".
+var KIT_SHEETS={668:{slug:'mac-and-cheese',word:'mac'},669:{slug:'buffalo-sauce',word:'buffalo'},670:{slug:'pork-belly',word:'pork belly'},671:{slug:'gastrique',word:'gastrique'},672:{slug:'chicken-dumpling-soup',word:'soup'},678:{slug:'dumpling',word:'dumpling',not:'soup'},674:{slug:'pickled-onions-peppers',word:'pickle'}};
+function kitSheetLink(it){
+  var k=it.station==='kits'&&KIT_SHEETS[it.id];if(!k)return'';
+  var f=function(x){return String(x||'').toLowerCase().replace(/[^a-z0-9]/g,'');},n=f(it.name);
+  if(n.indexOf(f(k.word))<0||(k.not&&n.indexOf(f(k.not))>-1))return'';
+  return'<a class="link-btn kit-sheet-link" href="tempest_kits.html?from=line#'+k.slug+'" onclick="event.stopPropagation()">SHEET →</a>';
+}
+
 function bTask(it){
   var l=logs[it.id]||{},dn=l.completed||false,w=l.assigned_to||'',q=l.quantity||'',n=l.notes||'',no=openNotes[it.id]||false;
   var hasNote=n&&n.trim().length>0;
@@ -390,7 +405,7 @@ function bTask(it){
   if(hasNote)h+='<span class="note-badge">NOTE</span>';
   if(it.station==='kits'){var md=(l.mode)||'kit';h+='<span class="mode-pill mode-'+md+'" onclick="event.stopPropagation();toggleMode('+it.id+')">'+(md==='make'?'MAKE':'KIT')+'</span>';}
   if(sp)h+='</div><input class="task-name-input spec-input" id="ni'+it.id+'" value="'+esc(stx)+'" placeholder="Special, event or note for the crew" onblur="saveSpecial('+it.id+',this)" onkeydown="if(event.key===\'Enter\')this.blur()"></div>';
-  else h+='</div><input class="task-name-input" id="ni'+it.id+'" value="'+esc(it.name)+'" onblur="saveN('+it.id+',this)" onkeydown="if(event.key===\'Enter\')this.blur()"></div>';
+  else h+='</div><input class="task-name-input" id="ni'+it.id+'" value="'+esc(it.name)+'" onblur="saveN('+it.id+',this)" onkeydown="if(event.key===\'Enter\')this.blur()">'+kitSheetLink(it)+'</div>';
   h+='<div class="task-fields">';
   h+='<select class="who-select '+(w?'assigned':'')+'" onchange="uLog('+it.id+',\'assigned_to\',this.value)">';
   h+='<option value="">Who</option>';
