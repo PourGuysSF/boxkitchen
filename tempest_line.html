@@ -44,6 +44,11 @@
      Its own line so it never clips at phone width; 44px tap target (.link-btn is 40). */
   .kit-sheet-link{display:inline-flex;align-items:center;min-height:44px;margin-top:6px}
 
+  /* KIT READY: an outlined ink tag at the start of a Line AM row's Last done line
+     (docs/last-done.md, Slice 2). No fill, so it prints as a box; line-height 1 keeps the
+     line the same height as an untagged one. */
+  .kit-ready{display:inline-block;vertical-align:top;border:1px solid var(--ink);border-radius:3px;background:none;color:var(--ink);font-family:var(--font-cond);font-weight:700;text-transform:uppercase;letter-spacing:.06em;font-size:0.75rem;line-height:1;padding:0 4px;margin-right:4px}
+
   /* LAST DONE start */
   /* Last done: its own full-width line under each row (docs/last-done.md).
      .task wraps so .last-done can drop below the checkbox, name and fields;
@@ -401,6 +406,29 @@ function kitSheetLink(it){
   return'<a class="link-btn kit-sheet-link" href="tempest_kits.html?from=line#'+k.slug+'" onclick="event.stopPropagation()">SHEET →</a>';
 }
 
+// KIT READY (docs/last-done.md, Slice 2): Line PM kit row id -> its Line AM row id, and a word
+// BOTH names must still contain (case, punctuation and spacing ignored), with an optional word
+// NEITHER may contain, so a renamed row drops out instead of pointing at the wrong dish. 677
+// (the placeholder kit) has no entry. Adding or removing a kit: docs/kits.md "Adding a kit".
+var KIT_MAKE={668:{am:571,word:'mac'},669:{am:583,word:'buffalo'},670:{am:573,word:'pork belly'},671:{am:615,word:'gastrique'},672:{am:620,word:'soup'},678:{am:570,word:'dumpling',not:'soup'},673:{am:567,word:'green'},674:{am:568,word:'pickle'},675:{am:759,word:'suadero'},676:{am:596,word:'chilorio'}};
+// The morning row's KIT READY text for the viewed day, or '' (then ldNote shows the normal line).
+// The kit's latest named tick, not on MAKE, 1 or 2 days before the day on screen, and the morning
+// row not ticked with a name after that day. Reads Slice 1's LD.map only: no request.
+function kitReady(id){
+  var day=fmtDate(currentDate),kid=null,K=null,M=null,k;
+  if(LD.day!==day||!LD.map)return'';
+  for(k in KIT_MAKE)if(KIT_MAKE[k].am===id){kid=+k;break;}
+  if(kid===null)return'';
+  for(var i=0;i<items.length;i++){if(items[i].id===kid)K=items[i];if(items[i].id===id)M=items[i];}
+  if(!K||!M||K.station!=='kits')return'';
+  var p=KIT_MAKE[kid],f=function(x){return String(x||'').toLowerCase().replace(/[^a-z0-9]/g,'');},kn=f(K.name),mn=f(M.name),w=f(p.word),nt=p.not?f(p.not):'';
+  if(kn.indexOf(w)<0||mn.indexOf(w)<0||(nt&&(kn.indexOf(nt)>-1||mn.indexOf(nt)>-1)))return'';
+  var b=LD.map[kid];if(!b||b.mode==='make')return'';
+  var n=ldDays(b.date,day);if(n<1||n>2)return'';
+  var m=LD.map[id];if(m&&m.date>b.date)return'';
+  var q=ldParts(b.date),wd=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date(q[0],q[1],q[2]).getDay()];
+  return'<span class="kit-ready">KIT READY</span> Kit built '+(n===1?'yesterday':wd+' '+(q[1]+1)+'/'+q[2]+' · 2 days ago')+' · '+esc(b.who);
+}
 // LAST DONE start — same in tempest_prep.html and tempest_line.html; check_last_done.py compares them; docs/last-done.md
 // Per task: its latest check-off in the 14 days before the viewed day, that day's Who, and mode
 // (mode is for Slice 2). LD.map is set only when a read for LD.day landed whole; otherwise lines stay empty.
@@ -436,7 +464,7 @@ function ldLoad(){
   })(0);
 }
 // LAST DONE end
-function ldNote(id){return ldText(id);}
+function ldNote(id){return kitReady(id)||ldText(id);}
 function bTask(it){
   var l=logs[it.id]||{},dn=l.completed||false,w=l.assigned_to||'',q=l.quantity||'',n=l.notes||'',no=openNotes[it.id]||false;
   var hasNote=n&&n.trim().length>0;
