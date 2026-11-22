@@ -396,6 +396,9 @@ before pushing**.
 
 **Ticket: `~/Developer/LAST-DONE-2-TICKET.md`** (2026-11-22).
 
+*Later:* the Kits menu update (2026-11-22) removed Spicy green sauce's pair (673→567), so
+`KIT_MAKE` has 9 pairs.
+
 - `tempest_line.html`: `KIT_MAKE`, `kitReady()`, the `.kit-ready` rule, `ldNote()` widened. All
   outside the LAST DONE blocks. Prep untouched. No new request.
 - Guard scenarios (Line only): built last night → tag; made yesterday and built last night →
