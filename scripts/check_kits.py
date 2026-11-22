@@ -2,22 +2,30 @@
 """
 Behaviour guard for the Kits page (tempest_kits.html), docs/kits.md.
 
-Slice 2's promises: every line of all 8 kits lands where "The 8 kits" says
+Slice 2's promises: every line of every kit lands where "The kits" says
 (written out by hand below); the longest keyword wins; a keyword listed twice
-picks up lines in recipe order; the list shows the 8 in Line PM order with
+picks up lines in recipe order; the list shows all 9 in Line PM order with
 their container counts; each address opens its own kit, and Back, the
 browser's back, a bad address and no address all behave; moving between kits
 sends no second request, and nothing is ever written.
 
-Slice 1's promises, on one kit (Spicy Green Sauce):
-  - with today's recipe text, exactly the 5 containers in "The 8 kits", with
-    nothing in "Not sorted yet";
+Slice 1's promises, on one kit (Buffalo sauce, recipe 5; until the Kits menu
+update of 2026-11-22 they ran on Spicy Green Sauce, which left the menu):
+  - with today's recipe text, exactly the 5 containers in "The kits", 2 of
+    them next to the pan, with nothing in "Not sorted yet";
   - a changed amount stays in its container and shows the new amount;
   - a renamed ingredient goes to "Not sorted yet", and the box appears only then;
-  - heading lines and blank lines are skipped; "jalapeno" and "jalapeño" both match;
+  - heading lines and blank lines are skipped; "harissa" and "harissá" both match,
+    and a curly apostrophe ("Frank’s") doesn't stop a match;
   - a keyword picks up exactly one line: a second "garlic" line goes to
     "Not sorted yet" and nothing else moves;
   - the page sends no write request of any kind.
+
+Menu update (2026-11-22): Suadero (69) and Chilorio (70) in, Spicy green sauce
+out. Chilorio's pan line is its own ("Mixed together in one half hotel pan"),
+every other kit's says "All N containers into one hotel pan"; the old
+#spicy-green-sauce address shows the list; #suadero and #chilorio open their
+sheets, also from Line PM.
 
 None of that can be checked against the live database, so: load the REAL page,
 neutralise the site-password redirect, replace XMLHttpRequest (and fetch and
@@ -56,15 +64,19 @@ SCENARIOS = ("ok", "amount", "renamed", "headings", "twogarlic",
              # slice 4 - the paper backup
              "print",
              # Line PM link, slice 1 - opened from Line PM (?from=line)
-             "fromline", "fromlinemissing", "fromlineemptied")
+             "fromline", "fromlinemissing", "fromlineemptied",
+             # Kits menu update - Suadero and Chilorio in, Spicy green out
+             "nogreen", "suadero", "chilorio", "fromlinesuadero", "fromlinechilorio")
 # opened from Line PM: "&from=line" rides in the query beside the scenario
-FROM_LINE = ("fromline", "fromlinemissing", "fromlineemptied")
-# Slice 1's scenarios open Spicy Green Sauce by its address; the scenario
+FROM_LINE = ("fromline", "fromlinemissing", "fromlineemptied", "fromlinesuadero", "fromlinechilorio")
+# Slice 1's scenarios open Buffalo sauce by its address; the scenario
 # itself rides in the query string, because the address now picks the kit.
 SLICE1 = ("ok", "amount", "renamed", "headings", "twogarlic")
 HASH = {"missing": "", "archived": "", "lost": "", "emptied": "", "fail": "", "e500": "",
         "hang": "", "failaddr": "mac-and-cheese", "reorder": "", "direct": "mac-and-cheese", "nope": "no-such-kit", "list": "", "all8": "", "print": "",
-        "fromline": "pork-belly", "fromlinemissing": "gastrique", "fromlineemptied": "pickled-onions-peppers"}
+        "fromline": "pork-belly", "fromlinemissing": "gastrique", "fromlineemptied": "pickled-onions-peppers",
+        "nogreen": "spicy-green-sauce", "suadero": "suadero", "chilorio": "chilorio",
+        "fromlinesuadero": "suadero", "fromlinechilorio": "chilorio"}
 
 
 def find_chrome():
@@ -82,37 +94,9 @@ def find_chrome():
     return None
 
 # ---------------------------------------------------------------- fixtures --
-# Recipe 25 exactly as the live table held it on 2026-11-02 (a read-only GET).
-GREEN = "\n".join([
-    "2 cups Olive oil blend",
-    "2 cups Parsley leaves, rough chop",
-    "2 cups Cilantro leaves, rough chop",
-    "2 each Jalapeño, seeded, small diced",
-    "10 each Garlic, smashed and rough chopped",
-    "2 Tbsp Lemon juice",
-    "2 Tbsp Ground coriander",
-    "4 tsp Ground cumin",
-    "4 tsp Salt",
-    "2 cups Greek yogurt",
-])
-# what each scenario's recipe text is
-TEXTS = {
-    "ok": GREEN,
-    # an amount changed in the Recipe Database
-    "amount": GREEN.replace("2 cups Greek yogurt", "3 cups Greek yogurt"),
-    # an ingredient renamed so no keyword knows it
-    "renamed": GREEN.replace("2 cups Greek yogurt", "2 cups Skyr"),
-    # parts, blank lines, no ñ, and a curly apostrophe
-    "headings": "— DRY —\n2 Tbsp Ground coriander\n4 tsp Ground cumin\n4 tsp Salt\n\n"
-                "— WET —\n2 cups Olive oil blend\n2 cups Parsley leaves, rough chop\n"
-                "2 cups Cilantro leaves, rough chop\n2 each Jalapeno, seeded, small diced\n"
-                "10 each Garlic, smashed and rough chopped\n\n  \n2 Tbsp Lemon juice\n"
-                "2 cups Chef’s Greek yogurt",
-}
-# a second line matching "garlic": the keyword picks up one line only
-TEXTS["twogarlic"] = GREEN + "\n2 each garlic, minced"
 # Recipes 5, 54, 43, 14, 19, 24 and 46 exactly as the live table held them on
-# 2026-11-05 (a read-only GET). Escaped so the file stays plain ASCII.
+# 2026-11-05, and 69 and 70 on 2026-11-22 (read-only GETs). Escaped so the
+# file stays plain ASCII.
 LIVE = {
     5: "1 ea. butter\n1 c. garlic\n1 jug. honey\n1 tube harissa paste\n4 ea. lemon juice\n1 ea. Frank's Red Hot",
     54: "2 each pork belly\n6 each white onion\n6 each carrot\n6 each celery\n4 each heads of garlic, halved\n4 each bay leaf\n1 cup salt\n\u00bd cup black peppercorns\nparsley stems\npork or veg stock to cover\nthyme (for roasting)\nrosemary (for roasting)\ngarlic cloves (for roasting)\n4 cups cooking liquid (reserved from braise)\nsalt\npepper",
@@ -120,32 +104,46 @@ LIVE = {
     14: "\u2014 DRY \u2014\n4 tsp. baking powder\n\u00bd tsp. baking soda\n2 tsp. salt\n\u00bd tsp. black pepper\n2 cup flour\n\n\u2014 WET & ASSEMBLY \u2014\n6 TB. butter\n1\u00bc cup buttermilk",
     19: "5# chicken thigh\n1 qt. carrots, small dice\n1 qt. celery, small dice\n2 qt. white onion, small dice\n\u00bd pint garlic, sliced\n\u00bd bunch thyme\n2 ea. bay leaf\nSalt\nBlack pepper\n\u00bd cup olive oil\n\u00bd cup butter\n1 cup flour\n6 qt. chicken stock",
     24: "\u2014 PEPPERS \u2014\n2 quart Red onion, thin julienne\n2 bag Mini peppers, sliced\n10 cloves Garlic, sliced\n\n\u2014 PICKLING LIQUID \u2014\n1.5 qt Water\n1.5 qt Cider vinegar\n\u00be cup Sugar\n1 Tbsp Salt\n1 Tbsp Coriander",
+    69: "12 lb beef\n4 Tbsp salt\nBlack pepper, to season\n3 cups pork fat (manteca)\n3 each white onions\n20 each garlic cloves\n8 each bay leaves\n2 Tbsp whole black peppercorns\n8 qt water, or enough to cover the beef",
+    70: "1 each pork butt, large diced\n4 cups chilorio sauce\nSalt, to season\nPepper, to season",
     46: "\u2014 CHEESE BASE \u2014\n1.5 qt. half & half\n2.5 lb. Velveeta cheese\n4 c. mixed cheese\n\u00bd can chipotle peppers and juice, minced\n2 tsp. salt\n\u00bd tsp. chipotle chili powder\n\u00bd tsp. ancho chili powder\n\n\u2014 ROUX BASE \u2014\n8 oz. butter\n2 ea. white onion\n2 Tb. roasted garlic\n\u00bc c. flour\n4 c. half & half\n1 bu. chives\n\u00bc bu. parsley\n\n\u2014 NOODLES & ASSEMBLY \u2014\n2 qt. dried macaroni noodles\n\u00bd c. salt",
 }
 NAMES = {5: "Honey Harissa Buffalo", 54: "Pork Belly", 43: "Bacon Shallot Gastrique",
-         14: "Dumpling", 19: "Chicken & Dumpling (Soup Base)", 25: "Spicy Green Sauce",
-         24: "Pickled Onion & Pepper", 46: "Mac & Cheese"}
-RECIPES = [
-    {"id": 25, "location": "Tempest", "name": "Spicy Green Sauce", "status": "active"},
-] + [{"id": i, "location": "Tempest", "name": NAMES[i], "status": "active", "ingredients": LIVE[i]}
-     for i in (5, 54, 43, 14, 19, 24, 46)] + [
+         14: "Dumpling", 19: "Chicken & Dumpling (Soup Base)",
+         24: "Pickled Onion & Pepper", 46: "Mac & Cheese", 69: "Suadero Beef", 70: "Chilorio Pork"}
+RECIPES = [{"id": i, "location": "Tempest", "name": NAMES[i], "status": "active", "ingredients": LIVE[i]}
+           for i in (5, 54, 43, 14, 19, 24, 46, 69, 70)] + [
     # another location's row with the same id range must never be used
     {"id": 99, "location": "Showdown", "name": "Not ours", "status": "active", "ingredients": "1 cup Skyr"},
 ]
+# Slice 1's kit: Buffalo sauce (recipe 5). What each scenario's recipe text is.
+BUF = LIVE[5]
+TEXTS = {
+    "ok": BUF,
+    # an amount changed in the Recipe Database
+    "amount": BUF.replace("1 jug. honey", "2 jug. honey"),
+    # an ingredient renamed so no keyword knows it
+    "renamed": BUF.replace("4 ea. lemon juice", "4 ea. lime juice"),
+    # parts, blank lines, an accent and a curly apostrophe
+    "headings": "\u2014 BASE \u2014\n1 ea. butter\n1 c. garlic\n1 tube Hariss\u00e1 paste\n\n"
+                "\u2014 FINISH \u2014\n1 jug. honey\n\n  \n4 ea. lemon juice\n1 ea. Frank\u2019s Red Hot",
+}
+# a second line matching "garlic": the keyword picks up one line only
+TEXTS["twogarlic"] = BUF + "\n2 each garlic, minced"
+BUF_SIDE = ["Honey", "Frank\u2019s Red Hot"]
 EXPECT = [
-    ["Spices", ["2 Tbsp Ground coriander", "4 tsp Ground cumin", "4 tsp Salt"]],
-    ["Herbs & veg", ["2 cups Parsley leaves, rough chop", "2 cups Cilantro leaves, rough chop",
-                     "2 each Jalapeño, seeded, small diced", "10 each Garlic, smashed and rough chopped"]],
-    ["Olive oil blend", ["2 cups Olive oil blend"]],
-    ["Lemon juice", ["2 Tbsp Lemon juice"]],
-    ["Greek yogurt", ["2 cups Greek yogurt"]],
+    ["Butter", ["1 ea. butter"]],
+    ["Harissa + garlic", ["1 c. garlic", "1 tube harissa paste"]],
+    ["Honey", ["1 jug. honey"]],
+    ["Lemon juice", ["4 ea. lemon juice"]],
+    ["Frank\u2019s Red Hot", ["1 ea. Frank's Red Hot"]],
 ]
 
-# All 8 kits, written out by hand from docs/kits.md "The 8 kits" - NOT by
+# Every kit, written out by hand from docs/kits.md "The kits" - NOT by
 # running the page's own sort - so this is a second opinion, not an echo.
 # boxes: [part, name, keep, [lines]]; out: [line, why]; side: next to the pan.
 OWN, TOG, SIDE = "own container", "together", "next to the pan, labelled"
-KITS8 = [
+KITS_ALL = [
     {"slug": "mac-and-cheese", "name": "Mac & cheese", "recipe": "Mac & Cheese", "boxes": [
         ["Cheese base", "Half & half", "labelled \u201ccheese base\u201d", ["1.5 qt. half & half"]],
         ["Cheese base", "Cheeses", TOG, ["2.5 lb. Velveeta cheese", "4 c. mixed cheese"]],
@@ -198,21 +196,26 @@ KITS8 = [
         ["", "Butter", OWN, ["6 TB. butter"]],
         ["", "Buttermilk", OWN, ["1\u00bc cup buttermilk"]]],
      "out": [], "side": []},
-    {"slug": "spicy-green-sauce", "name": "Spicy green sauce", "recipe": "Spicy Green Sauce", "boxes": [
-        ["", "Spices", "measure together", ["2 Tbsp Ground coriander", "4 tsp Ground cumin", "4 tsp Salt"]],
-        ["", "Herbs & veg", TOG, ["2 cups Parsley leaves, rough chop", "2 cups Cilantro leaves, rough chop",
-                                  "2 each Jalape\u00f1o, seeded, small diced", "10 each Garlic, smashed and rough chopped"]],
-        ["", "Olive oil blend", OWN, ["2 cups Olive oil blend"]],
-        ["", "Lemon juice", OWN, ["2 Tbsp Lemon juice"]],
-        ["", "Greek yogurt", OWN, ["2 cups Greek yogurt"]]],
-     "out": [], "side": []},
     {"slug": "pickled-onions-peppers", "name": "Pickled onions & peppers", "recipe": "Pickled Onion & Pepper", "boxes": [
         ["", "Veg", TOG, ["2 quart Red onion, thin julienne", "2 bag Mini peppers, sliced", "10 cloves Garlic, sliced"]],
         ["", "Pickling spices", TOG, ["\u00be cup Sugar", "1 Tbsp Salt", "1 Tbsp Coriander"]],
         ["", "Cider vinegar", OWN, ["1.5 qt Cider vinegar"]]],
      "out": [["1.5 qt Water", "from the tap"]], "side": []},
+    {"slug": "suadero", "name": "Suadero", "recipe": "Suadero Beef", "boxes": [
+        ["", "Manteca", OWN, ["3 cups pork fat (manteca)"]],
+        ["", "Onions & garlic", TOG, ["3 each white onions", "20 each garlic cloves"]],
+        ["", "Braise seasoning", TOG, ["8 each bay leaves", "2 Tbsp whole black peppercorns"]],
+        ["", "Salt", OWN, ["4 Tbsp salt"]]],
+     "out": [["12 lb beef", "raw meat \u2014 pull from the meat shelf"],
+             ["Black pepper, to season", "to season, at the stove"],
+             ["8 qt water, or enough to cover the beef", "from the tap, to cover"]], "side": []},
+    {"slug": "chilorio", "name": "Chilorio", "recipe": "Chilorio Pork", "boxes": [
+        ["", "Pork in the sauce", "cut the pork, salt and pepper it, mix with the sauce in a half hotel pan",
+         ["1 each pork butt, large diced", "4 cups chilorio sauce", "Salt, to season", "Pepper, to season"]]],
+     "out": [], "side": [], "pan": "Mixed together in one half hotel pan"},
 ]
-LIST_COUNTS = [11, 5, 3, 7, 5, 3, 5, 3]
+LIST_COUNTS = [11, 5, 3, 7, 5, 3, 3, 4, 1]
+PRINT_ALL = "Print all 9 kits"
 
 
 def swap(text, a, b):
@@ -225,7 +228,7 @@ def swap(text, a, b):
 # line comes first; only longest-first keeps each line in its own container.
 REORDER = {43: swap(LIVE[43], "1 bottle red wine", "4 c. red wine vinegar"),
            14: swap(LIVE[14], "6 TB. butter", "1\u00bc cup buttermilk")}
-ALL_IDS = "46,5,54,43,19,14,25,24"
+ALL_IDS = "46,5,54,43,19,14,24,69,70"
 
 # ------------------------------------------------------------ page surgery --
 GATE_RE = re.compile(r"window\.location\.replace\('index\.html'\)")
@@ -261,7 +264,7 @@ HARNESS = r"""
           if(ids&&ids.indexOf(String(r.id))<0)return false;
           if(q.location&&('eq.'+r.location)!==q.location)return false;
           return true;
-        }).map(function(r){var c=JSON.parse(JSON.stringify(r));if(c.id===25)c.ingredients=FX.text;return c;});
+        }).map(function(r){var c=JSON.parse(JSON.stringify(r));if(c.id===5&&FX.text!==null)c.ingredients=FX.text;return c;});
         x.status=200;x.responseText=JSON.stringify(rows);
       }
       x.readyState=4;
@@ -294,7 +297,7 @@ RUNNER = r"""
     ok('nothing but fetch-free XHR GETs', H.reqs.every(function(r){return !r.via;}), H.reqs);
     var want=H.wantReqs||1;
     ok('exactly '+want+' request(s), however many kits were opened', H.reqs.length===want, H.reqs.length);
-    ok('every read is Recipes, all 8 ids, for Tempest, four columns only', H.reqs.every(function(r){var u=r.url;return u.indexOf('/rest/v1/Recipes?id=in.('+H.fx.ids+')&location=eq.Tempest&select=id,name,status,ingredients')>-1&&/ingredients$/.test(u);}), H.reqs.map(function(r){return r.url;}));
+    ok('every read is Recipes, every kit\u2019s id, for Tempest, four columns only', H.reqs.every(function(r){var u=r.url;return u.indexOf('/rest/v1/Recipes?id=in.('+H.fx.ids+')&location=eq.Tempest&select=id,name,status,ingredients')>-1&&/ingredients$/.test(u);}), H.reqs.map(function(r){return r.url;}));
     ok('no header asks for a write', H.reqs.every(function(r){return !r.headers.Prefer&&!r.headers['Content-Type'];}), H.reqs);
     ok('the page has no inputs', document.querySelectorAll('input,select,textarea').length===0);
   }
@@ -307,7 +310,7 @@ RUNNER = r"""
       return [part||'',txt(b.querySelector('.kit-name')),txt(b.querySelector('.kit-keep')),
               [].map.call(b.querySelectorAll('.kit-line'),txt),txt(b.querySelector('.kit-num'))];});
     ok(tag+'its own sheet opened', txt(document.querySelector('.kit-title'))===K.name&&txt(document.querySelector('.kit-from'))==='from '+K.recipe, txt(document.querySelector('.kit-title')));
-    ok(tag+'every container, keep line and recipe line exactly as "The 8 kits"',
+    ok(tag+'every container, keep line and recipe line exactly as "The kits"',
        JSON.stringify(got.map(function(g){return g.slice(0,4);}))===JSON.stringify(K.boxes), {got:got,want:K.boxes});
     ok(tag+'numbered 1 to '+K.boxes.length+' straight through the parts', got.every(function(g,i){return g[4]===String(i+1);}), got.map(function(g){return g[4];}));
     var outs=[].map.call(document.querySelectorAll('.kit-out'),function(o){return [txt(o.querySelector('.kit-line')),txt(o.querySelector('.kit-why'))];});
@@ -316,7 +319,12 @@ RUNNER = r"""
     ok(tag+'"Not in the kit" only when it has something', K.out.length?/Not in the kit/.test(txt(app)):!/Not in the kit/.test(txt(app)));
     ok(tag+'nothing in "Not sorted yet"', !document.getElementById('unsorted'));
     var pan=txt(document.getElementById('pan')),inPan=K.boxes.length-K.side.length;
-    ok(tag+'pan: all '+inPan+' in the pan', pan.indexOf('All '+inPan+' container'+(inPan===1?'':'s')+' into one hotel pan')===0, pan);
+    if(K.pan){
+      ok(tag+'pan: its own first line, "'+K.pan+'"', pan.indexOf(K.pan)===0, pan);
+      ok(tag+'pan: no "All N container" line', !/All \d+ container/.test(pan), pan);
+    }
+    else ok(tag+'pan: all '+inPan+' in the pan', pan.indexOf('All '+inPan+' container'+(inPan===1?'':'s')+' into one hotel pan')===0, pan);
+    ok(tag+'pan: label and date, into the cooler', /Label and date the pan · into the cooler/.test(pan), pan);
     ok(tag+'pan: each next-to-the-pan item named, and no other',
        K.side.every(function(n){return pan.indexOf('Next to the pan, labelled: '+n)>-1;})&&(pan.match(/Next to the pan, labelled:/g)||[]).length===K.side.length, pan);
     var parts=[].map.call(document.querySelectorAll('.kit-part'),txt),wantParts=[];
@@ -339,8 +347,8 @@ RUNNER = r"""
   function listChecks(tag){
     var items=isList(),K=H.fx.kits,C=H.fx.counts;
     ok(tag+'the list is showing, and no sheet', items.length>0&&!document.getElementById('pan'), txt(document.getElementById('appBody')).slice(0,200));
-    ok(tag+'8 kits, in Line PM order', JSON.stringify(items.map(function(i){return i[0];}))===JSON.stringify(K.map(function(k){return k.slug;})), items);
-    ok(tag+'each with its name and its container count', items.every(function(it,i){return it[1]===K[i].name&&it[2]===C[i]+' containers';}), items);
+    ok(tag+K.length+' kits, in Line PM order', JSON.stringify(items.map(function(i){return i[0];}))===JSON.stringify(K.map(function(k){return k.slug;})), items);
+    ok(tag+'each with its name and its container count', items.every(function(it,i){return it[1]===K[i].name&&it[2]===C[i]+' container'+(C[i]===1?'':'s');}), items);
     ok(tag+'each links to its own address', [].every.call(document.querySelectorAll('.kit-item'),function(a,i){return a.getAttribute('href')==='#'+K[i].slug;}));
     ok(tag+'each is a big tap target (\u226544px)', [].every.call(document.querySelectorAll('.kit-item'),function(a){return a.getBoundingClientRect().height>=44;}));
   }
@@ -395,7 +403,7 @@ RUNNER = r"""
     window.print=orig;
     ok(tag+'the Print button calls window.print() once, and sends no request', n===1&&H.reqs.length===before, [n,H.reqs.length-before]);
   }
-  var ALL8=H.fx.kits.map(function(k){return k.slug;});
+  var ALLK=H.fx.kits.map(function(k){return k.slug;});
   /* steps run in order, each after the page has had time to redraw */
   function steps(list){
     var i=0;(function next(){if(i>=list.length){common();finish();return;}var f=list[i++];f();setTimeout(next,150);})();
@@ -412,13 +420,13 @@ RUNNER = r"""
     }
     if(S==='print'){
       return steps([
-        function(){printChecks('print, list: ',ALL8,'Print all 8 kits');ok('print, list: rings print on every sheet',H.printRings===H.fx.counts.reduce(function(a,b){return a+b;},0),H.printRings);},
+        function(){printChecks('print, list: ',ALLK,H.fx.printAll);ok('print, list: rings print on every sheet',H.printRings===H.fx.counts.reduce(function(a,b){return a+b;},0),H.printRings);},
         function(){location.hash='pork-belly';},
         function(){printChecks('print, pork-belly: ',['pork-belly'],'Print this kit');},
         function(){location.hash='mac-and-cheese';},
         function(){printChecks('print, mac-and-cheese: ',['mac-and-cheese'],'Print this kit');ok('print, mac-and-cheese: all 11 rings print',H.printRings===11,H.printRings);},
         function(){document.getElementById('backLink').click();},
-        function(){printChecks('print, back on the list: ',ALL8,'Print all 8 kits');}
+        function(){printChecks('print, back on the list: ',ALLK,H.fx.printAll);}
       ]);
     }
     if(S==='fromline'){
@@ -427,6 +435,13 @@ RUNNER = r"""
         function(){location.hash='mac-and-cheese';},
         function(){sheet(kitBy('mac-and-cheese'));ok('fromline: still "← Line PM" after moving to another kit', txt(document.getElementById('backLink'))==='← Line PM');}
       ]);
+    }
+    if(S==='nogreen'){
+      return steps([function(){listChecks('nogreen: #spicy-green-sauce shows the list: ');ok('nogreen: no Spicy green sauce anywhere', !/spicy green/i.test(txt(document.getElementById('appBody'))));}]);
+    }
+    if(S==='suadero'||S==='chilorio'||S==='fromlinesuadero'||S==='fromlinechilorio'){
+      var sl=S.replace('fromline','');
+      return steps([function(){ok(S+': its address opens it', location.hash==='#'+sl);sheet(kitBy(sl));}]);
     }
     if(S==='fromlinemissing'){
       return steps([function(){
@@ -445,11 +460,11 @@ RUNNER = r"""
     if(S==='missing'||S==='archived'){
       var slug=S==='missing'?'gastrique':'dumpling',K=kitBy(slug);
       return steps([
-        function(){printChecks(S+', list: ',ALL8,'Print all 8 kits');ok(S+': its printed sheet says "tell a manager" too',H.printLoud===1);},
+        function(){printChecks(S+', list: ',ALLK,H.fx.printAll);ok(S+': its printed sheet says "tell a manager" too',H.printLoud===1);},
         function(){
           var f=flag(slug),ink=getComputedStyle(document.body).color;
           ok(S+': the list marks it "Recipe not found", in bold ink', !!f&&f[0]==='Recipe not found'&&f[1]>=700&&f[2]===ink, f);
-          ok(S+': the other 7 still show their counts', H.fx.kits.every(function(k,i){var g=flag(k.slug);return k.slug===slug||(g&&g[0]===H.fx.counts[i]+' containers');}));
+          ok(S+': the other 7 still show their counts', H.fx.kits.every(function(k,i){var g=flag(k.slug);return k.slug===slug||(g&&g[0]===H.fx.counts[i]+' container'+(H.fx.counts[i]===1?'':'s'));}));
           document.querySelector('.kit-item[data-slug="'+slug+'"]').click();
         },
         function(){
@@ -461,7 +476,7 @@ RUNNER = r"""
           backChecks(S+': ');
           document.getElementById('backLink').click();
         },
-        function(){ok(S+': Back returns to the list', document.querySelectorAll('.kit-item').length===8);}
+        function(){ok(S+': Back returns to the list', document.querySelectorAll('.kit-item').length===H.fx.kits.length);}
       ]);
     }
     if(S==='lost'){
@@ -519,7 +534,7 @@ RUNNER = r"""
         },
         function(){
           if(S==='failaddr')ok('failaddr: Try again lands on the kit you were on', location.hash==='#mac-and-cheese'&&txt(document.querySelector('.kit-title'))==='Mac & cheese'&&!!document.getElementById('pan'), txt(document.getElementById('appBody')).slice(0,120));
-          else ok(S+': Try again works - the list is back', document.querySelectorAll('.kit-item').length===8&&!document.querySelector('.empty'), txt(document.getElementById('appBody')).slice(0,120));
+          else ok(S+': Try again works - the list is back', document.querySelectorAll('.kit-item').length===H.fx.kits.length&&!document.querySelector('.empty'), txt(document.getElementById('appBody')).slice(0,120));
         }
       ]);
     }
@@ -556,7 +571,7 @@ RUNNER = r"""
           }
         });
         st.push(function(){document.getElementById('backLink').click();});
-        st.push(function(){ok(K.slug+': Back returns to the list', isList().length===8&&!document.getElementById('pan'), txt(document.getElementById('appBody')).slice(0,120));});
+        st.push(function(){ok(K.slug+': Back returns to the list', isList().length===H.fx.kits.length&&!document.getElementById('pan'), txt(document.getElementById('appBody')).slice(0,120));});
       });
       st.push(function(){history.back();});
       st.push(function(){var last=H.fx.kits[H.fx.kits.length-1].name;ok('the browser\u2019s own back works too', !!document.getElementById('pan')&&txt(document.querySelector('.kit-title'))===last, txt(document.querySelector('.kit-title')));});
@@ -579,10 +594,11 @@ RUNNER = r"""
     }
     var b=boxes(),un=document.getElementById('unsorted');
     ok('the sheet was drawn', !!document.getElementById('pan'), txt(document.getElementById('appBody')).slice(0,200));
-    ok('kit name and its recipe', txt(document.querySelector('.kit-title'))==='Spicy green sauce'&&txt(document.querySelector('.kit-from'))==='from Spicy Green Sauce');
+    ok('kit name and its recipe', txt(document.querySelector('.kit-title'))==='Buffalo sauce'&&txt(document.querySelector('.kit-from'))==='from Honey Harissa Buffalo');
     ok('numbers are rings, 1 to N', b.every(function(x,i){return x[2]===String(i+1);})&&
        [].every.call(document.querySelectorAll('.kit-num'),function(n){var cs=getComputedStyle(n);return parseFloat(cs.borderTopWidth)>=2&&cs.borderRadius==='50%';}), b);
-    ok('the hotel pan step is there', new RegExp('All '+b.length+' containers into one hotel pan').test(txt(document.getElementById('pan')))&&/Label and date the pan · into the cooler/.test(txt(document.getElementById('pan'))), txt(document.getElementById('pan')));
+    var nIn=b.filter(function(x){return H.fx.bufSide.indexOf(x[0])<0;}).length;
+    ok('the hotel pan step is there, with the 2 next-to-the-pan items left out', new RegExp('All '+nIn+' containers? into one hotel pan').test(txt(document.getElementById('pan')))&&/Label and date the pan · into the cooler/.test(txt(document.getElementById('pan'))), txt(document.getElementById('pan')));
     ok('no "Not in the kit" section for this kit', !/Not in the kit/.test(txt(document.getElementById('appBody'))));
     /* every recipe line lands in exactly one place */
     var landed=[].map.call(document.querySelectorAll('.kit-line'),txt);
@@ -590,38 +606,39 @@ RUNNER = r"""
     ok('every recipe line lands exactly once', landed.length===src.length&&src.every(function(s){return landed.indexOf(s.replace(/\s+/g,' '))>-1;}), {landed:landed,src:src});
 
     if(S==='ok'){
+      ok('ok: Honey and Frank\u2019s are next to the pan', /Next to the pan, labelled: Honey/.test(txt(document.getElementById('pan')))&&/Next to the pan, labelled: Frank\u2019s Red Hot/.test(txt(document.getElementById('pan'))), txt(document.getElementById('pan')));
       ok('ok: exactly the 5 containers, each with its lines', JSON.stringify(b.map(function(x){return [x[0],x[1]];}))===JSON.stringify(E), b);
       ok('ok: nothing in "Not sorted yet", and no box', !un&&!/Not sorted yet/.test(txt(document.getElementById('appBody'))));
     }
     if(S==='amount'){
-      var y=b.filter(function(x){return x[0]==='Greek yogurt';})[0];
-      ok('amount: the yogurt stays in its container with the new amount', !!y&&y[1].length===1&&y[1][0]==='3 cups Greek yogurt', b);
-      ok('amount: the old amount is nowhere', !/2 cups Greek yogurt/.test(txt(document.getElementById('appBody'))));
+      var y=b.filter(function(x){return x[0]==='Honey';})[0];
+      ok('amount: the honey stays in its container with the new amount', !!y&&y[1].length===1&&y[1][0]==='2 jug. honey', b);
+      ok('amount: the old amount is nowhere', !/1 jug\. honey/.test(txt(document.getElementById('appBody'))));
       ok('amount: nothing unsorted', !un);
     }
     if(S==='renamed'){
-      printChecks('renamed: ',['spicy-green-sauce'],'Print this kit');
+      printChecks('renamed: ',['buffalo-sauce'],'Print this kit');
       ok('renamed: "Not sorted yet" prints with its heavy border', H.printLoud===1, H.printLoud);
       ok('renamed: the box appears', !!un&&/Not sorted yet/.test(txt(un)));
-      ok('renamed: the line is in it', !!un&&[].some.call(un.querySelectorAll('.kit-line'),function(l){return txt(l)==='2 cups Skyr';}), txt(un));
+      ok('renamed: the line is in it', !!un&&[].some.call(un.querySelectorAll('.kit-line'),function(l){return txt(l)==='4 ea. lime juice';}), txt(un));
       ok('renamed: it says to tell a manager', /This is in the recipe but not in the kit yet — tell a manager\./.test(txt(un)));
       ok('renamed: it stands out by border, not colour', !!un&&parseFloat(getComputedStyle(un).borderTopWidth)>=3, un&&getComputedStyle(un).borderTopWidth);
-      ok('renamed: the empty container disappears, numbers close up', b.length===4&&b.every(function(x){return x[0]!=='Greek yogurt';})&&b[3][2]==='4', b);
-      ok('renamed: the pan counts 4', /All 4 containers/.test(txt(document.getElementById('pan'))));
+      ok('renamed: the empty container disappears, numbers close up', b.length===4&&b.every(function(x){return x[0]!=='Lemon juice';})&&b[3][2]==='4', b);
+      ok('renamed: the pan counts 2', /All 2 containers/.test(txt(document.getElementById('pan'))), txt(document.getElementById('pan')));
       ok('renamed: the box comes before the containers', !!un&&!!(un.compareDocumentPosition(document.querySelector('.kit-box'))&Node.DOCUMENT_POSITION_FOLLOWING));
     }
     if(S==='headings'){
       ok('headings: no heading line is shown as an ingredient', !/—/.test(landed.join(' ')), landed);
       ok('headings: blank lines are skipped, nothing unsorted', !un, un&&txt(un));
-      var hv=b.filter(function(x){return x[0]==='Herbs & veg';})[0];
-      ok('headings: "jalapeno" without the ñ matches', !!hv&&hv[1].indexOf('2 each Jalapeno, seeded, small diced')>-1, b);
-      var gy=b.filter(function(x){return x[0]==='Greek yogurt';})[0];
-      ok('headings: a curly apostrophe does not stop a match', !!gy&&gy[1][0]==='2 cups Chef’s Greek yogurt', b);
+      var hv=b.filter(function(x){return x[0]==='Harissa + garlic';})[0];
+      ok('headings: "harissá" with an accent still matches "harissa"', !!hv&&hv[1].indexOf('1 tube Harissá paste')>-1, b);
+      var gy=b.filter(function(x){return x[0]==='Frank’s Red Hot';})[0];
+      ok('headings: a curly apostrophe does not stop a match', !!gy&&gy[1][0]==='1 ea. Frank’s Red Hot', b);
       ok('headings: still 5 containers', b.length===5, b);
     }
     if(S==='twogarlic'){
-      var hv2=b.filter(function(x){return x[0]==='Herbs & veg';})[0];
-      ok('twogarlic: the original garlic line stays in container 2', !!hv2&&hv2[2]==='2'&&hv2[1].indexOf('10 each Garlic, smashed and rough chopped')>-1, b);
+      var hv2=b.filter(function(x){return x[0]==='Harissa + garlic';})[0];
+      ok('twogarlic: the original garlic line stays in container 2', !!hv2&&hv2[2]==='2'&&hv2[1].indexOf('1 c. garlic')>-1, b);
       ok('twogarlic: the new line is not in a container', b.every(function(x){return x[1].indexOf('2 each garlic, minced')<0;}), b);
       ok('twogarlic: the new line shows in "Not sorted yet", alone', !!un&&[].map.call(un.querySelectorAll('.kit-line'),txt).join('|')==='2 each garlic, minced', un&&txt(un));
       ok('twogarlic: nothing else moves', JSON.stringify(b.map(function(x){return [x[0],x[1]];}))===JSON.stringify(E), b);
@@ -671,8 +688,9 @@ def build_page(scen):
         recipes = [dict(r, ingredients="\u2014 BRINE \u2014\n1 cup Skyr\n2 Tbsp Za\u2019atar\n1.5 qt Water")
                    if r["id"] == 24 else r for r in RECIPES]
     plan = {"fail": ["err"], "e500": ["e500"], "hang": ["hang"], "failaddr": ["err"]}.get(scen, [])
-    fixtures = {"recipes": recipes, "text": TEXTS.get(scen, GREEN), "expect": EXPECT,
-                "kits": KITS8, "counts": LIST_COUNTS, "ids": ALL_IDS, "slice1": list(SLICE1), "plan": plan}
+    fixtures = {"recipes": recipes, "text": TEXTS.get(scen) if scen in SLICE1 else None, "expect": EXPECT,
+                "kits": KITS_ALL, "counts": LIST_COUNTS, "ids": ALL_IDS, "slice1": list(SLICE1), "plan": plan,
+                "printAll": PRINT_ALL, "bufSide": BUF_SIDE}
     src = src.replace(marker, HARNESS.replace("__FIXTURES__", json.dumps(fixtures)) + marker, 1)
     # no network, ever: the webfont links would otherwise leave the machine
     src = re.sub(r'<link rel="preconnect"[^>]*>\s*', '', src)
@@ -686,7 +704,7 @@ RESULT_RE = re.compile(r'<div id="harnessResults">(.*?)</div>', re.S)
 def run_scenario(chrome, path, scen):
     """One Chrome per scenario; poll --dump-dom output for the results div."""
     url = "file://" + path + "?scen=" + scen + ("&from=line" if scen in FROM_LINE else "") + "#" + (
-        "spicy-green-sauce" if scen in SLICE1 else HASH[scen])
+        "buffalo-sauce" if scen in SLICE1 else HASH[scen])
     dom = os.path.join(os.path.dirname(path), "dom-" + scen + ".html")
     err = os.path.join(os.path.dirname(path), "err-" + scen + ".txt")
     with open(dom, "w") as fo, open(err, "w") as fe:

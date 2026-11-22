@@ -113,7 +113,8 @@ MORNING = [(571, "Make - Mac and cheese", "saute"), (583, "Buffalo sauce", "gril
            (620, "Make - Chicken and Dumpling soup", "saute"), (570, "Make - Dumpling", "saute"),
            (567, "Make - Spicy green sauce", "saute"), (568, "Make - Pickle peppers & onions", "saute"),
            (759, "Cook Suadero", "saute"), (596, "Cook Chilorio pork", "saute")]
-PAIRS = {668: 571, 669: 583, 670: 573, 671: 615, 672: 620, 678: 570, 673: 567, 674: 568, 675: 759, 676: 596}
+# 673 (Spicy green sauce) left KIT_MAKE with the Kits menu update, 2026-11-22.
+PAIRS = {668: 571, 669: 583, 670: 573, 671: 615, 672: 620, 678: 570, 674: 568, 675: 759, 676: 596}
 
 
 def items_for(page):
@@ -225,8 +226,9 @@ SCEN = {
     "tap": {"logs": BASE_LOGS},
     "kits": {"logs": BASE_LOGS[:-1] + KIT_LOGS},
     "kitpast": {"logs": BASE_LOGS[:-1] + KIT_LOGS},
-    "kitrename": {"logs": BASE_LOGS[:-1] + [log(673, "2026-11-19", who="Ana"), log(678, "2026-11-19", who="Ana")],
-                  "renamed": {"673": "Kit - Nachos", "570": "Make - Dumpling soup"}},
+    "kitrename": {"logs": BASE_LOGS[:-1] + [log(674, "2026-11-19", who="Ana"), log(678, "2026-11-19", who="Ana"),
+                                           log(673, "2026-11-19", who="Ana")],
+                  "renamed": {"674": "Kit - Nachos", "570": "Make - Dumpling soup"}},
     "kittyping": {"logs": BASE_LOGS[:-1] + KIT_LOGS},
     "kitphone": {"logs": BASE_LOGS[:-1] + KIT_LOGS},
     "kitphonemgr": {"logs": BASE_LOGS[:-1] + KIT_LOGS},
@@ -363,7 +365,8 @@ RUNNER = r"""
     });
   }
   function kitrename(){
-    ok('kitrename: no tag on 567 (kit renamed Nachos)', ldt(567)===FX.not, ldt(567));
+    ok('kitrename: no tag on 568 (kit 674 renamed Nachos)', ldt(568)===FX.not, ldt(568));
+    ok('kitrename: 673 ticked with a name puts no tag on 567 (no pair since the menu update)', ldt(567)===FX.not, ldt(567));
     ok('kitrename: no tag on 570 (renamed Dumpling soup)', ldt(570)===FX.not, ldt(570));
     ok('kitrename: no tag anywhere', tags().length===0, tags());
     common();finish();
@@ -395,6 +398,10 @@ RUNNER = r"""
       ok('words: the query is exact', a[0]&&a[0].query===FX.query, a[0]&&a[0].query);
       expectAll('words',FX.expect);
       expectAll('words',FX.wordsline);
+      if(FX.page==='line'){
+        ok('words: KIT_MAKE has 9 pairs, and none for 673 or 677', Object.keys(window.KIT_MAKE).length===9&&!window.KIT_MAKE[673]&&!window.KIT_MAKE[677], Object.keys(window.KIT_MAKE));
+        ok('words: KIT_MAKE is the pairs in the guard', Object.keys(FX.pairs).every(function(k){return window.KIT_MAKE[k]&&window.KIT_MAKE[k].am===FX.pairs[k];}));
+      }
       if(FX.page==='prep'){
         ok('words: Prep has no KIT READY', document.querySelectorAll('.kit-ready').length===0);
         ok('words: Prep has no KIT_MAKE', typeof window.KIT_MAKE==='undefined');
@@ -509,7 +516,7 @@ RUNNER = r"""
           ok(tag+': #ni'+id+' still follows its .task-name', ni&&ni.previousElementSibling&&ni.previousElementSibling.classList.contains('task-name'));
         });
         var A=[].slice.call(document.querySelectorAll('.kit-sheet-link'));
-        ok(tag+': 7 SHEET buttons', A.length===7, A.length);
+        ok(tag+': 9 SHEET buttons', A.length===9, A.length);
         A.forEach(function(a){
           var r=a.getBoundingClientRect(),i=a.closest('.task-info'),ir=i?i.getBoundingClientRect():null,t=a.closest('.task').getBoundingClientRect();
           ok(tag+': SHEET in .task-info, 44px, inside its row', !!i&&r.height>=44&&r.left>=t.left-0.5&&r.right<=t.right+0.5&&r.bottom<=t.bottom+0.5, [r.height,r.left,r.right,t.right]);
