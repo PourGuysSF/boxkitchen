@@ -247,9 +247,13 @@ in "Not in the kit", every keyword finds its line, and nothing lands in "Not sor
 4. In the same PR, add the Line PM row id, its slug and its word to the map (`KIT_SHEETS`) in
    `tempest_line.html`, and to the fixture in `scripts/check_line.py` (`SHEETS`), so the row
    gets its **SHEET →** button (see `docs/kits-line-link.md`).
+5. Add the kit row id, its Line AM row id and the word to `KIT_MAKE` in `tempest_line.html`,
+   and to the fixture in `scripts/check_last_done.py`, so the morning row shows KIT READY (see
+   `docs/last-done.md`).
 
-Removing a kit is the reverse, including taking its row out of the map and the fixture, so
-no button points at a sheet that's gone. If this happens often enough to be a chore, manager-editable
+Removing a kit is the reverse, including taking its row out of the maps (`KIT_SHEETS`,
+`KIT_MAKE`) and the fixtures, so no button points at a sheet that's gone and no morning row
+shows KIT READY for it. If this happens often enough to be a chore, manager-editable
 kits is the build after (see "Later").
 
 ### Addresses

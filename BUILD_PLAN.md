@@ -122,6 +122,7 @@ libraries). PR #74 also shipped the `tempest_notes.html` delete-confirmation mes
 ## PHASE B — Bigger modules & "coming soon" build-outs (after Tempest is airtight)
 
 - **B1. Prep shift hand-off + history** (roadmap #2). [Consistency][Time]
+  - Last done line (Prep + Line) and KIT READY on Line AM — built (#193, #194 live; Slice 2 on `prep-last-done-2`). Plan: `docs/last-done.md`.
 - **B2. Prep hand-off email notification** (roadmap #3) — reuses A4's plumbing. [Time]
 - **B3. Inventory Guide** (coming-soon card; roadmap #4 monthly inventory). [Cost]
 - **B4. Recipe Costing v1** (coming-soon card; roadmap #5) — manual pricing tied to

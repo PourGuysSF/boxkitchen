@@ -1,6 +1,6 @@
 # Last done — every prep task says when it was last done, and a built kit says "make today"
 
-Status: **Slice 1 LIVE (#193, 2026-11-21). Slice 1b BUILT 2026-11-22 on `prep-last-done-1b`, not pushed.** (Plan v1 2026-11-20, changed 2026-11-21.) Written in the Last Done planner window from Stephen's requests
+Status: **Slice 1 LIVE (#193, 2026-11-21). Slice 1b LIVE (#194, `58d9235`, 2026-11-22), phone check passed 2026-11-22. Slice 2 BUILT 2026-11-22 on `prep-last-done-2`, not pushed.** (Plan v1 2026-11-20, changed 2026-11-21 and 2026-11-22.) Written in the Last Done planner window from Stephen's requests
 and answers on 2026-11-20. Every decision in the Decisions table is Stephen's; everything under
 "Planner rulings" is the planner's, with the reason. It goes into the repo as `docs/last-done.md`
 with Slice 1's PR. Slice 1 is built: see "Slice 1 as built" at the end.
@@ -53,6 +53,7 @@ says so:
 | Where the kit shows (asked 2026-11-20) | **On the kit's existing row on the Line AM list** ("Make - Mac and cheese", "Cook pork belly", "Buffalo sauce"…), as a bold **KIT READY** on its note line. Not on the Prep page: Prep has no task for making any kit recipe (see ground truth). |
 | The KIT/MAKE pill (asked 2026-11-20) | **MAKE means the PM cook made the recipe instead of kitting it, so nothing is waiting.** A kit row checked while its pill says MAKE puts no KIT READY on the morning row. A row checked on KIT (the normal case) does. |
 | When | **Start now**, alongside the Schedule and Recipe Costing builds. |
+| How old a kit can be and still show (asked 2026-11-22) | **Up to 2 days**: built last night, or the night before if no morning has made it since. Older kits show nothing. See "Slice 2 check, 2026-11-22". |
 
 *Correction to the pill question as asked:* Stephen was told the pill had been flipped to MAKE
 6 times, not since Sept 18. That read hit the 1,000-row cut-off (below). The full history is
@@ -128,6 +129,41 @@ A real mix, not a wall of "not done", and it sharpens as the crew picks Who.
   handling for now** (Stephen: "we can worry about the everyone later on"). It's an entry like
   any other, so a tick with it counts.
 
+
+---
+
+## Slice 2 check, 2026-11-22: KIT READY under the named-tick rule
+
+Slice 2's rule was written before 1b. Re-run on live data (read-only GETs, all 646 rows of the
+20 paired rows since 10/20) with only named ticks counting, it found one problem: **no age
+limit.** A kit ticked with a name, whose morning row is then only ticked bare, stayed KIT READY
+for the whole 14-day window. Pickle (674) showed on every morning 11/06–11/13, reaching "Kit
+built 14 days ago". Asked how old a kit can be, **Stephen chose up to 2 days.**
+
+| fact | number |
+|---|---|
+| The 20 paired rows | all exist, names unchanged (kits `station` `kits` PM; morning rows `saute`/`grill` AM) |
+| Kits ticked a night (10 paired kits) | 5–10; **with a name: 1–7, about 4 in 10** |
+| Morning rows ticked a day | 9–10 of 10; **with a name: 1–6, about 1 in 3** |
+| Names on kit rows (since 10/20) | Gilberto 37, Pablo 17, Chepe 15, Evelin 13, Eddy 3, Carlos 2, "Gilberto & Chepe" 2 |
+| KIT/MAKE pill set since 10/20 | 4 times: KIT 11/09 (675), KIT 11/16 (670), **MAKE 11/16 and 11/17 (675, Suadero)**, all named |
+
+**What the morning would have seen** (final rule: named ticks, up to 2 days, MAKE excluded):
+
+| morning | tags | | morning | tags |
+|---|---|---|---|---|
+| Mon 11/09 | 1 | | Mon 11/16 | 4 |
+| Tue 11/10 | 2 | | Tue 11/17 | 4 (Gastrique 2 days) |
+| Wed 11/11 | 3 | | Wed 11/18 | 3 |
+| Thu 11/12 | 4 | | Thu 11/19 | 8 (Pickle 2 days) |
+| Fri 11/13 | 5 | | Fri 11/20 | 4 (Pork belly 2 days) |
+| Sat 11/14 | 3 | | Sat 11/21 | 5 |
+| Sun 11/15 | 2 | | Sun 11/22 | 3 (Chilorio 2 days) |
+
+About 4 a morning, nearly all "yesterday". Under "any tick" it would have been 5–10 every
+morning, all "yesterday", which is the problem 1b fixed. **Kits ticked with no name don't
+show** (3–9 a night today), so the PM line must pick a name on the kits it really builds, and
+the morning on what it really makes, or a tag stays up to 2 days.
 
 ---
 
@@ -249,23 +285,25 @@ so AM/PM switches need nothing new. ◀ ▶ makes one new read for the new day.
 
 ### Slice 2: KIT READY on the Line AM row (Line only)
 
+*Rewritten in v3 (2026-11-22) for the named-tick rule and the 2-day limit.*
+
 - A map in `tempest_line.html`, `KIT_MAKE`, keyed by kit row id: its morning row's id, plus
-  a word each name must still contain (case, punctuation and spacing ignored), so a renamed row
+  a word both names must still contain (case, punctuation and spacing ignored), so a renamed row
   drops out instead of pointing at the wrong dish. That's the same trick as `KIT_SHEETS`. 10 pairs, from the table
   above: 668→571 `mac` · 669→583 `buffalo` · 670→573 `pork belly` · 671→615 `gastrique` ·
   672→620 `soup` · 678→570 `dumpling`, not `soup` (both sides) · 673→567 `green` ·
   674→568 `pickle` · 675→759 `suadero` · 676→596 `chilorio`. 677 has no entry.
-- **The rule**, for the viewed day: the kit row's latest check-off (from Slice 1's read) is **on
-  or after** its morning row's latest check-off (or the morning row has none in the 14 days),
-  **and** that kit check-off's pill was not MAKE. Then the pan is still in the cooler. "On or after"
-  because the morning makes the recipe at the start of a day and the PM builds the next kit at
-  the end of it. A pan built two nights ago and never made still shows, with its real day:
-  `KIT READY  Kit built Wed 11/18 · 2 days ago`.
+- **The rule**, for the viewed day, from Slice 1's read (named ticks only): the kit row's latest
+  named tick is **1 or 2 days** before the viewed day, its pill was not MAKE, and the morning
+  row has **no named tick after it** (none in the 14 days, or one on or before the kit's day).
+  Then the pan is still in the cooler. "On or before" because the morning makes the recipe at
+  the start of a day and the PM builds the next kit at the end of it.
 - **What shows**: on the morning row, the Last done line becomes
-  `[KIT READY]  Kit built yesterday · Jose` (Who = the PM cook who checked the kit). KIT READY
-  is an outlined ink tag, bold condensed capitals: no fill, so it prints, and no hue. It stays
-  all day, also once the morning row is checked (the strike-through says it's done).
-- **No new request.** Slice 1's read already holds both rows.
+  `[KIT READY] Kit built yesterday · Gilberto`, or `[KIT READY] Kit built Wed 11/18 · 2 days ago ·
+  Pablo` (Who = the PM cook who ticked the kit). KIT READY is an outlined ink tag, bold condensed
+  capitals: no fill, so it prints, and no hue. It stays all day, also once the morning row is
+  checked (the strike-through says it's done).
+- **No new request.** Slice 1's read already holds both rows, their Who and the pill.
 
 No database change, no SQL, no new table, no change to `assets/kitchen.css`, `index.html`
 untouched.
@@ -356,15 +394,21 @@ before pushing**.
 
 ### Slice 2: KIT READY on the Line AM row (Line only; the morning line sees it on merge)
 
-- `tempest_line.html`: `KIT_MAKE`, the rule, the tag, one page-only rule, `ldNote()` widened.
-  Prep untouched. No new request.
-- Guard scenarios: built last night → tag; built 2 nights ago, not made → tag with its day;
-  built 2 nights ago, made yesterday → no tag; made yesterday morning and built yesterday
-  evening → tag; checked on MAKE → no tag; Who picked but not checked → no tag; either row
-  renamed → no tag; 677 ticked → nothing; PM view → no tag; a past date; the tag whole at
-  390px and outlined in print; no extra request.
-- `docs/kits.md` "Adding a kit": add the pair to `KIT_MAKE`. BUILD_PLAN B1 line.
-- Ticket written after Slice 1 is live and phone-checked.
+**Ticket: `~/Developer/LAST-DONE-2-TICKET.md`** (2026-11-22).
+
+- `tempest_line.html`: `KIT_MAKE`, `kitReady()`, the `.kit-ready` rule, `ldNote()` widened. All
+  outside the LAST DONE blocks. Prep untouched. No new request.
+- Guard scenarios (Line only): built last night → tag; made yesterday and built last night →
+  tag; the morning row ticked today → tag stays; built 2 nights ago, not made → tag with its
+  day; built 2 nights ago, made yesterday → no tag; built 3 nights ago → no tag; made yesterday
+  with no name → tag; built with no name → no tag; checked on MAKE → no tag; Who picked but not
+  checked → no tag; either row renamed → no tag; 677 ticked → nothing; PM view → no tag; a past
+  date; typing; the tag whole at 390px, outlined, the line no taller; no extra request; Prep
+  has none. 7 new fails-when-it-should (22 in all).
+- `docs/last-done.md` (1b live + phone check, the 2-day decision, this section, "as built"),
+  `docs/kits.md` "Adding a kit" (add the pair to `KIT_MAKE`), BUILD_PLAN B1 line.
+- **Before the merge, Stephen tells the crew: PM, pick your name on the kits you actually
+  build; AM, pick your name on what you actually make.**
 
 ---
 
@@ -398,7 +442,7 @@ before pushing**.
 
 ## Status
 
-**Slice 1 LIVE** (#193, `d023c85`, merged 2026-11-21). **Slice 1b BUILT 2026-11-22 on `prep-last-done-1b`, not pushed.** Slice 2 not started.
+**Slice 1 LIVE** (#193, `d023c85`, merged 2026-11-21). **Slice 1b LIVE** (#194, `58d9235`, merged 2026-11-22), phone check passed. **Slice 2 BUILT 2026-11-22 on `prep-last-done-2`, not pushed.** It is the last slice of this plan.
 
 ## Slice 1 as built
 
@@ -486,3 +530,53 @@ caught by the exact-query check, and the rule holds twice over.
   bare tick → `Not done…`. Of 58 rows: 19 yesterday, 20 not done.
 - **Requests:** the last-done read carries `assigned_to=neq.` and comes back in one page. GETs
   only.
+
+## Slice 1b: phone check
+
+**Passed** (Stephen, 2026-11-22: "everything looks good").
+
+## Slice 2 as built
+
+**`tempest_line.html`** (about 30 lines; outside both LAST DONE blocks, which are untouched, so
+`copies` still passes; `tempest_prep.html` unchanged):
+- `KIT_MAKE`, next to `KIT_SHEETS`: the 10 pairs (kit row → morning row, word, `not` for
+  678/570), with 677 left out.
+- `kitReady(id)`: `''` unless `LD.day` is the viewed day and `LD.map` is set; the row must be a
+  pair's morning row, both rows in `items`, the kit row's station `kits`, both names keep the
+  word and neither has the `not` word. The kit's named tick must exist, not be on MAKE, and be 1
+  or 2 days back (`ldDays`); the morning row's named tick, if any, must be on or before the
+  kit's day. Text: `<span class="kit-ready">KIT READY</span> Kit built yesterday · Who` or
+  `… Kit built Wed 11/18 · 2 days ago · Who`, weekday by parts, Who through `esc()`.
+- `ldNote(id)` → `kitReady(id)||ldText(id)`. `bTask()` and `ldFill()` already call `ldNote()`,
+  so the tag fills in place with no new request.
+- `.kit-ready` in Line's `<style>` next to `.kit-sheet-link`: an inline-block, 1px solid
+  `--ink` border, radius 3px, no background, `--ink`, `--font-cond` 700 uppercase,
+  `.06em`, 0.75rem, `line-height:1`, `vertical-align:top`, `0 4px` padding. Measured: a tagged
+  line is 15px, the same as an untagged one.
+
+**`scripts/check_last_done.py`**: the Line fixtures gain the 10 real morning rows. Six new
+Line-only scenarios: `kits` (built last night; made yesterday + built last night; ticked today,
+where the tag stays and the row is struck; built 2 nights ago; 2 nights ago but made yesterday; too
+old; made with no name; built with no name; MAKE; Who without a tick; 677; no tag on PM; no
+extra request), `kitpast` (◀ to 11/19), `kitrename` (kit 673 → "Kit - Nachos"; 570 → "Make -
+Dumpling soup" with 678 built), `kittyping`, `kitphone`, `kitphonemgr` (tag whole, line and row
+heights equal to an untagged one, solid ink border, no fill, ink text, ≥12px). `words` checks
+Line's 571 tag from the base fixture, and that Prep has no `.kit-ready` and no `KIT_MAKE`.
+**1,757 assertions** (19 scenarios on Line, 13 on Prep, + `copies`), clean. The no-extra-request
+check allows for Line already reading `staff` twice on load (as on `main`).
+
+**Fails when it should**: 1b's 15 again, plus 16 (2-day limit removed), 17 ("on or before" →
+"before"), 18 (MAKE check removed), 19 (word check removed), 20 (tag hidden once the morning row is
+ticked today), 21 (a background fill), 22 (the tag making the line taller): **all 22 fail.**
+
+**Hand check** (local Chrome, live data, read-only, Sun 2026-11-22):
+- **Line AM today:** three tags. Bacon Gastrique `KIT READY Kit built yesterday · Eddy`;
+  Make - Chicken and Dumpling soup `… yesterday · Evelin`; Cook Chilorio pork `… Fri 11/20 ·
+  2 days ago · Chepe`.
+- **Matches last night's Line PM:** only Gastrique (Eddy) and Chicken & Dumpling soup (Evelin)
+  were ticked with a name. Dumpling had Evelin but wasn't ticked, so no tag. The other 7 were
+  ticked with no name, so no tag.
+- **Sat 11/21 view:** five tags (Mac and cheese, Pork belly, Dumpling by Pablo; Chilorio,
+  Suadero by Chepe).
+- **Elsewhere:** PM shows no tag. A tagged line is 15px, the same as an untagged one. The same
+  requests as before; GETs only.
