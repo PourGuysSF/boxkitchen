@@ -397,8 +397,8 @@ function esc(s){return s?String(s).replace(/"/g,'&quot;').replace(/</g,'&lt;'):'
 
 // Kits: Line PM row id -> its kit sheet, and a word the row's name must still contain
 // (case, punctuation and spacing ignored), so a renamed row loses its button. Matched to
-// Line PM on 2026-11-16. Adding or removing a kit: docs/kits.md "Adding a kit".
-var KIT_SHEETS={668:{slug:'mac-and-cheese',word:'mac'},669:{slug:'buffalo-sauce',word:'buffalo'},670:{slug:'pork-belly',word:'pork belly'},671:{slug:'gastrique',word:'gastrique'},672:{slug:'chicken-dumpling-soup',word:'soup'},678:{slug:'dumpling',word:'dumpling',not:'soup'},674:{slug:'pickled-onions-peppers',word:'pickle'}};
+// Line PM on 2026-11-22. Adding or removing a kit: docs/kits.md "Adding a kit".
+var KIT_SHEETS={668:{slug:'mac-and-cheese',word:'mac'},669:{slug:'buffalo-sauce',word:'buffalo'},670:{slug:'pork-belly',word:'pork belly'},671:{slug:'gastrique',word:'gastrique'},672:{slug:'chicken-dumpling-soup',word:'soup'},678:{slug:'dumpling',word:'dumpling',not:'soup'},674:{slug:'pickled-onions-peppers',word:'pickle'},675:{slug:'suadero',word:'suadero'},676:{slug:'chilorio',word:'chilorio'}};
 function kitSheetLink(it){
   var k=it.station==='kits'&&KIT_SHEETS[it.id];if(!k)return'';
   var f=function(x){return String(x||'').toLowerCase().replace(/[^a-z0-9]/g,'');},n=f(it.name);
@@ -410,7 +410,7 @@ function kitSheetLink(it){
 // BOTH names must still contain (case, punctuation and spacing ignored), with an optional word
 // NEITHER may contain, so a renamed row drops out instead of pointing at the wrong dish. 677
 // (the placeholder kit) has no entry. Adding or removing a kit: docs/kits.md "Adding a kit".
-var KIT_MAKE={668:{am:571,word:'mac'},669:{am:583,word:'buffalo'},670:{am:573,word:'pork belly'},671:{am:615,word:'gastrique'},672:{am:620,word:'soup'},678:{am:570,word:'dumpling',not:'soup'},673:{am:567,word:'green'},674:{am:568,word:'pickle'},675:{am:759,word:'suadero'},676:{am:596,word:'chilorio'}};
+var KIT_MAKE={668:{am:571,word:'mac'},669:{am:583,word:'buffalo'},670:{am:573,word:'pork belly'},671:{am:615,word:'gastrique'},672:{am:620,word:'soup'},678:{am:570,word:'dumpling',not:'soup'},674:{am:568,word:'pickle'},675:{am:759,word:'suadero'},676:{am:596,word:'chilorio'}};
 // The morning row's KIT READY text for the viewed day, or '' (then ldNote shows the normal line).
 // The kit's latest named tick, not on MAKE, 1 or 2 days before the day on screen, and the morning
 // row not ticked with a name after that day. Reads Slice 1's LD.map only: no request.

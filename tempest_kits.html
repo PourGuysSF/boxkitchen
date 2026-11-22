@@ -110,13 +110,15 @@
 var SB='https://sxppuyarecqkgkrsrefc.supabase.co',SK='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN4cHB1eWFyZWNxa2drcnNyZWZjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczOTA4MzAsImV4cCI6MjA5Mjk2NjgzMH0.GM8OfcR68_JjdPeQ3k7j6L3ulJFaeS1xnSLBcdtYXtU';
 var LOCATION='Tempest';
 
-/* The kits (docs/kits.md, "The 8 kits"), in Line PM order (matched to
-   Line PM's live sort order on 2026-11-08: Mac & cheese first). A kit only says
+/* The kits (docs/kits.md, "The kits"), in Line PM order (matched to
+   Line PM's live sort order on 2026-11-22: Mac & cheese first). A kit only says
    WHICH container each ingredient goes in, by keyword. Amounts always come
    from the recipe. keep: how it is kept. side: true = next to the pan,
    labelled. group: the kit's own sub-heading (Mac & Cheese). out: lines
    deliberately left out, each with its reason. A word needed for two lines
-   is listed twice: each keyword picks up exactly one line. */
+   is listed twice: each keyword picks up exactly one line. pan: optional
+   text for the first line of "Into the hotel pan", in place of "All N
+   containers into one hotel pan" (only Chilorio, a half pan, uses it). */
 var OWN='own container',TOG='together';
 var KITS=[
   {slug:'mac-and-cheese',name:'Mac & cheese',recipeId:46,
@@ -188,22 +190,30 @@ var KITS=[
      {name:'Buttermilk',keep:OWN,kw:['buttermilk']}
    ],
    out:[]},
-  {slug:'spicy-green-sauce',name:'Spicy green sauce',recipeId:25,
-   boxes:[
-     {name:'Spices',keep:'measure together',kw:['coriander','cumin','salt']},
-     {name:'Herbs & veg',keep:TOG,kw:['parsley','cilantro','jalapeño','garlic']},
-     {name:'Olive oil blend',keep:OWN,kw:['olive oil']},
-     {name:'Lemon juice',keep:OWN,kw:['lemon juice']},
-     {name:'Greek yogurt',keep:OWN,kw:['yogurt']}
-   ],
-   out:[]},
   {slug:'pickled-onions-peppers',name:'Pickled onions & peppers',recipeId:24,
    boxes:[
      {name:'Veg',keep:TOG,kw:['red onion','mini pepper','garlic']},
      {name:'Pickling spices',keep:TOG,kw:['sugar','salt','coriander']},
      {name:'Cider vinegar',keep:OWN,kw:['cider vinegar']}
    ],
-   out:[{kw:'water',why:'from the tap'}]}
+   out:[{kw:'water',why:'from the tap'}]},
+  {slug:'suadero',name:'Suadero',recipeId:69,
+   boxes:[
+     {name:'Manteca',keep:OWN,kw:['pork fat']},
+     {name:'Onions & garlic',keep:TOG,kw:['white onion','garlic']},
+     {name:'Braise seasoning',keep:TOG,kw:['bay','peppercorns']},
+     {name:'Salt',keep:OWN,kw:['salt']}
+   ],
+   out:[
+     {kw:'beef',why:'raw meat — pull from the meat shelf'},
+     {kw:'black pepper',why:'to season, at the stove'},
+     {kw:'water',why:'from the tap, to cover'}
+   ]},
+  {slug:'chilorio',name:'Chilorio',recipeId:70,pan:'Mixed together in one half hotel pan',
+   boxes:[
+     {name:'Pork in the sauce',keep:'cut the pork, salt and pepper it, mix with the sauce in a half hotel pan',kw:['pork butt','salt','pepper','chilorio sauce']}
+   ],
+   out:[]}
 ];
 
 /* this page only reads: api() knows GET and nothing else */
@@ -301,7 +311,7 @@ function kitHtml(kit, recipe, ids){
   var side=s.boxes.filter(function(b){return b.side;});
   var inPan=s.boxes.length-side.length;
   h+='<div class="kit-sec">Into the hotel pan</div><div class="kit-pan"'+id('pan')+'>'
-    +'<div>All '+inPan+' container'+(inPan===1?'':'s')+' into one hotel pan</div>';
+    +'<div>'+(kit.pan?esc(kit.pan):'All '+inPan+' container'+(inPan===1?'':'s')+' into one hotel pan')+'</div>';
   side.forEach(function(b){h+='<div>Next to the pan, labelled: '+esc(b.name)+'</div>';});
   h+='<div>Label and date the pan · into the cooler</div></div>';
   return h+drawOut(s)+printedLine()+'</div>';
@@ -316,7 +326,7 @@ function drawOut(s){
 /* the list: every kit in Line PM order (as of 2026-11-08), with the containers it really has */
 function drawList(){
   var h='<div class="kit-wrap"><div class="kit-list-head"><div class="kit-title">Kits</div><div class="kit-from">Built on the PM shift, cooked the next morning</div>'
-    +'<button type="button" class="link-btn kit-print-btn" id="printBtn" onclick="window.print()">Print all 8 kits</button></div><div class="kit-list" id="kitList">';
+    +'<button type="button" class="link-btn kit-print-btn" id="printBtn" onclick="window.print()">Print all '+KITS.length+' kits</button></div><div class="kit-list" id="kitList">';
   KITS.forEach(function(k){
     var r=recipes[k.recipeId],n=r&&r.status!=='archived'?sortKit(k,r.ingredients).boxes.length:null;
     h+='<a class="kit-item" href="#'+k.slug+'" data-slug="'+k.slug+'"><span class="kit-item-name">'+esc(k.name)+'</span>'
@@ -324,7 +334,7 @@ function drawList(){
         :n===0?'<span class="kit-item-n kit-flag">Needs sorting</span>'
         :'<span class="kit-item-n">'+n+' container'+(n===1?'':'s')+'</span>')+'</a>';
   });
-  /* print-only: all 8 sheets, drawn by the same kitHtml(), one per page */
+  /* print-only: every kit's sheet, drawn by the same kitHtml(), one per page */
   h+='</div><div class="kit-print-all" id="printAll">';
   KITS.forEach(function(k){h+=kitHtml(k, recipes[k.recipeId], false);});
   document.getElementById('appBody').innerHTML=h+'</div></div>';
@@ -340,7 +350,7 @@ function route(){
 }
 window.addEventListener('hashchange', route);
 
-/* one read for all 8: moving between kits never asks again */
+/* one read for every kit: moving between kits never asks again */
 var loading=false,recipes=null;
 function load(){
   if(loading)return;
