@@ -31,6 +31,16 @@ Its promises:
   - the JS between // LAST DONE start/end and the CSS between
     /* LAST DONE start/end */ are byte-identical in the two pages.
 
+Slice 2 (Line only): KIT READY on a Line AM row whose kit (KIT_MAKE pair) was
+ticked WITH a name, pill not on MAKE, 1 or 2 days before the viewed day, and
+the morning row not ticked with a name after the kit's day ("on" the same day
+still shows). Both names must keep the pair's word (and not its `not` word);
+677 has no pair. The tag replaces the row's Last done line, stays once the row
+is ticked today, never shows on PM, is filled in place (no new request, a Qty
+being typed keeps focus), and at 390px is whole, ink-outlined with no fill, at
+least 12px, and leaves the line the height of an untagged one. Prep has no
+KIT_MAKE and no tag.
+
 The pages are live in every service, so the REAL page is loaded with
 XMLHttpRequest (and fetch, sendBeacon) replaced by a stub BEFORE any page
 script parses. The stub answers prep_logs like the server (filters, order,
@@ -64,8 +74,10 @@ CHROME_CANDIDATES = [
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PAGES = {"prep": ("tempest_prep.html", "kitchen"), "line": ("tempest_line.html", "line")}
 SCENARIOS = ("words", "past", "paged", "cut", "fail", "failp2", "race", "typing",
-             "dst", "dst2", "phone", "phonemgr", "tap")
-WINDOW = {"phone": "500,900", "phonemgr": "500,900"}  # pinned to 390px, as check_line.py
+             "dst", "dst2", "phone", "phonemgr", "tap",
+             "kits", "kitpast", "kitrename", "kittyping", "kitphone", "kitphonemgr")
+LINE_ONLY = ("kits", "kitpast", "kitrename", "kittyping", "kitphone", "kitphonemgr")
+WINDOW = {"phone": "500,900", "phonemgr": "500,900", "kitphone": "500,900", "kitphonemgr": "500,900"}  # pinned to 390px, as check_line.py
 READS = ("prep_items", "staff", "prep_sections", "prep_logs")
 NOT = "Not done in the last 2 weeks"
 
@@ -95,6 +107,13 @@ KIT_NAMES = [(668, "Kit - Mac and Cheese"), (669, "Kit - Buffalo sauce"), (670, 
              (673, "Kit - Spicy green sauce"), (674, "Kit - Pickle onions& peppers"),
              (675, "Kit - Suadero"), (676, "Kit- Chilorio"), (677, "Kit- New prep coming soon")]
 FILLER_IDS = list(range(120, 130))
+# Line AM rows that make each kit's recipe (real ids and names, read 2026-11-22); KIT_MAKE's pairs.
+MORNING = [(571, "Make - Mac and cheese", "saute"), (583, "Buffalo sauce", "grill"),
+           (573, "Cook pork belly", "saute"), (615, "Bacon Gastrique", "grill"),
+           (620, "Make - Chicken and Dumpling soup", "saute"), (570, "Make - Dumpling", "saute"),
+           (567, "Make - Spicy green sauce", "saute"), (568, "Make - Pickle peppers & onions", "saute"),
+           (759, "Cook Suadero", "saute"), (596, "Cook Chilorio pork", "saute")]
+PAIRS = {668: 571, 669: 583, 670: 573, 671: 615, 672: 620, 678: 570, 673: 567, 674: 568, 675: 759, 676: 596}
 
 
 def items_for(page):
@@ -115,6 +134,7 @@ def items_for(page):
     if page == "line":
         it += [item(i, n, team, shift="PM", station="kits", sort=s * 10)
                for s, (i, n) in enumerate(KIT_NAMES)]
+        it += [item(i, n, team, station=st) for i, n, st in MORNING]
     return it
 
 
@@ -159,6 +179,24 @@ def fillers(n, first, last):
             for k in range(n)]
 
 
+KIT_LOGS = [
+    log(668, "2026-11-19", who="Gilberto"), log(571, "2026-11-20", who="Rubi"),   # built last night; 571 ticked today
+    log(672, "2026-11-19", who="Evelin"), log(620, "2026-11-19", who="Rubi"),     # made yesterday, built last night
+    log(670, "2026-11-18", who="Pablo"), log(573, "2026-11-17", who="Ana"),       # built 2 nights ago, not made
+    log(671, "2026-11-18", who="Eddy"), log(615, "2026-11-19", who="Ana"),        # built 2 nights ago, made yesterday
+    log(674, "2026-11-17", who="Gilberto"),                                       # too old
+    log(669, "2026-11-19", who="Eddy"), log(583, "2026-11-19"),                   # made yesterday, no name
+    log(678, "2026-11-19"),                                                       # built with no name
+    log(675, "2026-11-19", who="Chepe", mode="make"),                             # pill on MAKE
+    log(676, "2026-11-19", done=False, who="Chepe"),                              # Who, no tick
+    log(677, "2026-11-19", who="Harness PM"),                                     # placeholder, no pair
+]
+KIT_WORDS = {571: "KIT READY Kit built yesterday · Gilberto", 620: "KIT READY Kit built yesterday · Evelin",
+             573: "KIT READY Kit built Wed 11/18 · 2 days ago · Pablo", 615: "Last done: yesterday · Ana",
+             568: "Not done in the last 2 weeks", 583: "KIT READY Kit built yesterday · Eddy",
+             570: "Not done in the last 2 weeks", 759: "Not done in the last 2 weeks",
+             596: "Not done in the last 2 weeks", 567: "Not done in the last 2 weeks"}
+
 WORDS = {101: "Last done: yesterday · Jose", 102: "Last done: Tue 11/17 · 3 days ago · Rubi",
          103: "Last done: Mon 11/16 · 4 days ago · Gilberto", 104: NOT,
          105: "Last done: Fri 11/6 · 14 days ago · Chepe", 106: NOT, 107: NOT,
@@ -185,7 +223,16 @@ SCEN = {
     "phone": {"logs": BASE_LOGS},
     "phonemgr": {"logs": BASE_LOGS},
     "tap": {"logs": BASE_LOGS},
+    "kits": {"logs": BASE_LOGS[:-1] + KIT_LOGS},
+    "kitpast": {"logs": BASE_LOGS[:-1] + KIT_LOGS},
+    "kitrename": {"logs": BASE_LOGS[:-1] + [log(673, "2026-11-19", who="Ana"), log(678, "2026-11-19", who="Ana")],
+                  "renamed": {"673": "Kit - Nachos", "570": "Make - Dumpling soup"}},
+    "kittyping": {"logs": BASE_LOGS[:-1] + KIT_LOGS},
+    "kitphone": {"logs": BASE_LOGS[:-1] + KIT_LOGS},
+    "kitphonemgr": {"logs": BASE_LOGS[:-1] + KIT_LOGS},
 }
+# Line words: BASE_LOGS has 668 ticked 11/19 by "Harness PM", so 571 carries the tag.
+WORDS_LINE = {571: "KIT READY Kit built yesterday · Harness PM"}
 
 GATE_RE = re.compile(r"window\.location\.replace\('index\.html'\)")
 
@@ -195,6 +242,7 @@ HARNESS = r"""
 (function(){
   var FX=__FIXTURES__,SCEN=FX.scen,reqs=[];
   window.__h={scen:SCEN,page:FX.page,reqs:reqs,fx:FX,loadN:null};
+  FX.items.forEach(function(r){if(FX.renamed[r.id])r.name=FX.renamed[r.id];});
   /* the clock: new Date() and Date.now() give the scenario's time; all else is the real Date */
   var RD=Date,c=FX.clock,NOW=new RD(c[0],c[1]-1,c[2],c[3],c[4]).getTime();
   function D(){
@@ -204,8 +252,8 @@ HARNESS = r"""
   }
   D.prototype=RD.prototype;D.now=function(){return NOW;};D.UTC=RD.UTC;D.parse=RD.parse;
   window.Date=D;
-  if(SCEN==='phone'||SCEN==='phonemgr')document.write('<style>html{width:390px!important;max-width:390px!important}</style>');
-  try{if(SCEN==='phonemgr')localStorage.setItem('boxkitchen.mgr','1');else localStorage.removeItem('boxkitchen.mgr');}catch(e){}
+  if(/phone/.test(SCEN))document.write('<style>html{width:390px!important;max-width:390px!important}</style>');
+  try{if(/phonemgr$/.test(SCEN))localStorage.setItem('boxkitchen.mgr','1');else localStorage.removeItem('boxkitchen.mgr');}catch(e){}
   function qp(q,re){var m=re.exec(q);return m?m[1]:null;}
   /* prep_logs, answered like the server */
   function prepLogs(q){
@@ -287,6 +335,58 @@ RUNNER = r"""
   }
   function landed(f){later(1500,f);} /* last-done answers take 600ms per page */
 
+  function tags(){return [].map.call(document.querySelectorAll('.kit-ready'),function(e){return +e.closest('.task').getAttribute('data-id');});}
+  function kits(){
+    expectAll('kits',FX.kitwords);
+    var T=tags().sort();
+    ok('kits: tags on exactly 571 573 583 620', JSON.stringify(T)===JSON.stringify([571,573,583,620]), T);
+    ok('kits: one .kit-ready in 571', ld(571)&&ld(571).querySelectorAll('.kit-ready').length===1);
+    ok('kits: the tag reads KIT READY', !!(ld(571)&&ld(571).querySelector('.kit-ready'))&&ld(571).querySelector('.kit-ready').textContent==='KIT READY');
+    ok('kits: 571 ticked today and struck through, tag stays', row(571).classList.contains('done')&&/^KIT READY/.test(ldt(571)));
+    ok('kits: 677 keeps its own line', ldt(677)===null||ldt(677)==='Last done: yesterday · Harness PM', ldt(677));
+    var R=H.reqs.slice(0,H.loadN);
+    /* the same requests as a page with no kits ticked: one day read, one last-done read (Line reads staff twice on load, as before) */
+    ok('kits: no extra request (one day read, one last-done read)', R.filter(function(r){return r.ld;}).length===1&&R.filter(function(r){return r.table==='prep_logs'&&!r.ld;}).length===1&&R.length===H.fx.loadCount, R.map(function(r){return r.method+' '+r.table;}));
+    common();
+    shift('PM');
+    ok('kits: no tag on PM', document.querySelectorAll('.kit-ready').length===0);
+    ok('kits: PM kit rows keep their own line', ldt(668)==='Last done: yesterday · Gilberto'&&ldt(677)==='Last done: yesterday · Harness PM', [ldt(668),ldt(677)]);
+    shift('AM');
+    ok('kits: AM tags back', tags().length===4);
+    finish();
+  }
+  function kitpast(){
+    click('[onclick*="changeDate(-1)"]');
+    landed(function(){
+      expectAll('kitpast 11/19',{573:'KIT READY Kit built yesterday · Pablo',615:'KIT READY Kit built yesterday · Eddy',571:FX.not,620:FX.not,583:FX.not});
+      finish();
+    });
+  }
+  function kitrename(){
+    ok('kitrename: no tag on 567 (kit renamed Nachos)', ldt(567)===FX.not, ldt(567));
+    ok('kitrename: no tag on 570 (renamed Dumpling soup)', ldt(570)===FX.not, ldt(570));
+    ok('kitrename: no tag anywhere', tags().length===0, tags());
+    common();finish();
+  }
+  function kitphone(){
+    var mgr=S==='kitphonemgr',tag=document.querySelector('.task[data-id="571"] .kit-ready');
+    var probe=document.createElement('span');probe.style.color='var(--ink)';document.body.appendChild(probe);var ink=getComputedStyle(probe).color;probe.remove();
+    var plain=ld(101).getBoundingClientRect().height;
+    ok(S+': no side scroll', document.documentElement.scrollWidth<=window.innerWidth);
+    tags().forEach(function(id){
+      var L=ld(id),lr=L.getBoundingClientRect(),t=L.querySelector('.kit-ready'),tr=t.getBoundingClientRect(),cs=getComputedStyle(t);
+      ok(S+': '+id+' tag whole inside its line', tr.width>0&&tr.right<=lr.right+0.5&&tr.left>=lr.left-0.5, [tr.left,tr.right,lr.right]);
+      ok(S+': '+id+' line height equals an untagged line', Math.abs(lr.height-plain)<0.5, [lr.height,plain]);
+      ok(S+': '+id+' tag inside the line vertically', tr.top>=lr.top-0.5&&tr.bottom<=lr.bottom+0.5, [tr.top,tr.bottom,lr.top,lr.bottom]);
+      ok(S+': '+id+' row height equals an untagged row', Math.abs(row(id).getBoundingClientRect().height-row(101).getBoundingClientRect().height)<0.5);
+      ok(S+': '+id+' border solid ink', cs.borderTopStyle==='solid'&&cs.borderTopColor===ink, [cs.borderTopStyle,cs.borderTopColor]);
+      ok(S+': '+id+' no fill', cs.backgroundColor==='rgba(0, 0, 0, 0)'&&cs.backgroundImage==='none', cs.backgroundColor);
+      ok(S+': '+id+' ink text', cs.color===ink, cs.color);
+      ok(S+': '+id+' at least 12px', parseFloat(cs.fontSize)>=12, cs.fontSize);
+    });
+    ok(S+': tags present', tags().length===4, tags());
+    finish();
+  }
   var steps={
     words:function(){
       structure('words');
@@ -294,6 +394,11 @@ RUNNER = r"""
       ok('words: exactly one last-done read', a.length===1, a.length);
       ok('words: the query is exact', a[0]&&a[0].query===FX.query, a[0]&&a[0].query);
       expectAll('words',FX.expect);
+      expectAll('words',FX.wordsline);
+      if(FX.page==='prep'){
+        ok('words: Prep has no KIT READY', document.querySelectorAll('.kit-ready').length===0);
+        ok('words: Prep has no KIT_MAKE', typeof window.KIT_MAKE==='undefined');
+      }
       ok('words: 107 is ticked today', row(107)&&row(107).querySelector('.checkbox').classList.contains('checked'));
       ok('words: the special is drawn', !!row(110));
       common();finish();
@@ -366,6 +471,18 @@ RUNNER = r"""
       return true;
     }
     if(S==='race'){steps.race();return true;}
+    if(S==='kittyping'){
+      var kq=row(571).querySelector('.qty');
+      ok('kittyping: no tag before the read', ldt(571)==='');
+      kq.focus();kq.value='3';var k0=H.reqs.length;
+      landed(function(){
+        ok('kittyping: the tag filled in place', ldt(571)===FX.kitwords[571], ldt(571));
+        ok('kittyping: the Qty box keeps focus and "3"', document.activeElement===kq&&kq.value==='3');
+        ok('kittyping: no request went out', H.reqs.length===k0);
+        finish();
+      });
+      return true;
+    }
     return false;
   }
   function phone(){
@@ -434,6 +551,10 @@ RUNNER = r"""
     }
     if(S==='phone'||S==='phonemgr'){phone();return;}
     if(S==='tap'){tap();return;}
+    if(S==='kits'){kits();return;}
+    if(S==='kitpast'){kitpast();return;}
+    if(S==='kitrename'){kitrename();return;}
+    if(S==='kitphone'||S==='kitphonemgr'){kitphone();return;}
     steps[S]();
   }
   /* wait for the rows, act early where the scenario needs it, then let the read land */
@@ -441,7 +562,7 @@ RUNNER = r"""
   (function wait(){
     if(document.querySelector('.task[data-id]')||waited>5000){
       setTimeout(function(){
-        if(S!=='race'&&S!=='typing'){
+        if(S!=='race'&&S!=='typing'&&S!=='kittyping'){
           ok('first draw: lines drawn and empty before the read lands', lines().length>0&&lines().every(function(e){return e.textContent==='';}));
         }
         if(early())return;
@@ -476,6 +597,9 @@ def build_page(page, scen):
         "words": {str(k): v for k, v in WORDS.items()}, "not": NOT,
         "special": [i["id"] for i in its if i["category"] == "special"],
         "kits": [i for i, _ in KIT_NAMES] if page == "line" else [],
+        "kitwords": {str(k): v for k, v in KIT_WORDS.items()},
+        "wordsline": {str(k): v for k, v in WORDS_LINE.items()} if page == "line" else {},
+        "pairs": {str(k): v for k, v in PAIRS.items()}, "loadCount": 6 if page == "line" else 5, "renamed": sc.get("renamed", {}),
         "query": "prep_item_id=in.(" + ",".join(map(str, ids)) + ")&completed=eq.true&assigned_to=neq.&date=gte.2026-11-06"
                  "&date=lt.2026-11-20&select=prep_item_id,date,assigned_to,mode&order=date.desc,id.desc&limit=1000&offset=0",
     }
@@ -554,6 +678,8 @@ def main():
         shutil.copytree(os.path.join(ROOT, "vendor"), os.path.join(td, "vendor"))
         for page in pages:
             for scen in scens:
+                if page != "line" and scen in LINE_ONLY:
+                    continue
                 path = os.path.join(td, "%s_%s.html" % (page, scen))
                 with open(path, "w", encoding="utf-8") as f:
                     f.write(build_page(page, scen))
@@ -569,7 +695,9 @@ def main():
             print("  " + x)
         print("\nsee docs/last-done.md")
         return 1
-    print("last-done guard: clean (%d assertions, %d scenarios x %d pages + copies)" % (total, len(scens), len(pages)))
+    print("last-done guard: clean (%d assertions, %d scenarios on Line, %d on Prep, + copies)"
+          % (total, len(scens) if "line" in pages else 0,
+             len([x for x in scens if x not in LINE_ONLY]) if "prep" in pages else 0))
     return 0
 
 
