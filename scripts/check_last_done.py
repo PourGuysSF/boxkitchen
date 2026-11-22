@@ -7,10 +7,14 @@ Every scenario runs on BOTH pages: tempest_prep.html with team=kitchen
 fixtures, tempest_line.html with team=line fixtures (plus Line PM's 11 kit
 rows, so SHEET -> is there).
 
+What counts as done (Stephen, 2026-11-21, Slice 1b): a tick WITH a name in
+Who. A tick with no name means "not needed" and is left out, by the server
+(assigned_to=neq.) and, for a name of only spaces, by the page.
+
 Its promises:
   - the read: one GET through the page's own api(), right after the day's
     list is drawn, for every non-Specials task (ids ascending),
-    completed=eq.true, the 14 days before the VIEWED day (gte / lt), four
+    completed=eq.true, assigned_to=neq., the 14 days before the VIEWED day (gte / lt), four
     columns, newest first, limit 1000, paged by offset while a page is full,
     at most 5 pages;
   - the words, counted by calendar from the viewed day, in Los Angeles time,
@@ -104,6 +108,8 @@ def items_for(page):
         item(110, "Special", team, cat="special"),
         item(111, "Ticked 11/16 and 11/19", team), item(112, "Ticked 11/20 only", team),
         item(113, "Page two P", team), item(114, "Ticked 11/18 only", team),
+        item(115, "Bare tick then Pablo", team), item(116, "Spaces-only name", team),
+        item(117, "Ticked daily, never named", team), item(118, "Shared entry", team),
         item(130, "PM harness row", team, shift="PM"),
     ] + [item(i, "Filler %d" % i, team) for i in FILLER_IDS]
     if page == "line":
@@ -125,51 +131,57 @@ def log(pid, d, done=True, who="", qty="", **kw):
 
 BASE_LOGS = [
     log(101, "2026-11-19", who="Jose"),
-    log(102, "2026-11-17"),
+    log(102, "2026-11-17", who="Rubi"),
     log(103, "2026-11-19", done=False, who="Ana", qty="2"),
     log(103, "2026-11-16", who="Gilberto"),
-    log(105, "2026-11-06"),
-    log(106, "2026-11-05"),
+    log(105, "2026-11-06", who="Chepe"),
+    log(106, "2026-11-05", who="Chepe"),
     log(107, "2026-11-20", who="Jose"),
     log(108, "2026-11-19", who="Jose", id=6001),   # older id: arrives second
     log(108, "2026-11-19", who="", id=6002),       # newer id, blank Who: arrives first
-    log(109, "2026-11-13"),
+    log(109, "2026-11-13", who="Ismael"),
     log(110, "2026-11-19", who="Old special"),
     log(110, "2026-11-20", completed=False, special_text="Harness special of the day"),
-    log(111, "2026-11-16"), log(111, "2026-11-19"),
-    log(112, "2026-11-20"),
-    log(114, "2026-11-18"),
+    log(111, "2026-11-16", who="Ana"), log(111, "2026-11-19", who="Ana"),
+    log(112, "2026-11-20", who="Ana"),
+    log(114, "2026-11-18", who="Ana"),
+    log(115, "2026-11-19"), log(115, "2026-11-15", who="Pablo"),
+    log(116, "2026-11-19", who="  "),
+    log(118, "2026-11-19", who="Gilberto, Vidalio & Evelin"),
+] + [log(117, "2026-11-%02d" % d) for d in range(7, 20)] + [
     log(668, "2026-11-19", who="Harness PM"),
 ]
 
 
 def fillers(n, first, last):
     d0, days = date.fromisoformat(first), (date.fromisoformat(last) - date.fromisoformat(first)).days + 1
-    return [log(FILLER_IDS[k % len(FILLER_IDS)], (d0 + timedelta(days=k % days)).isoformat())
+    return [log(FILLER_IDS[k % len(FILLER_IDS)], (d0 + timedelta(days=k % days)).isoformat(), who="Filler")
             for k in range(n)]
 
 
-WORDS = {101: "Last done: yesterday · Jose", 102: "Last done: Tue 11/17 · 3 days ago",
+WORDS = {101: "Last done: yesterday · Jose", 102: "Last done: Tue 11/17 · 3 days ago · Rubi",
          103: "Last done: Mon 11/16 · 4 days ago · Gilberto", 104: NOT,
-         105: "Last done: Fri 11/6 · 14 days ago", 106: NOT, 107: NOT,
-         108: "Last done: yesterday · Jose", 109: "Last done: Fri 11/13 · 7 days ago", 112: NOT}
+         105: "Last done: Fri 11/6 · 14 days ago · Chepe", 106: NOT, 107: NOT,
+         108: "Last done: yesterday · Jose", 109: "Last done: Fri 11/13 · 7 days ago · Ismael", 112: NOT,
+         115: "Last done: Sun 11/15 · 5 days ago · Pablo", 116: NOT, 117: NOT,
+         118: "Last done: yesterday · Gilberto, Vidalio & Evelin"}
 
 # scenario -> clock [y, m(1-12), d, h, min], extra logs, expectations
 SCEN = {
     "words": {"logs": BASE_LOGS, "expect": WORDS},
     "past": {"logs": BASE_LOGS},
-    "paged": {"logs": BASE_LOGS + fillers(1500, "2026-11-10", "2026-11-19") + [log(113, "2026-11-07")],
-              "expect": {113: "Last done: Sat 11/7 · 13 days ago"}},
+    "paged": {"logs": BASE_LOGS + fillers(1500, "2026-11-10", "2026-11-19") + [log(113, "2026-11-07", who="Pablo")],
+              "expect": {113: "Last done: Sat 11/7 · 13 days ago · Pablo"}},
     "cut": {"logs": BASE_LOGS + fillers(5200, "2026-11-08", "2026-11-19")},
     "fail": {"logs": BASE_LOGS},
     "failp2": {"logs": BASE_LOGS + fillers(1500, "2026-11-10", "2026-11-19")},
     "race": {"logs": BASE_LOGS},
     "typing": {"logs": BASE_LOGS},
     "dst": {"clock": [2027, 3, 20, 0, 30],
-            "logs": [log(101, "2027-03-13"), log(102, "2027-03-19")],
-            "expect": {101: "Last done: Sat 3/13 · 7 days ago", 102: "Last done: yesterday"}},
-    "dst2": {"clock": [2026, 11, 2, 8, 0], "logs": [log(101, "2026-10-31")],
-             "expect": {101: "Last done: Sat 10/31 · 2 days ago"}},
+            "logs": [log(101, "2027-03-13", who="Jose"), log(102, "2027-03-19", who="Rubi")],
+            "expect": {101: "Last done: Sat 3/13 · 7 days ago · Jose", 102: "Last done: yesterday · Rubi"}},
+    "dst2": {"clock": [2026, 11, 2, 8, 0], "logs": [log(101, "2026-10-31", who="Jose")],
+             "expect": {101: "Last done: Sat 10/31 · 2 days ago · Jose"}},
     "phone": {"logs": BASE_LOGS},
     "phonemgr": {"logs": BASE_LOGS},
     "tap": {"logs": BASE_LOGS},
@@ -201,8 +213,8 @@ HARNESS = r"""
     if(d)return{rows:FX.logs.filter(function(r){return r.date===d;}),ld:false};
     var ids=(qp(q,/prep_item_id=in\.\(([^)]*)\)/)||'').split(',').map(Number),
         gte=qp(q,/date=gte\.([0-9-]+)/),lt=qp(q,/date=lt\.([0-9-]+)/),lte=qp(q,/date=lte\.([0-9-]+)/),
-        comp=/completed=eq\.true/.test(q),lim=Math.min(1000,+(qp(q,/limit=(\d+)/)||1000)),off=+(qp(q,/offset=(\d+)/)||0);
-    var rows=FX.logs.filter(function(r){return ids.indexOf(r.prep_item_id)>-1&&(!comp||r.completed)&&(!gte||r.date>=gte)&&(!lt||r.date<lt)&&(!lte||r.date<=lte);});
+        comp=/completed=eq\.true/.test(q),named=/assigned_to=neq\.(&|$)/.test(q),lim=Math.min(1000,+(qp(q,/limit=(\d+)/)||1000)),off=+(qp(q,/offset=(\d+)/)||0);
+    var rows=FX.logs.filter(function(r){return ids.indexOf(r.prep_item_id)>-1&&(!comp||r.completed)&&(!named||(r.assigned_to!=null&&r.assigned_to!==''))&&(!gte||r.date>=gte)&&(!lt||r.date<lt)&&(!lte||r.date<=lte);});
     rows.sort(function(a,b){return a.date<b.date?1:a.date>b.date?-1:b.id-a.id;});
     var sel=(qp(q,/select=([^&]*)/)||'').split(',');
     rows=rows.slice(off,off+lim).map(function(r){var o={};sel.forEach(function(k){o[k]=r[k];});return o;});
@@ -292,7 +304,7 @@ RUNNER = r"""
         var q=lastLd()&&lastLd().query||'';
         ok('past: last read asks gte.2026-11-03', /date=gte\.2026-11-03&/.test(q), q);
         ok('past: last read asks lt.2026-11-17', /date=lt\.2026-11-17&/.test(q), q);
-        expectAll('past',{111:'Last done: yesterday',112:FX.not,102:FX.not,103:'Last done: yesterday · Gilberto'});
+        expectAll('past',{111:'Last done: yesterday · Ana',112:FX.not,102:FX.not,103:'Last done: yesterday · Gilberto'});
         structure('past');
         click('[onclick*="goToday"]');
         landed(function(){expectAll('past back',FX.words);finish();});
@@ -327,10 +339,10 @@ RUNNER = r"""
       later(300,function(){
         allEmpty('race before 11/18 lands');
         later(700,function(){
-          expectAll('race 11/18',{101:FX.not,102:'Last done: yesterday',114:FX.not});
+          expectAll('race 11/18',{101:FX.not,102:'Last done: yesterday · Rubi',114:FX.not});
           later(1500,function(){
             ok('race: a read for 11/19 went out and answered last', ldReqs().some(function(r){return r.lt==='2026-11-19';}), ldReqs().map(function(r){return r.lt;}));
-            expectAll('race after the late answer',{101:FX.not,102:'Last done: yesterday',114:FX.not});
+            expectAll('race after the late answer',{101:FX.not,102:'Last done: yesterday · Rubi',114:FX.not});
             finish();
           });
         });
@@ -464,7 +476,7 @@ def build_page(page, scen):
         "words": {str(k): v for k, v in WORDS.items()}, "not": NOT,
         "special": [i["id"] for i in its if i["category"] == "special"],
         "kits": [i for i, _ in KIT_NAMES] if page == "line" else [],
-        "query": "prep_item_id=in.(" + ",".join(map(str, ids)) + ")&completed=eq.true&date=gte.2026-11-06"
+        "query": "prep_item_id=in.(" + ",".join(map(str, ids)) + ")&completed=eq.true&assigned_to=neq.&date=gte.2026-11-06"
                  "&date=lt.2026-11-20&select=prep_item_id,date,assigned_to,mode&order=date.desc,id.desc&limit=1000&offset=0",
     }
     src = src.replace("<head>", "<head>" + HARNESS.replace("__FIXTURES__", json.dumps(fx)), 1)

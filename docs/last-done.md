@@ -1,6 +1,6 @@
 # Last done — every prep task says when it was last done, and a built kit says "make today"
 
-Status: **plan v1, 2026-11-20; Slice 1 built (see the end).** Written in the Last Done planner window from Stephen's requests
+Status: **Slice 1 LIVE (#193, 2026-11-21). Slice 1b BUILT 2026-11-22 on `prep-last-done-1b`, not pushed.** (Plan v1 2026-11-20, changed 2026-11-21.) Written in the Last Done planner window from Stephen's requests
 and answers on 2026-11-20. Every decision in the Decisions table is Stephen's; everything under
 "Planner rulings" is the planner's, with the reason. It goes into the repo as `docs/last-done.md`
 with Slice 1's PR. Slice 1 is built: see "Slice 1 as built" at the end.
@@ -47,7 +47,7 @@ says so:
 | question | decided |
 |---|---|
 | What the note says | **When + who**, e.g. "Last done: yesterday · Jose". |
-| What counts as done | **Only a checked-off task.** A Who picked or an amount typed, without the check, does not count. |
+| What counts as done | ~~Only a checked-off task.~~ **Changed 2026-11-21: a tick with a name in Who.** A tick with no name means "not needed". A Who picked or an amount typed without the tick still doesn't count. See "Change, 2026-11-21". |
 | Which tasks | **Every task, both pages**: `tempest_prep.html` and `tempest_line.html`, prep and cleaning. A skipped task stands out because it says "3 days ago" instead of "yesterday". |
 | Kits | A kit checked off on Line PM on the 19th shows on the 20th as **needing to be made**, because its pan is waiting in the cooler. |
 | Where the kit shows (asked 2026-11-20) | **On the kit's existing row on the Line AM list** ("Make - Mac and cheese", "Cook pork belly", "Buffalo sauce"…), as a bold **KIT READY** on its note line. Not on the Prep page: Prep has no task for making any kit recipe (see ground truth). |
@@ -59,6 +59,75 @@ says so:
 **13 times**, most recently 11/16 and 11/17 (Suadero, note "cook"), and one MAKE row's note
 reads "Make the spicy green sauce." That supports the meaning he chose. He was told this when
 the plan was handed over.
+
+---
+
+## Change, 2026-11-21: a tick alone doesn't mean done
+
+Stephen, 2026-11-21: "we check off all prep each day even if it does not need done that way they
+hit the goal of completing the task at the end of the night at 100%, if they actually check
+everything off. also it makes the prep sheet easier to read if items that are not needed are
+checked off as well."
+
+And to the build window, after Slice 1 went live: "boxes that are not asigned to anyone get check
+off and then the next day say 'done yesterday'. id rather see that it was not done yesterday and
+when it was actully last done."
+
+So a tick means "dealt with", not "made". Slice 1 as built counts any tick, so most lines say
+"yesterday", and Slice 2 would put KIT READY on every kit every morning (the placeholder kit is
+ticked most nights). Asked what should count, **Stephen chose: a tick with a name in Who**. The
+crew keeps ticking everything for 100%, and picks their name on what they actually made or
+cleaned.
+
+**Read-only GETs, 2026-11-21, that back it:**
+
+| fact | number |
+|---|---|
+| Morning lists ticked | 100% most days (Line AM 74/74, 77/77, 76/76; Prep AM 55/55, 62/62). PM lists 74–98%. |
+| Ticks with a name, last 30 days | Line prep 29%, Prep prep 28%, Line cleaning 84%, Prep cleaning 63%, Prep weekly 54% |
+| Ticks with an amount (Qty) | Line prep 1%, Prep prep 9%, cleaning 0%: no use as a signal |
+| Is Who set for a whole station at once ("Assign ▾")? | No: in 93% of station-days some rows have a name and some don't; 0% look like Assign ▾ |
+| Placeholder kit 677 | ticked 28 times in 30 days, **never** with a name |
+| Kit rows / their morning rows with a name | 29% / 30% |
+| The read, named ticks only (14 days to 11/21) | Line 627 rows, Prep 539: **one request each** (was 2) |
+| `assigned_to=neq.` on the server | works; drops `''` and `null`; no space-only names in the data |
+
+**What the lines will say the day 1b goes live** (Sat 11/21, from those reads):
+
+| list | rows | yesterday | 2–6 days | 7–14 days | Not done in the last 2 weeks |
+|---|---|---|---|---|---|
+| Line AM | 74 | 24 | 26 | 6 | 18 |
+| Line PM | 68 | 17 | 26 | 9 | 16 |
+| Prep AM | 59 | 21 | 9 | 9 | 20 |
+| Prep PM | 56 | 30 | 11 | 5 | 10 |
+
+A real mix, not a wall of "not done", and it sharpens as the crew picks Who.
+
+**Rulings for the change:**
+- **The read gains `assigned_to=neq.`** (the server leaves out ticks with no name). Each row is
+  also skipped if its name is only spaces. Everything else in Slice 1 stays: the words, the
+  14 days, paging, fill in place.
+- **"Not done in the last 2 weeks" now means "no named tick in 2 weeks"**, the same words.
+- **Assign ▾ fills every row's Who in a station**, so a station assigned that way counts as
+  done wherever it's ticked. Nobody uses it that way today (0% of station-days). Stephen
+  should know before using it.
+- **PROJECT-LIST item 1 (names fill themselves in) now clashes with this.** If Who is filled
+  automatically, every tick would count as done. Item 1 must be redesigned before it's built.
+- **Slice 2 inherits it**: a kit counts as built only when its row is ticked with a name, and as
+  made only when its morning row is ticked with a name. The PM line must pick a name on the
+  kits it really built.
+
+**Settled with Stephen, 2026-11-21 (after the build window's note
+`~/Developer/LAST-DONE-NOTE-NAMED-TICKS.md`):**
+- **Slice 1's phone check passed** ("looks as you stated").
+- **Shared entries count.** The Who list holds about 30 entries naming several people ("Rubi,
+  Jose & Isaac", "Gilberto, Vidalio & Evelin"). Stephen's "if its the whole crew and it gets
+  ticked off then yes it is done" meant these. They're names, so they count, with no special
+  handling. A long one may end in "…" on a phone.
+- **"Everyone"** is already in the Who list on both shifts (picked once in 30 days). **No special
+  handling for now** (Stephen: "we can worry about the everyone later on"). It's an entry like
+  any other, so a tick with it counts.
+
 
 ---
 
@@ -273,6 +342,18 @@ before pushing**.
   Stephen's phone check: a task he knows was done yesterday, one he knows was skipped, a past
   date, Line PM's kit rows, the Prep page, and Dark Mode.
 
+### Slice 1b: only a named tick counts (both pages; the crew sees it on merge) — added 2026-11-21
+
+- `tempest_prep.html`, `tempest_line.html`: inside the shared block only, `&assigned_to=neq.` in
+  the read, and a row whose name is only spaces is skipped. The blocks stay byte-identical.
+- `scripts/check_last_done.py`: the stub honours `assigned_to=neq.`; fixtures get names so
+  dates are still tested; new cases (a bare tick doesn't count, a space-only name doesn't
+  count); the exact query; two new fails-when-it-should.
+- `docs/last-done.md`: the change, the decision, "Slice 1b as built", and Slice 1's phone check
+  (passed 2026-11-21).
+- **Before the merge, Stephen tells the crew: pick your name in Who on what you actually make or
+  clean; just tick what isn't needed.**
+
 ### Slice 2: KIT READY on the Line AM row (Line only; the morning line sees it on merge)
 
 - `tempest_line.html`: `KIT_MAKE`, the rule, the tag, one page-only rule, `ldNote()` widened.
@@ -303,8 +384,10 @@ before pushing**.
 ## Later — not this plan
 
 - **B2: the nightly prep email** (PROJECT-LIST item 2). It can reuse this read's idea.
-- **Item 1: the usual cleaning crew fills itself in.** It would raise the 34% of check-offs that
-  carry a Who.
+- **Item 1: the usual cleaning crew fills itself in.** Since 2026-11-21 a name in Who means
+  "actually done", so this idea clashes with Last done as it stands: auto-filled names would make
+  every tick count. It needs a new design (e.g. a suggested name that only counts once the cook
+  confirms it) before it's planned.
 - **A database view for "last done"** (one row per task) if the lists ever outgrow two pages.
   Today it would be a schema change for no gain.
 - **Promote `.last-done` into `kitchen.css`** at the next `?v=` bump (e.g. the #135 pass).
@@ -315,7 +398,7 @@ before pushing**.
 
 ## Status
 
-**Slice 1 BUILT 2026-11-20 on `prep-last-done`, not pushed.** Slice 2 not started.
+**Slice 1 LIVE** (#193, `d023c85`, merged 2026-11-21). **Slice 1b BUILT 2026-11-22 on `prep-last-done-1b`, not pushed.** Slice 2 not started.
 
 ## Slice 1 as built
 
@@ -359,3 +442,47 @@ SHEET → (59px) spills past `.task-info` (still inside its row). Already so on 
 The guard checks the stricter rule in staff mode only.
 
 **`docs/page-restyle.md`**: one sentence in "Justified page overrides".
+
+## Slice 1: phone check
+
+**Passed** (Stephen, 2026-11-21: "looks as you stated").
+
+Settled with Stephen in the planner window on 2026-11-21:
+- **Shared Who entries count.** "Rubi, Jose & Isaac", "Gilberto, Vidalio & Evelin" and the
+  other entries that list several people are names, so a tick with one counts. ("Whole crew"
+  in the build window's note was a misunderstanding of this.)
+- **"Everyone"** gets no special handling for now. It's an entry like any other, so a tick with
+  it counts.
+- **Slice 2 uses the same rule**: a kit counts as built, and its morning row as made, only when
+  ticked with a name.
+
+## Slice 1b as built
+
+**`tempest_line.html`, `tempest_prep.html`**: inside the LAST DONE block only, 2 lines each,
+still byte-identical. `ldLoad()`'s query gains `&assigned_to=neq.` straight after
+`completed=eq.true`, and the loop over a page's rows skips any row whose `assigned_to` is
+empty after trimming, before it can set the task's day. Nothing else changed.
+
+**`scripts/check_last_done.py`**: the stub honours `assigned_to=neq.` like the server (drops
+`null` and `''`, keeps `'  '`). Every tick that must count has a name (fillers too, so `paged`
+still needs 2 pages and `cut` 5), and the expected words carry ` · <name>`. New tasks on both
+pages: 115 (bare tick 11/19, Pablo 11/15 → `Last done: Sun 11/15 · 5 days ago · Pablo`), 116
+(spaces-only name → `Not done…`), 117 (ticked daily 11/07–11/19, never named → `Not done…`), 118
+(`Gilberto, Vidalio & Evelin` → `Last done: yesterday · Gilberto, Vidalio & Evelin`). The exact
+query in `words` includes `assigned_to=neq.`. **1,457 assertions**, 13 scenarios × 2 pages plus
+`copies`, clean.
+
+**Fails when it should**: Slice 1's 13 again, plus 14 (`assigned_to=neq.` dropped) and 15 (the
+spaces-only skip removed): **all 15 fail.** On 14: the page's own skip also drops bare ticks
+(`''` trims to empty), so 115 and 117 still read right without the server filter. The read is
+caught by the exact-query check, and the rule holds twice over.
+
+**Hand check** (local Chrome, live data, read-only, 2026-11-22):
+- **Line:** "Cut Citrus" (Ismael yesterday) → `Last done: yesterday · Ismael`. "Make - Marinated
+  egg", ticked yesterday with no name → `Last done: Wed 11/18 · 4 days ago · Rubi`. "Brussels
+  sprouts", bare ticks only → `Not done in the last 2 weeks`. Of 72 rows: 14 yesterday, 20 not
+  done, none without a name.
+- **Prep:** "Clean grease trap" → `Last done: yesterday · Chepe`. "Clean out Compost trash bins",
+  bare tick → `Not done…`. Of 58 rows: 19 yesterday, 20 not done.
+- **Requests:** the last-done read carries `assigned_to=neq.` and comes back in one page. GETs
+  only.

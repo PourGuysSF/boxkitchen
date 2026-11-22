@@ -405,11 +405,12 @@ function ldLoad(){
   for(var i=0;i<items.length;i++)if(items[i].category!=='special')ids.push(+items[i].id);
   ids.sort(function(a,b){return a-b;});
   if(!ids.length)return;
-  var q='prep_item_id=in.('+ids.join(',')+')&completed=eq.true&date=gte.'+from+'&date=lt.'+day+'&select=prep_item_id,date,assigned_to,mode&order=date.desc,id.desc&limit=1000&offset=';
+  var q='prep_item_id=in.('+ids.join(',')+')&completed=eq.true&assigned_to=neq.&date=gte.'+from+'&date=lt.'+day+'&select=prep_item_id,date,assigned_to,mode&order=date.desc,id.desc&limit=1000&offset=';
   (function page(n){
     api('GET','prep_logs',q+(n*1000),null,function(r){
       if(fmtDate(currentDate)!==day||!Array.isArray(r))return;
       for(var i=0;i<r.length;i++){var x=r[i],m=map[x.prep_item_id];
+        if(!String(x.assigned_to||'').trim())continue; // only a tick with a name counts (Stephen, 2026-11-21)
         if(!m)map[x.prep_item_id]={date:x.date,who:x.assigned_to||'',mode:x.mode||null};
         else if(m.date===x.date&&!m.who&&x.assigned_to)m.who=x.assigned_to;}
       if(r.length===1000){if(n<4)page(n+1);return;}
