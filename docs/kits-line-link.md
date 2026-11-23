@@ -5,8 +5,10 @@ Stephen's answers on 2026-11-08. Every decision below is Stephen's. It goes into
 `docs/kits-line-link.md` with Slice 1's PR.
 
 **Slice 1 LIVE** (#188, 2026-11-16); Stephen's phone check passed 2026-11-19.
-**Slice 2 BUILT 2026-11-19 on `kits-line2`, not pushed.** See "Slice 1 as built" and
-"Slice 2 as built" below.
+**Slice 2 LIVE** (#191, `897d045`); **phone check passed 2026-11-19** (Stephen confirmed to the
+planner, 2026-11-22: "yes the 11/19 phone check passed"). See "Slice 1 as built" and
+"Slice 2 as built" below. **Kits menu update** (Suadero and Chilorio buttons): built
+2026-11-22, see `docs/kits.md` "Menu update as built".
 
 It is the step `docs/kits.md` names first under "Later": tapping a kit item on Line PM opens
 that kit's sheet, "so they make sure everything needed has been kitted". Kits itself (B5) is
@@ -60,8 +62,8 @@ green sauce came off the menu:
 | 678 | Kit - Dumpling | 60 | button → `#dumpling` |
 | 673 | Kit - Spicy green sauce | 70 | no button: off the menu |
 | 674 | Kit - Pickle onions& peppers | 80 | button → `#pickled-onions-peppers` |
-| 675 | Kit - Suadero | 90 | no button: no kit sheet yet |
-| 676 | Kit- Chilorio | 100 | no button: no kit sheet yet |
+| 675 | Kit - Suadero | 90 | button → `#suadero` (since the Kits menu update, 2026-11-22) |
+| 676 | Kit- Chilorio | 100 | button → `#chilorio` (since the Kits menu update, 2026-11-22) |
 | 677 | Kit- New prep coming soon | 110 | no button (placeholder) |
 
 Item names don't match the kit names ("Pickle onions& peppers", "Mac and Cheese"). That's why
@@ -257,8 +259,9 @@ button inside `.task-name` (phone check fails); the button between `.task-name` 
 
 ## Later — not this plan
 
-- **Kits menu update — the next ticket:** add Suadero and Chilorio sheets, remove Spicy green
-  sauce, and map 675/676.
+- ~~**Kits menu update — the next ticket:** add Suadero and Chilorio sheets, remove Spicy green
+  sauce, and map 675/676.~~ **Done** in the Kits menu update PR (`docs/kits.md` "Menu update as
+  built").
 - **Ticks** on the sheet (decided against for now; needs a table).
 - **A kit-id column on `prep_items`**, so managers can link a new kit without a code change.
   Worth it once kits change often.

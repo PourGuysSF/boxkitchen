@@ -40,7 +40,7 @@ it is the front door and has no buttons competing for the row.
 `tempest_orders.html` — `.header h1` is 1.2rem with `nowrap` (longest title in the app),
 plus `body`, `.nb-fab` and `.nb-toast` offsets for its fixed submit bar.
 `tempest_flash.html` / `tempest_costing.html` — wider modals for their list content.
-`tempest_prep.html` / `tempest_line.html` — a shared 3-rule modal margin rhythm.
+`tempest_prep.html` / `tempest_line.html` — a shared 3-rule modal margin rhythm. They also carry `.task{flex-wrap:wrap}` and `.last-done`, so the Last done line sits full width under a row (`docs/last-done.md`).
 
 **Correction, 2026-08-22 (issue #129).** The list above enumerates overrides that live in a
 page's own `<style>` block, and on that basis slice 9 concluded that `recipe_dashboard`,

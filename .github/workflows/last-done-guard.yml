@@ -1,0 +1,26 @@
+# The Last done line on Tempest Prep and Tempest Line is live in every
+# service, and its promises (the paged 14-day read, the words, GETs only)
+# cannot be tested against the live database. check_last_done.py drives both
+# real pages in headless Chrome against a stubbed XMLHttpRequest, with the
+# clock pinned and Chrome in Los Angeles time. (docs/last-done.md)
+name: last-done guard
+
+on:
+  pull_request:
+    paths: ['tempest_prep.html', 'tempest_line.html', 'assets/**', 'vendor/**', 'scripts/check_last_done.py']
+  push:
+    branches: [main]
+    paths: ['tempest_prep.html', 'tempest_line.html', 'assets/**', 'vendor/**', 'scripts/check_last_done.py']
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: browser-actions/setup-chrome@v1
+        id: chrome
+        with:
+          chrome-version: stable
+      - run: python3 scripts/check_last_done.py
+        env:
+          CHROME: ${{ steps.chrome.outputs.chrome-path }}

@@ -4,10 +4,10 @@ Behaviour guard for the Tempest Line page (tempest_line.html), for the Kits
 Line PM link (docs/kits-line-link.md).
 
 Slice 2's promises (the SHEET -> button):
-  - on PM, exactly 7 kit rows (668 669 670 671 672 678 674) get a
+  - on PM, exactly 9 kit rows (668 669 670 671 672 678 674 675 676) get a
     "SHEET ->" link, each to tempest_kits.html?from=line#<its slug>, no target;
-    none on 673 (off the menu), 675/676 (no sheet yet), 677 (placeholder), any
-    other row, or anywhere on AM;
+    none on 673 (off the menu), 677 (placeholder), any other row, or anywhere
+    on AM. (675 Suadero and 676 Chilorio since the Kits menu update, 2026-11-22.)
   - it sits in .task-info after the rename input, so #ni<id>'s previous
     sibling is still the .task-name (saveN relies on it), and at a 390px
     window it is at least 44px tall and wholly inside its row (not clipped);
@@ -62,10 +62,10 @@ HASH = {"plain": "", "pm": "pm", "phone": "pm", "renamed": "pm", "mgr": "pm", "s
 # scenario opens at 500 and pins the page to 390px wide. kitchen.css's only
 # width breakpoints are 600 and 760, so 390 and 500 take the same rules.
 WINDOW = {"phone": "500,900"}
-# The 7 rows with a kit sheet, in Line PM order, and their addresses.
+# The 9 rows with a kit sheet, in Line PM order, and their addresses.
 SHEETS = [[668, "mac-and-cheese"], [669, "buffalo-sauce"], [670, "pork-belly"],
           [671, "gastrique"], [672, "chicken-dumpling-soup"], [678, "dumpling"],
-          [674, "pickled-onions-peppers"]]
+          [674, "pickled-onions-peppers"], [675, "suadero"], [676, "chilorio"]]
 # The renamed scenario: another dish, and the soup's name on the dumpling row.
 RENAMED = {"670": "Kit - Short rib", "678": "Kit - Chicken & Dumpling soup"}
 
@@ -181,14 +181,14 @@ RUNNER = r"""
   var WANT=H.fx.sheets.map(function(x){return x[0];});
   function sheetChecks(S){
     var L=links();
-    ok(S+': exactly 7 SHEET buttons', L.length===7, L.length);
-    ok(S+': on 668 669 670 671 672 678 674, in that order', JSON.stringify(L.map(function(a){return parseInt(a.closest('.task').getAttribute('data-id'),10);}))===JSON.stringify(WANT));
+    ok(S+': exactly 9 SHEET buttons', L.length===9, L.length);
+    ok(S+': on 668 669 670 671 672 678 674 675 676, in that order', JSON.stringify(L.map(function(a){return parseInt(a.closest('.task').getAttribute('data-id'),10);}))===JSON.stringify(WANT));
     H.fx.sheets.forEach(function(x){
       var a=linkOf(x[0]);
       ok(S+': '+x[0]+' goes to ?from=line#'+x[1], a&&a.getAttribute('href')==='tempest_kits.html?from=line#'+x[1], a&&a.getAttribute('href'));
       ok(S+': '+x[0]+' has no target and reads SHEET', a&&!a.hasAttribute('target')&&/^SHEET/.test(txt(a)));
     });
-    [673,675,676,677,9001].forEach(function(id){ok(S+': no button on '+id, !linkOf(id));});
+    [673,677,9001].forEach(function(id){ok(S+': no button on '+id, !linkOf(id));});
     KIT.forEach(function(id){
       var inp=document.getElementById('ni'+id),a=linkOf(id);
       ok(S+': #ni'+id+' still follows its .task-name', inp&&inp.previousElementSibling&&inp.previousElementSibling.classList.contains('task-name'));
@@ -204,7 +204,7 @@ RUNNER = r"""
     if(S==='pm'||S==='mgr')sheetChecks(S);
     if(S==='phone'){
       ok('phone: page is 390px wide', Math.round(document.body.getBoundingClientRect().width)<=390&&document.documentElement.scrollWidth<=window.innerWidth, [document.body.getBoundingClientRect().width,document.documentElement.scrollWidth]);
-      ok('phone: 7 buttons', links().length===7, links().length);
+      ok('phone: 9 buttons', links().length===9, links().length);
       links().forEach(function(a){
         var id=a.closest('.task').getAttribute('data-id'),r=a.getBoundingClientRect(),t=a.closest('.task').getBoundingClientRect(),i=a.closest('.task-info');
         var ir=i?i.getBoundingClientRect():{left:1e9,right:-1,top:1e9,bottom:-1};
@@ -216,7 +216,7 @@ RUNNER = r"""
     if(S==='renamed'){
       ok('renamed: 670 ("Kit - Short rib") has no button', !linkOf(670));
       ok('renamed: 678 ("Kit - Chicken & Dumpling soup") has no button', !linkOf(678));
-      ok('renamed: the other 5 keep theirs', links().length===5, links().length);
+      ok('renamed: the other 7 keep theirs', links().length===7, links().length);
       var own={};H.fx.sheets.forEach(function(x){own[x[0]]=x[1];});
       ok('renamed: every button points at its own row\'s sheet', links().every(function(a){var id=a.closest('.task').getAttribute('data-id');return a.getAttribute('href')==='tempest_kits.html?from=line#'+own[id];}));
     }

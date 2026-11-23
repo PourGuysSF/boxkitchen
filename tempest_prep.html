@@ -39,6 +39,16 @@
   .task-name.spec-blank{color:var(--grey);font-style:italic}
   .spec-ghost{visibility:hidden}
   .task-name-input.spec-input,.modal input[type="text"].sec-special{font-size:16px}
+
+  /* LAST DONE start */
+  /* Last done: its own full-width line under each row (docs/last-done.md).
+     .task wraps so .last-done can drop below the checkbox, name and fields;
+     nothing else in the row moves. Indent = checkbox 26 + gap 8 (plus the
+     drag handle 22 + gap 8 in manager mode), so the text starts under the name. */
+  .task{flex-wrap:wrap}
+  .last-done{flex:0 0 100%;padding-left:34px;margin-top:-4px;font-size:0.75rem;color:var(--grey);line-height:1.25;min-height:1.25em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .manager-mode .last-done{padding-left:64px}
+  /* LAST DONE end */
 </style>
 <script src="vendor/sortablejs-1.15.7.min.js"></script>
 </head>
@@ -184,6 +194,7 @@ function loadLogs(){
   api('GET','prep_logs','date=eq.'+dateStr,null,function(r){
     logs={};if(r)for(var i=0;i<r.length;i++)logs[r[i].prep_item_id]=r[i];
     render();
+    ldLoad();
   });
 }
 // A5b: load this team's editable section labels (falls back to defaults if empty).
@@ -373,6 +384,42 @@ function bDaily(ti,li){
 
 function esc(s){return s?String(s).replace(/"/g,'&quot;').replace(/</g,'&lt;'):''}
 
+// LAST DONE start — same in tempest_prep.html and tempest_line.html; check_last_done.py compares them; docs/last-done.md
+// Per task: its latest check-off in the 14 days before the viewed day, that day's Who, and mode
+// (mode is for Slice 2). LD.map is set only when a read for LD.day landed whole; otherwise lines stay empty.
+var LD={day:null,map:null};
+function ldParts(s){var p=String(s).split('-');return[+p[0],+p[1]-1,+p[2]];} // never new Date('YYYY-MM-DD'): that is UTC
+function ldDays(a,b){var x=ldParts(a),y=ldParts(b);return Math.round((Date.UTC(y[0],y[1],y[2])-Date.UTC(x[0],x[1],x[2]))/86400000);}
+function ldText(id){
+  var day=fmtDate(currentDate);
+  if(LD.day!==day||!LD.map)return'';
+  var r=LD.map[id];if(!r)return'Not done in the last 2 weeks';
+  var n=ldDays(r.date,day),p=ldParts(r.date),wd=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date(p[0],p[1],p[2]).getDay()];
+  return'Last done: '+(n===1?'yesterday':wd+' '+(p[1]+1)+'/'+p[2]+' · '+n+' days ago')+(r.who?' · '+esc(r.who):'');
+}
+function ldFill(){var e=document.querySelectorAll('.task > .last-done');for(var i=0;i<e.length;i++)e[i].innerHTML=ldNote(+e[i].parentNode.getAttribute('data-id'));}
+// GET only, paged: the server returns at most 1,000 rows and doesn't say it cut. At most 5 pages;
+// a 5th full page = cut short = lines stay empty. A late answer (day changed) is dropped.
+function ldLoad(){
+  var day=fmtDate(currentDate),p=ldParts(day),from=fmtDate(new Date(p[0],p[1],p[2]-14)),ids=[],map={};
+  for(var i=0;i<items.length;i++)if(items[i].category!=='special')ids.push(+items[i].id);
+  ids.sort(function(a,b){return a-b;});
+  if(!ids.length)return;
+  var q='prep_item_id=in.('+ids.join(',')+')&completed=eq.true&assigned_to=neq.&date=gte.'+from+'&date=lt.'+day+'&select=prep_item_id,date,assigned_to,mode&order=date.desc,id.desc&limit=1000&offset=';
+  (function page(n){
+    api('GET','prep_logs',q+(n*1000),null,function(r){
+      if(fmtDate(currentDate)!==day||!Array.isArray(r))return;
+      for(var i=0;i<r.length;i++){var x=r[i],m=map[x.prep_item_id];
+        if(!String(x.assigned_to||'').trim())continue; // only a tick with a name counts (Stephen, 2026-11-21)
+        if(!m)map[x.prep_item_id]={date:x.date,who:x.assigned_to||'',mode:x.mode||null};
+        else if(m.date===x.date&&!m.who&&x.assigned_to)m.who=x.assigned_to;}
+      if(r.length===1000){if(n<4)page(n+1);return;}
+      LD.day=day;LD.map=map;ldFill();
+    });
+  })(0);
+}
+// LAST DONE end
+function ldNote(id){return ldText(id);}
 function bTask(it){
   var l=logs[it.id]||{},dn=l.completed||false,w=l.assigned_to||'',q=l.quantity||'',n=l.notes||'',no=openNotes[it.id]||false;
   var hasNote=n&&n.trim().length>0;
@@ -402,7 +449,9 @@ function bTask(it){
   // specials are permanent rows — a hidden spacer keeps the columns lined up
   if(sp)h+='<span class="delete-btn spec-ghost" aria-hidden="true"></span>';
   else h+='<button class="delete-btn" onclick="delItem('+it.id+')">✕</button>';
-  h+='</div></div>';
+  h+='</div>';
+  if(!sp)h+='<div class="last-done">'+ldNote(it.id)+'</div>';
+  h+='</div>';
   h+='<div class="note-row '+(showNote?'show':'')+'" id="nr'+it.id+'"><input class="note-input" placeholder="Add a note..." value="'+esc(n)+'" onchange="uLog('+it.id+',\'notes\',this.value)"></div>';
   return h;
 }
