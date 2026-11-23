@@ -1,7 +1,7 @@
 # Kits — what goes in each kit
 
-**Menu update (Suadero and Chilorio in, Spicy green sauce out): BUILT 2026-11-22 on
-`kits-menu-update`, not pushed.** See "Menu update as built" at the end.
+**Menu update (Suadero and Chilorio in, Spicy green sauce out): LIVE** (#196, `85692a1`,
+2026-11-22); **Stephen's phone check passed 2026-11-23.** See "Menu update as built" at the end.
 
 Status: **built and shipped.** The plan (v1) was approved by Stephen on 2026-11-02, with one
 change: the build is split into five small slices, so each can be checked before the next
@@ -746,3 +746,8 @@ and its date is now 2026-11-22. `KIT_MAKE` loses 673 → 567, leaving 9 pairs.
 - Line PM: 9 SHEET → buttons, none on 673/677. Suadero's opens its sheet with "← Line PM" back
   to `tempest_line.html#pm`.
 - Recipes 69 and 70 re-read first: unchanged from the ticket.
+
+**Live as #196 (`85692a1`), 2026-11-22.** **Stephen's phone check, 2026-11-23, live:** the Kits
+list showed 9 kits ending Suadero and Chilorio, with no Spicy green sauce; both sheets read
+right; on Line PM both have SHEET →, which opens their sheet, and ← Line PM comes back to the PM
+list; Spicy green sauce has no button. His words: "everything passed my eye test."

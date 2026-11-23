@@ -7,8 +7,9 @@ Stephen's answers on 2026-11-08. Every decision below is Stephen's. It goes into
 **Slice 1 LIVE** (#188, 2026-11-16); Stephen's phone check passed 2026-11-19.
 **Slice 2 LIVE** (#191, `897d045`); **phone check passed 2026-11-19** (Stephen confirmed to the
 planner, 2026-11-22: "yes the 11/19 phone check passed"). See "Slice 1 as built" and
-"Slice 2 as built" below. **Kits menu update** (Suadero and Chilorio buttons): built
-2026-11-22, see `docs/kits.md` "Menu update as built".
+"Slice 2 as built" below. **Kits menu update** (Suadero and Chilorio buttons): **LIVE** (#196,
+2026-11-22), phone check passed 2026-11-23; see `docs/kits.md` "Menu update as built". **The
+Line PM link is done.**
 
 It is the step `docs/kits.md` names first under "Later": tapping a kit item on Line PM opens
 that kit's sheet, "so they make sure everything needed has been kitted". Kits itself (B5) is
@@ -146,7 +147,7 @@ up front, adds its promises to a guard, passes `check_styling.py`, and **stops b
   `…/tempest_kits.html?from=line#pork-belly` from a link the builder gives him, tap
   **← Line PM**, and he should land on the PM list.
 
-### Slice 1 as built (2026-11-16, `kits-line1`, not pushed)
+### Slice 1 as built (2026-11-16, live as #188)
 
 **`tempest_line.html`** — 4 lines. Before the first draw, an address ending in `#pm` starts the
 page on PM with the PM SHIFT button active. Any other address opens on AM exactly as before. No
@@ -206,7 +207,7 @@ Passed: the Kits list starts with Mac & cheese in the new order; Pork belly's to
 "← All kits" and returns to the list; opened with `?from=line` it says "← Line PM" and lands on
 the PM SHIFT list with Kits at the top; Tempest Line from the home page still opens on AM.
 
-### Slice 2 as built (2026-11-19, `kits-line2`, not pushed)
+### Slice 2 as built (2026-11-19, live as #191)
 
 **`tempest_line.html`** — `KIT_SHEETS`, the 7-entry map above (comment: matched to Line PM
 2026-11-16, pointing to `docs/kits.md` "Adding a kit"), and `kitSheetLink(it)`, which returns
