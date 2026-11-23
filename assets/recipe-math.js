@@ -12,6 +12,7 @@
  *
  * Slice 2: the units and the amount reader. Slice 3: lineCost().
  * Slice 4: conversionChange(), and measureOf() exported.
+ * Slice 5a: recipeCost() - the text matching, the guards, the total and the yield.
  */
 var RecipeMath = (function () {
   'use strict';
@@ -263,7 +264,130 @@ var RecipeMath = (function () {
     return nu / ol;
   }
 
+  // ---- recipeCost(): a whole recipe, from values only (Slice 5a). ----------
+  // The Menu Builder math contract, part 3. Every page that costs a recipe
+  // calls this, so the text matching and the guards live here, once.
+  //
+  //   recipeCost({ recipeId, text, links, prices, conversions, yield })
+  //     recipeId     the recipe's id
+  //     text         Recipes.ingredients, exactly as read
+  //     links        recipe_lines rows (any recipes; only active rows with this
+  //                  recipe_id count)
+  //     prices       { <ingredient_cost_id>: {pack_qty, pack_unit, pack_price,
+  //                  active, name, guess?} } - name = the name the caller shows
+  //     conversions  ingredient_conversions rows
+  //     yield        the recipe_yields row, or null
+  //
+  //   -> { lines, orphans, total, complete, costed, skipped, notCosted, reasons,
+  //        soft, estimate, perYield, yieldUnit, portion }
+  //     lines     in text order: {header:true, text} or {text, occurrence, part,
+  //               read, link, kind, cost, soft, was, now, conv}
+  //     kind      'not linked' | 'skip' | 'recipe inside' | 'price retired'
+  //               | 'renamed' | 'costed' | lineCost()'s reasons
+  //     total     unrounded sum of the costed lines (0 when none)
+  //     complete  at least one ingredient line, and every one costed or skipped
+  //     soft      [{input:'estimated conversion'|'guessed price'|'estimated yield', text, name}]
+  //     perYield  unrounded cost of ONE yield unit, or null with no yield -
+  //               returned even when incomplete; hiding it is the page's rule
+  //     portion   null, or {qty, unit, cost, reason} - reason null | 'no yield'
+  //               | 'needs a conversion'
+  function normName(x) { return String(x == null ? '' : x).toLowerCase().replace(/\s+/g, ' ').trim(); }
+  function num(v) { return v === null || v === undefined || v === '' ? null : Number(v); }
+  function recipeLines(text) {
+    var out = [], part = null, seen = {}, raw = String(text == null ? '' : text).split(/\r?\n/);
+    for (var i = 0; i < raw.length; i++) {
+      var t = raw[i].trim();
+      if (!t) continue;
+      if (isPartHeader(t)) { part = t; out.push({ header: true, text: t }); continue; }
+      seen[t] = (seen[t] || 0) + 1;
+      out.push({ header: false, text: t, occurrence: seen[t], part: part, read: readAmount(t) });
+    }
+    return out;
+  }
+  function convFor(conversions, costId, unit) {
+    var kind = measureOf(unit);
+    if (!kind || costId === null || costId === undefined) return null;
+    for (var i = 0; i < (conversions || []).length; i++) {
+      var c = conversions[i];
+      if (Number(c.ingredient_cost_id) === Number(costId) && c.from_kind === kind) return c;
+    }
+    return null;
+  }
+  function amountUnit(q, u) {
+    var qty = num(q), unit = normaliseUnit(u);
+    return (qty !== null && isFinite(qty) && qty > 0 && unit) ? { qty: qty, unit: unit } : null;
+  }
+  function recipeCost(o) {
+    o = o || {};
+    var prices = o.prices || {}, rid = Number(o.recipeId);
+    var mine = (o.links || []).filter(function (k) { return k.active !== false && Number(k.recipe_id) === rid; });
+    var byKey = {};
+    mine.forEach(function (k) { byKey[k.line_text + '\u0000' + Number(k.occurrence)] = k; });
+    var out = { lines: [], orphans: [], total: 0, complete: false, costed: 0, skipped: 0, notCosted: 0,
+                reasons: {}, soft: [], estimate: false, perYield: null, yieldUnit: null, portion: null };
+    var cur = {};
+    recipeLines(o.text).forEach(function (l) {
+      if (l.header) { out.lines.push({ header: true, text: l.text }); return; }
+      var key = l.text + '\u0000' + l.occurrence;
+      cur[key] = true;
+      var k = byKey[key] || null;
+      var ln = { header: false, text: l.text, occurrence: l.occurrence, part: l.part, read: l.read, link: k,
+                 kind: null, cost: null, soft: [], was: null, now: null, conv: null };
+      var p = k && k.ingredient_cost_id !== null && k.ingredient_cost_id !== undefined ? prices[k.ingredient_cost_id] : null;
+      if (!k) ln.kind = 'not linked';
+      else if (k.skip) ln.kind = 'skip';
+      else if (k.sub_recipe_id !== null && k.sub_recipe_id !== undefined) ln.kind = 'recipe inside';
+      // the guards: a retired (or missing) price cannot cost anything; a name
+      // changed since the link was made may be a different product (order-ID reuse)
+      else if (!p || p.active === false) ln.kind = 'price retired';
+      else if (normName(k.linked_name) !== normName(p.name)) { ln.kind = 'renamed'; ln.was = k.linked_name; ln.now = p.name; }
+      else {
+        var price = { pack_qty: num(p.pack_qty), pack_unit: p.pack_unit, pack_price: num(p.pack_price), guess: !!p.guess };
+        var cv = convFor(o.conversions, k.ingredient_cost_id, k.unit), cvv = null;
+        if (cv) cvv = { from_kind: cv.from_kind, from_qty: Number(cv.from_qty), from_unit: cv.from_unit,
+                        to_qty: Number(cv.to_qty), to_unit: cv.to_unit, estimate: !!cv.estimate };
+        var r = lineCost(num(k.qty), k.unit, price, cvv);
+        ln.kind = r.reason || 'costed';
+        ln.cost = r.cost; ln.soft = r.soft; ln.was = r.was; ln.now = r.now;
+        // costed THROUGH the conversion only when the units don't meet on their own
+        if (cv && convert(1, k.unit, p.pack_unit) === null) ln.conv = cv;
+      }
+      if (ln.kind === 'costed') {
+        out.costed++;
+        out.total += ln.cost;
+        ln.soft.forEach(function (s) { out.soft.push({ input: s, text: ln.text, name: p.name }); });
+      } else if (ln.kind === 'skip') {
+        out.skipped++;
+      } else {
+        out.notCosted++;
+        out.reasons[ln.kind] = (out.reasons[ln.kind] || 0) + 1;
+      }
+      out.lines.push(ln);
+    });
+    mine.forEach(function (k) { if (!cur[k.line_text + '\u0000' + Number(k.occurrence)]) out.orphans.push(k); });
+    out.complete = (out.costed + out.skipped) > 0 && out.notCosted === 0;
+    var y = o.yield || null, mk = y ? amountUnit(y.yield_qty, y.yield_unit) : null;
+    if (mk) {
+      out.yieldUnit = mk.unit;
+      out.perYield = out.total / mk.qty;
+      if (y.yield_estimate) out.soft.push({ input: 'estimated yield', text: null, name: null });
+    }
+    var pt = y ? amountUnit(y.portion_qty, y.portion_unit) : null;
+    if (pt) {
+      out.portion = { qty: pt.qty, unit: pt.unit, cost: null, reason: null };
+      if (!mk) out.portion.reason = 'no yield';
+      else {
+        var inY = convert(pt.qty, pt.unit, mk.unit);
+        if (inY === null) out.portion.reason = 'needs a conversion';
+        else out.portion.cost = out.perYield * inY;
+      }
+    }
+    out.estimate = out.soft.length > 0;
+    return out;
+  }
+
   return {
+    recipeCost: recipeCost,
     lineCost: lineCost,
     conversionChange: conversionChange,
     measureOf: measureOf,

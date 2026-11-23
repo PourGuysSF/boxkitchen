@@ -1,7 +1,7 @@
 # Recipe Costing — what a batch costs (B4.3)
 
 Status: **plan v1, approved by Stephen 2026-11-02. Slice 0 is closed (tables live, 0 rows); Slice 1
-is shipped (PR #171, 2026-11-05). Slice 2 is shipped (PR #181, 2026-11-08). Slice 3 is shipped (PR #187, 2026-11-16; Stephen's phone check passed 2026-11-19). Slice 4 is built (2026-11-23, branch `recipe-costing-slice4`, awaiting PR and phone check); Slice 5 is next.** It is built in a separate window: this plan is owned by the planning window, the build window
+is shipped (PR #171, 2026-11-05). Slice 2 is shipped (PR #181, 2026-11-08). Slice 3 is shipped (PR #187, 2026-11-16; Stephen's phone check passed 2026-11-19). Slice 4 is shipped (PR #200, 2026-11-23; Stephen's phone check passed 2026-11-23). **Slice 5 was split into 5a / 5b by Stephen, 2026-11-23**; 5a is built (2026-11-23, branch `recipe-costing-slice5a`, awaiting PR and phone check); 5b is next.** It is built in a separate window: this plan is owned by the planning window, the build window
 records each slice "as built" here, and any change to the design goes back to the planner. Every
 decision in "Decisions" was Stephen's, in the interview that produced this document. The design
 choices made without asking are listed under "Decided in planning, not asked" so they can be
@@ -460,7 +460,9 @@ Menu Builder loads; each part keeps this contract from the slice that adds it (2
    if one is needed. Out: the cost, **unrounded** — or no cost and the reason, from the reasons
    table under "How a line is costed" — and which inputs were soft. A guessed price is simply a
    price passed in marked as a guess.
-3. **`recipeCost()`** is built on 2: the text matching, recipes inside recipes, the yield. Out: the
+3. **`recipeCost()`** is built on 2: the text matching, recipes inside recipes, the yield. Its
+   exact signature and result are under "Slice 5a as built"; callers pass each price row as values
+   with its display `name` (the order-guide name when linked), which the rename guard compares. Out: the
    cost so far, whether it is complete, every reason, the soft inputs, and the cost per yield unit
    when there is a yield. **It never returns nothing for an incomplete recipe.** Hiding a per-unit
    cost until a recipe is complete is this page's display rule, not the math's — so Menu Builder
@@ -865,9 +867,12 @@ salad oil). Phone-check pair: **White sugar** (Birite, 25 lb), linked by volume 
 
 ### Slice 5 — Yield, portion and the numbers
 
+Split by Stephen, 2026-11-23, into 5a (the numbers, Makes and Portion) and 5b (the recipe's own
+conversions).
+
+#### Slice 5a — the numbers, Makes and Portion
+
 - **Makes** and **Portion** on the recipe, with *estimate*.
-- **The recipe's own conversions** (M1), set beside **Makes** or asked from a portion measured
-  another way than the yield; the yield-changed guard.
 - The batch total — *so far* while incomplete; cost per yield unit and per portion only when
   complete. The total says what it leaves out, by reason, and how many lines were skipped on
   purpose.
@@ -875,8 +880,101 @@ salad oil). Phone-check pair: **White sugar** (Birite, 25 lb), linked by volume 
 
 **Done when:** totals match a hand calculation to the cent on fixtures covering every kind of unit
 and every reason; an incomplete recipe never shows a per-unit cost; *estimate* appears whenever it
-should; a portion by the ounce of a recipe made by the quart costs through the recipe's conversion,
-and says *needs a conversion* without one.
+should; a portion by the ounce of a recipe made by the quart says *needs a conversion*.
+
+#### Slice 5b — the recipe's own conversions
+
+- **The recipe's own conversions** (M1), set beside **Makes** or asked from a portion measured
+  another way than the yield; the yield-changed guard.
+
+**Done when:** a portion by the ounce of a recipe made by the quart costs through the recipe's
+conversion.
+
+#### Slice 5a as built (2026-11-23, branch `recipe-costing-slice5a`)
+
+Live counts at the start (read-only, 2026-11-23): 45 active recipes, 352 ingredient lines, 13 part
+headers; 12 active `recipe_lines` (0 skipped, 0 recipe inside), 1 `ingredient_conversions` (White
+sugar), 0 `recipe_yields`, 0 `recipe_conversions`. No recipe is complete; the closest is Bacon
+Shallot Gastrique (#43), 4 of 8 lines costed, $6.51 so far. Phone-check recipe: Bacon Shallot
+Gastrique.
+
+- **`assets/recipe-math.js?v=4`** (was `v=3`) adds `recipeCost()`; no existing export changed.
+  The text matching and the guards moved into it from the page (the page's `linesOf`, `linkFor`,
+  `orphansOf` and `normName` are gone):
+
+  ```
+  RecipeMath.recipeCost({
+    recipeId,     // the recipe's id
+    text,         // Recipes.ingredients, exactly as read
+    links,        // recipe_lines rows (any recipes; only active rows with this recipe_id count)
+    prices,       // { <ingredient_cost_id>: {pack_qty, pack_unit, pack_price, active, name} }
+                  //   name = the name the caller shows (the order-guide name when linked)
+    conversions,  // ingredient_conversions rows
+    yield         // the recipe_yields row, or null
+  })
+  -> {
+    lines,     // in text order: {header:true, text} or
+               //   {text, occurrence, part, read, link|null, kind, cost, soft, was, now, conv}
+    orphans,   // stored links whose line is no longer in the text
+    total,     // unrounded sum of costed lines (0 when none)
+    complete,  // true only when there is at least one ingredient line and every one is costed or skipped
+    costed, skipped, notCosted,  // counts
+    reasons,   // { <kind>: count } for the not-costed lines
+    soft,      // [{input:'estimated conversion'|'estimated yield'|..., text, name}]
+    estimate,  // true when soft is not empty
+    perYield,  // unrounded cost of ONE yield unit, or null with no yield; present even when incomplete
+    yieldUnit, // normalised, or null
+    portion    // null with no portion; else {qty, unit, cost|null, reason|null}
+               //   reason: 'no yield' | 'needs a conversion'
+  }
+  ```
+
+  `kind` is `'not linked'`, `'skip'`, `'recipe inside'` (a link with `sub_recipe_id`; not costed
+  until Slice 6), `'price retired'` (no price row, or `active === false`), `'renamed'` (names
+  differ after normalising; `was` = `linked_name`, `now` = the price's `name`), `lineCost()`'s
+  reasons, or `'costed'`. `conv` is set only when the line costs *through* a conversion. Each
+  page that loads the file is at `?v=4`: `tempest_recipe_costing.html` and
+  `tempest_menu_builder.html` (its `<script>` tag only).
+- **`tempest_recipe_costing.html`** reads `recipe_yields` with the other tables, and every line
+  state comes from `recipeCost()`; no Slice 3 or 4 behaviour changed.
+  - **Under the title:** *Makes 3 qt · estimate*, *Portion 2 fl oz* (+ *· set Makes to cost a
+    portion*), or *Makes — not set*, with **Edit**.
+  - **The total (`#rcTotal`):** complete → *$1.81 batch · makes 1 qt · estimate* and *$1.81 / qt ·
+    $0.11 / 2 fl oz portion* (*under $0.01* for less), or *Set Makes to see the cost per unit*.
+    Incomplete → a dashed box: *$6.51 so far · 4 of 8 lines not costed*, the reasons by count,
+    how many were skipped on purpose, and *Cost per qt shows when every line is costed* — never a
+    per-unit or portion figure. All skipped → *$0.00 batch · all N lines not costed on purpose*.
+    A portion in another kind than the yield → *portion: needs a conversion — ‹recipe› is made
+    by the qt* (no button; 5b). *Includes an estimate: the yield, ‹name› conversion*.
+  - **The list:** each row says *not started · N lines*, the *so far* line, or the batch, with a
+    per-unit line only when complete. The heading reads *N recipes · X complete · Y started*.
+  - **`#yieldModal`:** Makes (amount + unit), *Tick if this is a guess, not measured*, Portion
+    (optional). Opens with what is saved, or empty. A half pair, or an amount not above 0, is
+    stopped in words before anything is sent; Save is off when nothing changed. Emptying both
+    boxes of a pair clears it; clearing Makes clears its estimate.
+  - **Writes, `recipe_yields` only:** `POST recipe_yields?on_conflict=recipe_id` with
+    `Prefer: resolution=merge-duplicates`, fields exactly `location, recipe_id, yield_qty,
+    yield_unit, yield_estimate, portion_qty, portion_unit, updated_at`. The same write path as a
+    conversion: locked in flight, a second tap ignored, 15 s, a lost answer read back by
+    `recipe_id`, the same three messages. Never a DELETE.
+  - New classes under a "Slice 5a — used by" banner; the new inputs are qualified at 16px;
+    `FS_REGISTER` unchanged at 75.
+- **`scripts/check_recipe_math.py`**: 367 assertions, 17 breaks (5 new: uncosted lines summed as
+  $0 and called complete, a rounded line summed, an orphan treated as current, an estimated
+  conversion not carried, a renamed line costed). 14 `recipeCost()` fixtures, including parity
+  with the Slice 3 and 4 page fixtures, every unit kind, and every reason.
+- **`scripts/check_recipe_costing.py`**: 541 assertions, 21 scenarios (3 new: `yield ylost
+  yreject`, against a fake `recipe_yields` that keeps one row per recipe and enforces both pair
+  checks), 8 breaks caught (4 new: the Makes double-tap guard removed, a per-unit figure on the
+  list or the recipe while incomplete, a rounded line summed in `recipe-math.js`). Every payload
+  field by field; a dropped write then a retry make one row; a lost answer is read back; a
+  refused write writes nothing; a cleared pair sends nulls; the figures to the cent ($1.8054
+  shows $1.81, the rounded sum would say $1.80).
+- `check_menu_builder.py` (402), `check_costing.py` (679) and `check_styling.py` are clean.
+  `index.html`, `kitchen.css`, `tempest_costing.html`, `Recipes` and `recipe_dashboard.html`
+  are untouched.
+- **Not proved here:** the phone check after the merge — Makes and Portion saved on Bacon Shallot
+  Gastrique (real rows that stay), and its *so far* box.
 
 ### Slice 6 — Recipes inside recipes
 
