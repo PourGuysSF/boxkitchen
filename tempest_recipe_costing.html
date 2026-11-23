@@ -22,7 +22,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=Playfair+Display:wght@700;900&display=swap">
 <link rel="stylesheet" href="assets/kitchen.css?v=2026-09-19">
-<script src="assets/recipe-math.js?v=2"></script>
+<script src="assets/recipe-math.js?v=3"></script>
 <style>
   /* Recipe Costing (B4.3, docs/recipe-costing.md) — page-level rules only.
      Every component lives in assets/kitchen.css. Unlinked until Slice 7. */
@@ -102,6 +102,38 @@
   .lk-old-btn{display:block;width:100%;min-height:44px;margin-bottom:6px;text-align:left;
               text-transform:none;letter-spacing:0;font-family:var(--font);font-size:0.85rem;
               color:var(--ink);border-color:var(--ink)}
+
+  /* Slice 4 — conversions. used by: stateHtml() (.rc-conv, .rc-conv-btn) and
+     openConv() (#convModal, .cv-*). A conversion is "how much of what you buy
+     makes 1 <unit>"; its words sit under the line in grey, the button beside
+     them is a plain outline (setting one is reversible: Change conversion). */
+  .rc-conv{font-size:0.78rem;color:var(--grey)}
+  .rc-conv-btn{min-height:44px;color:var(--ink);border-color:var(--edge)}
+  #convModal .modal{max-width:440px;max-height:88vh}
+  #convModal .modal h3{margin-bottom:4px;overflow-wrap:anywhere}
+  .cv-q{margin:14px 0 7px;font-size:0.95rem;color:var(--ink);font-weight:600}
+  .cv-one{display:flex;align-items:center;justify-content:center;flex:0 0 48px;height:48px;
+          border:1px solid var(--edge);border-radius:6px;font-size:16px;font-weight:700;color:var(--ink)}
+  .cv-of{display:flex;align-items:center;font-size:0.95rem;color:var(--ink)}
+  .cv-name{margin:7px 0 0;font-size:0.85rem;color:var(--grey);overflow-wrap:anywhere}
+  .cv-was{margin-top:12px;padding:10px 14px;border:1px solid var(--edge);border-radius:6px;
+          font-size:0.88rem;color:var(--ink)}
+  /* the estimate tick: a 44px row you can tap anywhere on; the box itself
+     is qualified at 16px so the #135 guard measures it at 16px */
+  #convModal label.cv-est-row,.cv-est-row{display:flex;align-items:center;gap:10px;min-height:44px;margin-top:12px;cursor:pointer;
+              font-size:0.9rem;color:var(--ink);font-family:var(--font);font-weight:400;
+              text-transform:none;letter-spacing:0;margin-bottom:0}
+  .modal input[type="checkbox"].cv-est,.cv-est{width:22px;height:22px;margin:0;flex:0 0 22px;font-size:16px;accent-color:var(--ink)}
+  .modal input[type="text"].cv-note,.cv-note{display:block;width:100%;box-sizing:border-box;height:48px;margin:0;
+           padding:9px 12px;background:var(--paper);border:1px solid var(--edge);border-radius:6px;color:var(--ink);
+           font-family:var(--font);font-size:16px;outline:none;-webkit-appearance:none;appearance:none}
+  .cv-note::placeholder{color:var(--grey)}
+  .cv-help{margin-top:10px;font-size:0.8rem;color:var(--grey)}
+  .cv-used{margin-top:12px;font-size:0.85rem;color:var(--ink)}
+  /* Slice 4, step 4 — used by: askConv(), saveConv(). The magnitude ask, inside
+     the window (never a browser confirm). A border and weight, never hue. */
+  .cv-ask{margin-top:16px;padding:12px;border:2px solid var(--ink);border-radius:8px;font-weight:600;color:var(--ink)}
+  .cv-ask-btns{display:flex;gap:10px;margin-top:12px}
 </style>
 </head>
 <body>
@@ -170,6 +202,47 @@
   </div>
 </div>
 
+<!-- Slice 4: one conversion per ingredient per kind of measure. Opened from a
+     line on the recipe screen, never on top of the link editor. -->
+<div class="modal-bg" id="convModal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="cvTitle">
+    <h3 id="cvTitle">Set conversion</h3>
+    <div class="msub" id="cvSub"></div>
+    <div class="cv-was" id="cvWas" style="display:none"></div>
+
+    <div class="cv-q">How much of what you buy does it take to make</div>
+    <div class="lk-fields">
+      <div class="cv-one" aria-hidden="true">1</div>
+      <select class="lk-unit" id="cvFromUnit" aria-label="Make 1 of this unit" onchange="showConvState()"></select>
+      <div class="cv-of">of this?</div>
+    </div>
+    <div class="cv-name" id="cvName"></div>
+
+    <div class="nb-label">What you buy</div>
+    <div class="lk-fields">
+      <input class="lk-qty" id="cvQty" type="text" inputmode="decimal" placeholder="Amount" autocomplete="off" oninput="showConvState()">
+      <select class="lk-unit" id="cvToUnit" aria-label="Unit of what you buy" onchange="showConvState()"></select>
+    </div>
+    <label class="cv-est-row"><input class="cv-est" id="cvEst" type="checkbox"> <span><b>Estimate</b> — Tick if this is a guess, not weighed</span></label>
+    <div class="nb-label">Note (optional)</div>
+    <input class="cv-note" id="cvNote" type="text" placeholder="sliced, juiced, peeled…" autocomplete="off">
+    <div class="cv-help">Peel, stems and trim count — it's what you buy, not what's left.</div>
+    <div class="cv-used" id="cvUsed"></div>
+
+    <div class="cv-ask" id="cvAsk" role="alert" style="display:none">
+      <div id="cvAskText"></div>
+      <div class="cv-ask-btns">
+        <button class="modal-btn cancel" id="cvAskBack" onclick="askBack()">Go back</button>
+        <button class="modal-btn save" id="cvAskYes" onclick="writeConv()">Save anyway</button>
+      </div>
+    </div>
+    <div class="modal-btns" id="cvBtns" style="margin-top:18px">
+      <button class="modal-btn cancel" id="cvCancel" onclick="closeConv()">Cancel</button>
+      <button class="modal-btn save" id="cvSave" onclick="saveConv()" disabled>Save</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -184,6 +257,8 @@ var recipes=[];          // active Recipes rows, by name
 var costs=[], costById={};        // ingredient_costs rows (active and retired)
 var orderItems=[], orderById={};  // active order_items
 var links=[];            // active recipe_lines rows
+var convs=[];            // ingredient_conversions rows (Slice 4)
+var cv=null;             // the conversion being set: {costId, kind, unit, old} ; null when closed
 var costsLoaded=false, costsError=false;
 var loadGen=0;
 var openId=null;         // the recipe on screen, or null for the list
@@ -239,7 +314,7 @@ function init(){
    would make "not linked" or "no price yet" a lie. */
 function loadCosting(gen){
   costsLoaded=false;costsError=false;
-  var left=3,bad=false,got={};
+  var left=4,bad=false,got={};
   function done(k,r,status){
     if(gen!==loadGen)return;
     if(!okRows(r,status))bad=true;else got[k]=r;
@@ -248,12 +323,28 @@ function loadCosting(gen){
     costs=got.c;costById={};costs.forEach(function(c){costById[c.id]=c;});
     orderItems=got.o;orderById={};orderItems.forEach(function(o){orderById[o.id]=o;});
     links=got.l;
+    convs=got.v;
     costsLoaded=true;rerender();
   }
   api('GET','ingredient_costs','select=id,name,order_item_id,pack_qty,pack_unit,pack_price,active&'+LOC,null,function(r,s){done('c',r,s);});
   api('GET','order_items','select=id,name,vendor&'+LOC+'&active=eq.true&order=vendor.asc,sort_order.asc',null,function(r,s){done('o',r,s);});
   api('GET','recipe_lines','select=id,recipe_id,line_text,occurrence,component,qty,unit,ingredient_cost_id,sub_recipe_id,skip,linked_name,active&'+LOC+'&active=eq.true',null,function(r,s){done('l',r,s);});
+  api('GET','ingredient_conversions',CONV_COLS+'&'+LOC,null,function(r,s){done('v',r,s);});
 }
+var CONV_COLS='select=id,ingredient_cost_id,from_kind,from_qty,from_unit,to_qty,to_unit,estimate,note,updated_at';
+/* The conversion a line needs: this price row, this kind of measure (ruling 7).
+   The page finds it; lineCost() is handed it as values and looks nothing up. */
+function convFor(costId,unit){
+  var kind=RecipeMath.measureOf(unit);if(!kind||costId==null)return null;
+  for(var i=0;i<convs.length;i++)if(Number(convs[i].ingredient_cost_id)===Number(costId)&&convs[i].from_kind===kind)return convs[i];
+  return null;
+}
+function convValues(v){
+  if(!v)return null;
+  return {from_kind:v.from_kind,from_qty:Number(v.from_qty),from_unit:v.from_unit,to_qty:Number(v.to_qty),to_unit:v.to_unit,estimate:!!v.estimate};
+}
+/* "1 qt = 0.8 lb" - display only */
+function convText(v){return fmtAmount(v.from_qty)+' '+v.from_unit+' = '+fmtAmount(v.to_qty)+' '+v.to_unit;}
 function rerender(){if(openId!=null)openRecipe(openId,true);if(lk)renderPick();}
 
 /* ---- Price rows ---- */
@@ -309,8 +400,11 @@ function lineState(rec,line){
      the order-ID reuse (a different product under the old row). */
   if(!c||c.active===false)return {kind:'price retired',link:k,cost:c};
   if(normName(k.linked_name)!==normName(nameOf(c)))return {kind:'renamed',link:k,cost:c,was:k.linked_name,now:nameOf(c)};
-  var res=RecipeMath.lineCost(Number(k.qty),k.unit,priceOf(c),null);   // no conversions until Slice 4
-  return {kind:res.reason?res.reason:'costed',link:k,cost:c,res:res};
+  var conv=convFor(c.id,k.unit);
+  var res=RecipeMath.lineCost(Number(k.qty),k.unit,priceOf(c),convValues(conv));
+  /* costed THROUGH the conversion only when the units don't meet on their own */
+  var via=conv&&RecipeMath.convert(1,k.unit,c.pack_unit)===null?conv:null;
+  return {kind:res.reason?res.reason:'costed',link:k,cost:c,res:res,conv:via};
 }
 
 /* ---- The list ---- */
@@ -344,12 +438,23 @@ function stateHtml(rec,line){
   if(s.kind==='skip')return '<span class="rc-skip">not costed on purpose</span>';
   var who=s.cost?esc(nameOf(s.cost)+' · '+vendorOf(s.cost)):'(price row missing)';
   var amt='<b>'+esc(fmtAmount(s.link.qty)+' '+s.link.unit)+'</b>';
-  if(s.kind==='costed')return '<span>'+who+' · '+amt+'</span><span class="rc-cost">'+esc(fmtMoney(s.res.cost))+'</span>';
+  if(s.kind==='costed')return '<span>'+who+' · '+amt+'</span><span class="rc-cost">'+esc(fmtMoney(s.res.cost))+'</span>'
+    +(s.conv?'<span class="rc-conv">via '+esc(convText(s.conv))+' as bought'+(s.conv.estimate?' · estimate':'')+'</span>'+convBtn(s,'Change conversion'):'');
+  if(s.kind==='needs a conversion')return '<span>'+who+' · '+amt+'</span><span class="ing-pack unset">needs a conversion</span>'+convBtn(s,'Set conversion');
+  if(s.kind==='conversion no longer matches')return '<span>'+who+' · '+amt+'</span><span class="ing-pack unset">conversion no longer matches — was '
+    +esc(s.res.was)+', now '+esc(s.res.now)+'</span>'+convBtn(s,'Fix conversion');
   if(s.kind==='no price yet')return '<span>'+who+' · '+amt+'</span><span class="ing-pack unset">no price yet</span>'
     +'<a class="rc-price-link" href="tempest_costing.html" onclick="event.stopPropagation()">Price →</a>';
   if(s.kind==='price retired')return '<span>'+who+' · '+amt+'</span><span class="ing-pack unset">price retired — relink</span>';
   if(s.kind==='renamed')return '<span>'+amt+'</span><span class="ing-pack unset">renamed — linked as '+esc(s.was||'(no name)')+', now '+esc(s.now)+' — check</span>';
   return '<span>'+who+' · '+amt+'</span><span class="ing-pack unset">'+esc(s.kind)+'</span>';
+}
+/* Opens #convModal from the ingredient and the unit alone (ruling 13); the
+   button never opens the link editor underneath it. */
+function convBtn(s,label){
+  return '<button class="link-btn rc-conv-btn" data-cost="'+Number(s.cost.id)+'" data-unit="'+esc(RecipeMath.normaliseUnit(s.link.unit)||s.link.unit)+'"'
+    +' onclick="event.stopPropagation();openConv(Number(this.getAttribute(\'data-cost\')),this.getAttribute(\'data-unit\'))"'
+    +' onkeydown="event.stopPropagation()">'+label+'</button>';
 }
 function openRecipe(id,keepScroll){
   var rec=recipeById(id);
@@ -541,13 +646,168 @@ function showLinkState(){
   if(!c)pv.innerHTML='Pick an item to see the cost.';
   else if(v.qty===null||!(v.qty>0)||!v.unit)pv.innerHTML='Enter the amount and unit.';
   else{
-    var r=RecipeMath.lineCost(v.qty,v.unit,priceOf(c),null);
+    var conv=convFor(c.id,v.unit);
+    var r=RecipeMath.lineCost(v.qty,v.unit,priceOf(c),convValues(conv));
+    var via=conv&&RecipeMath.convert(1,v.unit,c.pack_unit)===null;
     pv.innerHTML=r.reason
-      ?esc(fmtAmount(v.qty)+' '+v.unit)+' · <b>'+esc(r.reason)+'</b>'+(r.reason==='needs a conversion'?' — '+esc(c.pack_unit)+' is measured another way; conversions come next':'')
-      :esc(fmtAmount(v.qty)+' '+v.unit)+' → <b>'+esc(fmtMoney(r.cost))+'</b>';
+      ?esc(fmtAmount(v.qty)+' '+v.unit)+' · <b>'+esc(r.reason)+'</b>'
+        +(r.reason==='needs a conversion'?' — save the link, then tap Set conversion on the line'
+         :r.reason==='conversion no longer matches'?' — save the link, then tap Fix conversion on the line':'')
+      :esc(fmtAmount(v.qty)+' '+v.unit)+' → <b>'+esc(fmtMoney(r.cost))+'</b>'+(via?' via '+esc(convText(conv))+' as bought'+(conv.estimate?' · estimate':''):'');
   }
   document.getElementById('lkSave').disabled=saving||!(c&&v.qty>0&&v.unit);
 }
+/* ---- The conversion window (Slice 4) --------------------------------------
+   One conversion per price row per kind of measure (measureOf(): weight,
+   volume, each, or the count word itself). "How much of what you buy does it
+   take to make 1 <unit> of this?" - answered in the price's own measure, as
+   bought. The answer box always opens EMPTY: never pre-filled, never guessed. */
+function unitsWhere(test,sel){
+  var h='';
+  RecipeMath.units().forEach(function(u){if(test(u.unit))h+='<option value="'+esc(u.unit)+'"'+(u.unit===sel?' selected':'')+'>'+esc(u.unit)+'</option>';});
+  return h;
+}
+/* ruling 9: active, not skipped, this price row, this kind; the recipe active
+   and the line still in its text (orphans don't count) */
+function convUsers(costId,kind){
+  var n=0,names=[];
+  recipes.forEach(function(rec){
+    var hit=false;
+    linesOf(rec).forEach(function(l){
+      if(l.header)return;
+      var k=linkFor(rec,l);
+      if(!k||k.skip||Number(k.ingredient_cost_id)!==Number(costId)||RecipeMath.measureOf(k.unit)!==kind)return;
+      n++;hit=true;
+    });
+    if(hit)names.push(rec.name);
+  });
+  return {lines:n,names:names};
+}
+function usedText(u){
+  if(!u.lines)return 'No recipe line uses this yet.';
+  var shown=u.names.slice(0,5).join(', ')+(u.names.length>5?' and '+(u.names.length-5)+' more':'');
+  return 'Used by '+u.lines+' line'+(u.lines===1?'':'s')+' in '+u.names.length+' recipe'+(u.names.length===1?'':'s')+': '+shown;
+}
+function openConv(costId,unit){
+  if(!costsLoaded)return;
+  var c=costById[costId],kind=RecipeMath.measureOf(unit),from=RecipeMath.normaliseUnit(unit);
+  if(!c||!kind||!from)return;
+  var pack=RecipeMath.normaliseUnit(c.pack_unit);
+  if(!pack)return;
+  var old=convFor(costId,from);
+  var stale=!!old&&RecipeMath.convert(1,old.to_unit,c.pack_unit)===null;
+  cv={costId:Number(costId),kind:kind,unit:from,old:old};
+  document.getElementById('cvTitle').textContent=!old?'Set conversion':stale?'Fix conversion':'Change conversion';
+  document.getElementById('cvSub').textContent=nameOf(c)+' · '+vendorOf(c)+' · priced at '+fmtAmount(c.pack_qty)+' '+(c.pack_unit||'')+' for '+fmtMoney(Number(c.pack_price));
+  var was=document.getElementById('cvWas');
+  was.textContent=old?'Was: '+convText(old)+' as bought'+(old.estimate?' · estimate':''):'';
+  was.style.display=old?'':'none';
+  /* the "1 <unit>" side: any unit of the same kind; a count word is itself only */
+  document.getElementById('cvFromUnit').innerHTML=unitsWhere(function(u){return RecipeMath.measureOf(u)===kind&&RecipeMath.convert(1,u,from)!==null;},from);
+  document.getElementById('cvName').textContent=nameOf(c);
+  /* the answer side: the price's pack unit, or any unit that converts to it */
+  document.getElementById('cvToUnit').innerHTML=unitsWhere(function(u){return RecipeMath.convert(1,u,pack)!==null;},pack);
+  document.getElementById('cvQty').value='';
+  document.getElementById('cvEst').checked=!!(old&&old.estimate&&!stale);
+  document.getElementById('cvNote').value=old&&old.note&&!stale?old.note:'';
+  document.getElementById('cvUsed').textContent=usedText(convUsers(costId,kind));
+  document.getElementById('convModal').classList.add('show');
+  showConvState();
+}
+function convDraft(){
+  var raw=String(document.getElementById('cvQty').value||'').trim();
+  var q=/^\d*\.?\d+$/.test(raw)?Number(raw):null;
+  return {from_unit:document.getElementById('cvFromUnit').value,to_qty:q,to_unit:document.getElementById('cvToUnit').value};
+}
+function showConvState(){
+  if(!cv)return;
+  if(cv.asking&&!convSaving)showAsk(null);   // the number changed: the ask was about the old one
+  var d=convDraft();
+  document.getElementById('cvSave').disabled=convSaving||!(d.to_qty>0&&d.from_unit&&d.to_unit);
+}
+var convSaving=false;
+function closeConv(){if(convSaving)return;showAsk(null);document.getElementById('convModal').classList.remove('show');cv=null;}
+
+/* ---- Saving a conversion (Slice 4, step 4) ---------------------------------
+   Ruling 6: one upsert on (ingredient_cost_id, from_kind) - a retry or a Fix
+   lands on the same row, never a second one. Same write path as a link: all
+   controls locked while it is out, a second tap ignored, 15s, and a lost answer
+   read back by its key before anything is said. Writes ingredient_conversions
+   ONLY; never recipe_lines; nothing is deleted. Ruling 8: a change of 10x or
+   more either way is asked about inside the window first. */
+var CONV_UPSERT='on_conflict=ingredient_cost_id,from_kind';
+function convPayload(){
+  var d=convDraft(),note=String(document.getElementById('cvNote').value||'').trim();
+  return {location:LOCATION,ingredient_cost_id:cv.costId,from_kind:cv.kind,
+          from_qty:1,from_unit:d.from_unit,to_qty:d.to_qty,to_unit:d.to_unit,
+          estimate:!!document.getElementById('cvEst').checked,note:note||null,
+          updated_at:new Date().toISOString()};
+}
+function convAskText(p){
+  var r=RecipeMath.conversionChange(convValues(cv.old),p);
+  if(r===null||!(r>=10||r<=0.1))return null;
+  var was=' the old conversion ('+convText(cv.old)+')';
+  return (r>=10?"That's "+Math.round(r)+'×'+was:"That's about a "+Math.round(1/r)+'× drop from'+was)+'. Save anyway?';
+}
+function showAsk(text){
+  document.getElementById('cvAskText').textContent=text||'';
+  document.getElementById('cvAsk').style.display=text?'':'none';
+  document.getElementById('cvBtns').style.display=text?'none':'';
+  if(cv)cv.asking=!!text;
+}
+function askBack(){if(convSaving)return;showAsk(null);document.getElementById('cvQty').focus();}
+function lockConv(on){
+  convSaving=on;
+  ['cvFromUnit','cvQty','cvToUnit','cvEst','cvNote','cvCancel','cvSave','cvAskBack','cvAskYes'].forEach(function(id){document.getElementById(id).disabled=on;});
+  document.getElementById('cvSave').textContent=on?'Saving…':'Save';
+  document.getElementById('cvAskYes').textContent=on?'Saving…':'Save anyway';
+  if(!on)showConvState();
+}
+function saveConv(){
+  if(convSaving||!cv||cv.asking)return;
+  var d=convDraft();
+  if(!(d.to_qty>0&&d.from_unit&&d.to_unit))return;
+  var ask=convAskText(convPayload());
+  if(ask){showAsk(ask);return;}
+  writeConv();
+}
+function convReadBack(p,cb){
+  api('GET','ingredient_conversions',CONV_COLS+'&'+LOC+'&ingredient_cost_id=eq.'+p.ingredient_cost_id+'&from_kind=eq.'+encodeURIComponent(p.from_kind),null,function(r,status){
+    if(!okRows(r,status)){cb(null,false);return;}
+    var row=r[0]||null;
+    var same=!!row&&row.from_unit===p.from_unit&&Number(row.to_qty)===p.to_qty&&row.to_unit===p.to_unit&&!!row.estimate===p.estimate&&(row.note||null)===p.note;
+    cb(row,same);
+  });
+}
+function landConv(row){
+  for(var i=0;i<convs.length;i++)if(Number(convs[i].ingredient_cost_id)===Number(row.ingredient_cost_id)&&convs[i].from_kind===row.from_kind){convs[i]=row;return;}
+  convs.push(row);
+}
+function writeConv(){
+  if(convSaving||!cv)return;                  // a second tap while one is out does nothing
+  var d=convDraft();
+  if(!(d.to_qty>0&&d.from_unit&&d.to_unit))return;
+  var p=convPayload(),mine=cv;
+  lockConv(true);
+  api('POST','ingredient_conversions',CONV_UPSERT,p,function(r,status){
+    var a=answerOf(r,status);
+    if(a==='ok'){saved(r[0]);return;}
+    if(a==='no'){failed('Not saved — the server refused it. Nothing changed.');return;}
+    convReadBack(p,function(row,same){
+      if(row&&same){saved(row);return;}
+      failed(row===null&&same===false?'Could not confirm the save. Tap Save to try again — it cannot make a second row.':'Not saved. Tap Save to try again.');
+    });
+  },API_TIMEOUT,'resolution=merge-duplicates,return=representation');
+  function failed(msg){lockConv(false);showAsk(null);showToast(msg,true,6000);}
+  function saved(row){
+    landConv(row);
+    lockConv(false);
+    if(cv===mine)closeConv();
+    showToast('Conversion saved');
+    rerender();                               // ruling 7: every line that needs it costs at once
+  }
+}
+
 /* ---- The write path (Slice 3, step 5) -------------------------------------
    As tempest_costing.html's slice 4 left it, ported the way tempest_inventory
    did: every control locked while a write is out; a 15s timeout; and a
@@ -655,6 +915,7 @@ function setDismissBusy(id,on){var b=document.querySelector('.rc-dismiss[data-id
 var st;
 function showToast(msg,isErr,ms){var t=document.getElementById('toast');t.textContent=(isErr?'⚠ ':'✓ ')+msg;t.classList.toggle('error',!!isErr);t.classList.add('show');clearTimeout(st);st=setTimeout(function(){t.classList.remove('show');},ms||1600);}
 document.getElementById('linkModal').addEventListener('click',function(e){if(e.target===this)closeLink();});
+document.getElementById('convModal').addEventListener('click',function(e){if(e.target===this)closeConv();});
 
 boot();
 </script>

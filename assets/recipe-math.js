@@ -11,6 +11,7 @@
  * rounding happens only on screen.
  *
  * Slice 2: the units and the amount reader. Slice 3: lineCost().
+ * Slice 4: conversionChange(), and measureOf() exported.
  */
 var RecipeMath = (function () {
   'use strict';
@@ -237,8 +238,35 @@ var RecipeMath = (function () {
     return out;
   }
 
+  // ---- conversionChange(): how far a new conversion moves from the old (Slice 4).
+  //
+  //   conversionChange(oldConv, newConv) -> ratio, or null
+  //     both  { from_qty, from_unit, to_qty, to_unit } (any spelling), as the
+  //           ingredient_conversions rows
+  //     ratio new ÷ old, both read as "as-bought per from-side amount" in the
+  //           NEW row's units, so 1 qt = 0.8 lb and 1 cup = 4 oz compare
+  //           correctly (1.25). Unrounded. null when there is no old row, or
+  //           the two cannot be compared (different measures, a bad amount).
+  //   The page asks before saving when ratio >= 10 or <= 0.1.
+  function perFrom(c, fromUnit, toUnit) {
+    if (!c) return null;
+    var f = convert(c.from_qty, c.from_unit, fromUnit);
+    var t = convert(c.to_qty, c.to_unit, toUnit);
+    if (f === null || t === null || !(f > 0) || !(t > 0)) return null;
+    return t / f;
+  }
+  function conversionChange(oldConv, newConv) {
+    if (!oldConv || !newConv) return null;
+    var nu = perFrom(newConv, newConv.from_unit, newConv.to_unit);
+    var ol = perFrom(oldConv, newConv.from_unit, newConv.to_unit);
+    if (nu === null || ol === null) return null;
+    return nu / ol;
+  }
+
   return {
     lineCost: lineCost,
+    conversionChange: conversionChange,
+    measureOf: measureOf,
     normaliseUnit: normaliseUnit,
     unitKind: unitKind,
     convert: convert,

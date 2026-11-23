@@ -140,9 +140,39 @@ LINKS_GUARDS = [
 PORK = {"id": 105, "name": "Pork Belly", "category": "Protein", "station": "Grill",
         "status": "active", "ingredients": "salt\n2 each carrot\nsalt"}
 
+# Slice 4: conversions. One price (Macaroni noodles, 20 lb for $30) linked by
+# volume in two recipes, by weight once, and once on an orphan line (its text is
+# gone from the recipe, so the "used by" count must leave it out).
+PASTA = {"id": 106, "name": "Pasta Salad", "category": "Side", "station": "Garde",
+         "status": "active", "ingredients": "1 cup macaroni\n1 lb macaroni\nparsley"}
+LINKS_CONV = [
+    L(1, "2 qt. dried macaroni noodles", 2, "qt", 4, comp="— NOODLES —", name="Macaroni noodles"),
+    L(2, "8 oz. butter", 8, "oz", 3, comp="— CHEESE BASE —", name="Butter"),
+    dict(L(3, "1 cup macaroni", 1, "cup", 4, name="Macaroni noodles"), recipe_id=106),
+    dict(L(4, "1 lb macaroni", 1, "lb", 4, name="Macaroni noodles"), recipe_id=106),
+    dict(L(5, "gone macaroni line", 1, "cup", 4, name="Macaroni noodles"), recipe_id=106),
+    dict(L(6, "parsley", skip=True), recipe_id=106),
+]
+CONV_OLD = {"id": 900, "location": "Tempest", "ingredient_cost_id": 4, "from_kind": "volume",
+            "from_qty": 1, "from_unit": "qt", "to_qty": 0.8, "to_unit": "lb",
+            "estimate": True, "note": "dry", "updated_at": "2026-11-01T00:00:00Z"}
+
 SCENARIOS = ("ok", "fail", "gate", "links", "guards",
              # step 5: the write path
-             "write", "hang", "lost", "retry", "reject", "oldlink", "oldfail", "dismiss")
+             "write", "hang", "lost", "retry", "reject", "oldlink", "oldfail", "dismiss",
+             # Slice 4: conversions
+             "conv", "convask", "convlost", "convstale", "convoz")
+CONV_SCEN = '{conv:1,convask:1,convlost:1,convstale:1,convoz:1}'
+CONV_OLD_SCEN = '{convask:1,convstale:1,convoz:1}'
+
+# Deliberate breaks of the conversion write path, each of which must be caught.
+BREAKS = [
+    ("the double-tap guard removed", "convSaving||!cv", "!cv", ("conv",)),
+    ("the magnitude ask skipped", "if(ask){showAsk(ask);return;}", "", ("convask",)),
+    ("the ask kept after the number changes", "if(cv.asking&&!convSaving)showAsk(null);", "", ("convask",)),
+    ("a pre-filled answer", "document.getElementById('cvQty').value='';",
+     "document.getElementById('cvQty').value=old?String(old.to_qty):'';", ("convask", "convstale")),
+]
 
 GATE_RE = re.compile(r"<script>\s*//\s*Site-password gate.*?</script>", re.S)
 
@@ -161,15 +191,33 @@ HARNESS = r"""
 (function(){
   var SCEN=(location.hash||'#ok').slice(1);
   var READ_ONLY={ok:1,fail:1,gate:1,links:1,guards:1,live:1};
-  var ROWS=__ROWS__, COSTS=__COSTS__, ORDERS=__ORDERS__;
+  var ROWS=__ROWS__, COSTS=__COSTS__, ORDERS=__ORDERS__, CONVS=__CONVS__;
   var GUARDS=__LINKS_GUARDS__;
-  var LINKS=(SCEN==="links")?__LINKS__:(GUARDS_SCEN[SCEN]?GUARDS:[]);
+  var CS=CONV_SCEN[SCEN];
+  var LINKS=(SCEN==="links")?__LINKS__:CS?__LINKS_CONV__:(GUARDS_SCEN[SCEN]?GUARDS:[]);
   if(GUARDS_SCEN[SCEN])ROWS=ROWS.concat([__PORK__]);
+  if(CS){ROWS=ROWS.concat([__PASTA__]);if(CONV_OLD_SCEN[SCEN])CONVS=[__CONV_OLD__];}
+  /* a pack re-entered: in another kind (lb -> case), or within its kind (lb -> oz) */
+  if(SCEN==='convstale'||SCEN==='convoz')COSTS=COSTS.map(function(c){
+    if(c.id!==4)return c;c=JSON.parse(JSON.stringify(c));
+    if(SCEN==='convstale'){c.pack_qty=1;c.pack_unit='case';}else{c.pack_qty=320;c.pack_unit='oz';}return c;});
+  var convs=JSON.parse(JSON.stringify(CONVS)), nextConvId=950;
   var server=JSON.parse(JSON.stringify(LINKS)), nextId=500, loads=0;
-  var H=window.__h={scen:SCEN,reqs:[],writes:[],bad:[],fails:[],log:[],nextWrite:[],nextGet:[],held:[],server:server};
+  var H=window.__h={scen:SCEN,reqs:[],writes:[],bad:[],fails:[],log:[],nextWrite:[],nextGet:[],nextConvGet:[],held:[],server:server,convs:convs,checks:[]};
   try{ if(SCEN==='gate')sessionStorage.removeItem('boxkitchen_mgr'); else sessionStorage.setItem('boxkitchen_mgr','1'); }catch(e){}
   function param(u,k){var m=new RegExp('[?&]'+k+'=eq\\.([^&]*)').exec(u);return m?decodeURIComponent(m[1]):null;}
+  /* ingredient_conversions as the database holds it: one row per
+     (ingredient_cost_id, from_kind), and the table's checks enforced */
+  function applyConv(w){
+    var b=w.body,row=null;
+    if(!(b.from_qty===1&&b.to_qty>0&&/^(weight|volume|each|[a-z]+)$/.test(b.from_kind)))H.checks.push('check failed: '+JSON.stringify(b));
+    for(var i=0;i<convs.length;i++)if(Number(convs[i].ingredient_cost_id)===b.ingredient_cost_id&&convs[i].from_kind===b.from_kind)row=convs[i];
+    if(row){for(var k in b)row[k]=b[k];}
+    else{row={id:nextConvId++};for(var k2 in b)row[k2]=b[k2];convs.push(row);}
+    return JSON.parse(JSON.stringify(row));
+  }
   function apply(w){
+    if(/ingredient_conversions\?/.test(w.u))return applyConv(w);
     if(w.m==='POST'){
       var b=w.body,row=null;
       for(var i=0;i<server.length;i++){var s=server[i];
@@ -191,7 +239,8 @@ HARNESS = r"""
     if(self.m!=='GET'){
       var w={m:self.m,u:self.u,body:body?JSON.parse(body):null,prefer:self.hdr.Prefer||''};
       H.writes.push(w);
-      if(READ_ONLY[SCEN]||self.m==='DELETE'||!/\/rest\/v1\/recipe_lines\?/.test(self.u)){H.bad.push(self.m+' '+self.u);setTimeout(function(){self.onerror&&self.onerror();},5);return;}
+      var okTable=CS?/\/rest\/v1\/ingredient_conversions\?/.test(self.u)&&self.m==='POST':/\/rest\/v1\/recipe_lines\?/.test(self.u);
+      if(READ_ONLY[SCEN]||self.m==='DELETE'||!okTable){H.bad.push(self.m+' '+self.u);setTimeout(function(){self.onerror&&self.onerror();},5);return;}
       var fate=H.nextWrite.shift()||'ok';
       function answer(){var row=apply(w);self.status=self.m==='POST'?201:200;self.responseText=JSON.stringify(row?[row]:[]);self.onload&&self.onload();}
       if(fate==='hang'){H.held.push(answer);return;}
@@ -215,6 +264,12 @@ HARNESS = r"""
           for(var k in f){var v=param(self.u,k);if(v!==null&&Number(s[k])!==Number(v))return false;}
           var lt=param(self.u,'line_text');if(lt!==null&&s.line_text!==lt)return false;
           return true;});
+      }else if(t==='ingredient_conversions'){
+        if(param(self.u,'ingredient_cost_id')!==null&&H.nextConvGet.shift()==='fail'){self.onerror&&self.onerror();return;}
+        rows=convs.filter(function(c){
+          var ci=param(self.u,'ingredient_cost_id'),fk=param(self.u,'from_kind');
+          return (ci===null||Number(c.ingredient_cost_id)===Number(ci))&&(fk===null||c.from_kind===fk);});
+        rows=JSON.parse(JSON.stringify(rows));
       }else rows={Recipes:ROWS,ingredient_costs:COSTS,order_items:ORDERS}[t];
       if(rows){self.status=200;self.responseText=JSON.stringify(rows);}
       else{self.status=404;self.responseText='[]';}
@@ -225,7 +280,7 @@ HARNESS = r"""
   window.XMLHttpRequest=X;
 })();
 </script>
-""".replace("GUARDS_SCEN", '{guards:1,oldlink:1,oldfail:1,dismiss:1}')
+""".replace("GUARDS_SCEN", '{guards:1,oldlink:1,oldfail:1,dismiss:1}').replace("CONV_OLD_SCEN", CONV_OLD_SCEN).replace("CONV_SCEN", CONV_SCEN)
 
 
 RUNNER = r"""
@@ -291,7 +346,7 @@ setTimeout(function(){
       ok(/Saute · 7 lines$/.test(txt(rows[2]&&rows[2].querySelector('.ing-pack'))),'list: Mac & Cheese shows its 7 lines');
       ok(parseFloat(getComputedStyle(rows[0]).height)>=44,'css: a recipe row is a 44px tap target');
       var tabs=H.reqs.map(function(q){return (/\/rest\/v1\/(\w+)\?/.exec(q.u)||[])[1];}).sort().join(',');
-      ok(tabs==='Recipes,ingredient_costs,order_items,recipe_lines','read: Recipes, the price list, the order guide and recipe_lines, once each; got '+tabs);
+      ok(tabs==='Recipes,ingredient_conversions,ingredient_costs,order_items,recipe_lines','read: Recipes, the price list, the order guide, recipe_lines and the conversions, once each; got '+tabs);
       ok(/select=id,name,category,station,status,ingredients(&|$)/.test((H.reqs[0]||{}).u),'read: Recipes select= names the columns');
       H.reqs.forEach(function(q){
         ok(/[?&]select=[a-z_,]+(&|$)/.test(q.u)&&!/select=\*/.test(q.u),'read: select= names the columns: '+q.u.split('?')[0]);
@@ -321,7 +376,7 @@ setTimeout(function(){
         [/^Half & half · Birite · 1\.5 qt \$4\.50$/,'costed by volume'],
         [/^Velveeta · Birite · 2\.5 lb \$9\.24$/,'costed by weight, shown to the cent'],
         [/^Butter · Birite · 8 oz \$1\.00$/,'oz costed against lb, as weight'],
-        [/^Macaroni noodles · Cooks · 2 qt needs a conversion$/,'qt against lb: needs a conversion'],
+        [/^Macaroni noodles · Cooks · 2 qt needs a conversion Set conversion$/,'qt against lb: needs a conversion'],
         [/^Kosher salt · Birite · 0\.5 cup no price yet Price →$/,'linked, no price: no price yet · Price →'],
         [/not linked$/,'no stored link: not linked'],
         [/^not costed on purpose$/,'skip: not costed on purpose']];
@@ -523,7 +578,7 @@ setTimeout(function(){
       step(function(){
         ok(posts().length===1&&H.server.length===1,'double tap: one row, got '+H.server.length);
         ok(!shown(document.getElementById('linkModal')),'released: saved and closed');
-        ok(/needs a conversion$/.test(lineStates()[0]),'saved oz against a gal price: needs a conversion (oz is weight); got '+JSON.stringify(lineStates()[0]));
+        ok(/needs a conversion Set conversion$/.test(lineStates()[0]),'saved oz against a gal price: needs a conversion (oz is weight); got '+JSON.stringify(lineStates()[0]));
       });
     }
 
@@ -621,6 +676,159 @@ setTimeout(function(){
       });
     }
 
+
+    /* ---- Slice 4: conversions ---- */
+    function convPosts(){return H.writes.filter(function(w){return /ingredient_conversions\?/.test(w.u);});}
+    function convBtns(){return [].slice.call(document.querySelectorAll('#recipeBody .rc-conv-btn'));}
+    function cvShown(){return document.getElementById('convModal').classList.contains('show');}
+    function typeConv(q){var e=document.getElementById('cvQty');e.value=q;showConvState();}
+    function askShown(){return shown(document.getElementById('cvAsk'));}
+    function checkConvPayload(w,want,label){
+      var b=(w||{}).body||{};
+      ok(JSON.stringify(Object.keys(b).sort())==='["estimate","from_kind","from_qty","from_unit","ingredient_cost_id","location","note","to_qty","to_unit","updated_at"]',label+': exactly the ten fields; got '+JSON.stringify(Object.keys(b).sort()));
+      ok(/\/rest\/v1\/ingredient_conversions\?on_conflict=ingredient_cost_id,from_kind$/.test((w||{}).u||''),label+': POST ingredient_conversions?on_conflict=ingredient_cost_id,from_kind; got '+(w||{}).u);
+      ok(/resolution=merge-duplicates/.test((w||{}).prefer||''),label+': Prefer resolution=merge-duplicates');
+      ok(b.location==='Tempest',label+': location Tempest');
+      ok(b.from_qty===1,label+': from_qty 1');
+      ok(typeof b.updated_at==='string'&&!isNaN(Date.parse(b.updated_at)),label+': the page sends updated_at');
+      for(var k in want)ok(b[k]===want[k],label+': '+k+' = '+JSON.stringify(want[k])+', got '+JSON.stringify(b[k]));
+    }
+    function noLineWrites(label){ok(!H.writes.some(function(w){return /recipe_lines\?/.test(w.u);}),label+': the conversion window never writes recipe_lines');}
+
+    if(H.scen==='conv'){
+      step(function(){
+        openRecipe(104);
+        var st=lineStates();
+        ok(/Macaroni noodles · Cooks · 2 qt needs a conversion Set conversion$/.test(st[3]||''),'conv: 2 qt against a lb price needs a conversion; got '+JSON.stringify(st[3]));
+        var b=convBtns()[0];b&&b.click();
+        ok(cvShown()&&!shown(document.getElementById('linkModal')),'conv: Set conversion opens the conversion window, not the link editor');
+        ok(txt(document.getElementById('cvTitle'))==='Set conversion','conv: titled Set conversion');
+        ok(document.getElementById('cvQty').value==='','conv: the answer box opens empty');
+        ok(document.getElementById('cvFromUnit').value==='qt'&&document.getElementById('cvToUnit').value==='lb','conv: asks about 1 qt, answered in lb');
+        ok(!shown(document.getElementById('cvWas')),'conv: no "Was" when there is no old conversion');
+        ok(txt(document.getElementById('cvUsed'))==='Used by 2 lines in 2 recipes: Mac & Cheese, Pasta Salad','conv: used by counts volume lines only, orphans and skips out; got '+JSON.stringify(txt(document.getElementById('cvUsed'))));
+        ok(document.getElementById('cvSave').disabled,'conv: Save is off with no answer');
+        typeConv('0');ok(document.getElementById('cvSave').disabled,'conv: a zero answer cannot be saved');
+        typeConv('-1');ok(document.getElementById('cvSave').disabled,'conv: a negative answer cannot be saved');
+        typeConv('0.8');ok(!document.getElementById('cvSave').disabled,'conv: a real answer can');
+        document.getElementById('cvNote').value='  cooked weight ';
+        H.nextWrite.push('hang');
+        document.getElementById('cvSave').click();document.getElementById('cvSave').click();saveConv();writeConv();
+      });
+      step(function(){
+        ok(convPosts().length===1,'conv: a double tap (and direct calls) make one write, got '+convPosts().length);
+        ['cvFromUnit','cvQty','cvToUnit','cvEst','cvNote','cvCancel','cvSave'].forEach(function(id){ok(document.getElementById(id).disabled,'conv: '+id+' locked in flight');});
+        closeConv();ok(cvShown(),'conv: cannot be closed while saving');
+        H.release();
+      });
+      step(function(){
+        checkConvPayload(convPosts()[0],{ingredient_cost_id:4,from_kind:'volume',from_unit:'qt',to_qty:0.8,to_unit:'lb',estimate:false,note:'cooked weight'},'conv payload');
+        ok(H.convs.length===1,'conv: one row');
+        ok(!cvShown(),'conv: saved and closed');
+        ok(/Conversion saved/.test(toast()),'conv: says saved; got '+JSON.stringify(toast()));
+        var st=lineStates();
+        ok(/2 qt \$2\.40 via 1 qt = 0\.8 lb as bought Change conversion$/.test(st[3]||''),'conv: Mac & Cheese costs at once, $2.40; got '+JSON.stringify(st[3]));
+        closeRecipe();openRecipe(106);st=lineStates();
+        ok(/1 cup \$0\.30 via 1 qt = 0\.8 lb as bought/.test(st[0]||''),'conv: Pasta Salad costs too, $0.30; got '+JSON.stringify(st[0]));
+        ok(/1 lb \$1\.50$/.test(st[1]||''),'conv: the weight line is untouched; got '+JSON.stringify(st[1]));
+        noLineWrites('conv');
+      });
+    }
+
+    if(H.scen==='convask'){
+      step(function(){
+        openRecipe(104);
+        ok(/2 qt \$2\.40 via 1 qt = 0\.8 lb as bought · estimate Change conversion$/.test(lineStates()[3]||''),'convask: costed through the stored conversion, marked estimate; got '+JSON.stringify(lineStates()[3]));
+        convBtns()[0].click();
+        ok(txt(document.getElementById('cvTitle'))==='Change conversion','convask: titled Change conversion');
+        ok(txt(document.getElementById('cvWas'))==='Was: 1 qt = 0.8 lb as bought · estimate','convask: shows the old one as words');
+        ok(document.getElementById('cvQty').value==='','convask: the answer box opens EMPTY even with an old row');
+        typeConv('8');saveConv();
+        ok(askShown()&&txt(document.getElementById('cvAskText'))==="That's 10× the old conversion (1 qt = 0.8 lb). Save anyway?",'convask: 10x asks; got '+JSON.stringify(txt(document.getElementById('cvAskText'))));
+        ok(!shown(document.getElementById('cvBtns')),'convask: Save/Cancel hidden while asking');
+        saveConv();
+        typeConv('9');
+        ok(!askShown()&&shown(document.getElementById('cvBtns')),'convask: changing the number takes the ask away (it was about the old number)');
+        typeConv('8');saveConv();
+        document.getElementById('cvAskBack').click();
+      });
+      step(function(){
+        ok(convPosts().length===0&&!askShown()&&cvShown(),'convask: Go back writes nothing and keeps the window');
+        typeConv('0.08');saveConv();
+        ok(askShown()&&/^That's about a 10× drop from the old conversion \(1 qt = 0\.8 lb\)\. Save anyway\?$/.test(txt(document.getElementById('cvAskText'))),'convask: 1/10 asks; got '+JSON.stringify(txt(document.getElementById('cvAskText'))));
+        document.getElementById('cvAskBack').click();
+        typeConv('7.2');saveConv();
+        ok(!askShown(),'convask: a 9x change does not ask');
+      });
+      step(function(){
+        ok(convPosts().length===1&&!cvShown(),'convask: 9x saved without asking');
+        checkConvPayload(convPosts()[0],{ingredient_cost_id:4,from_kind:'volume',from_unit:'qt',to_qty:7.2,to_unit:'lb',estimate:true,note:'dry'},'convask payload');
+        ok(H.convs.length===1&&H.convs[0].id===900&&H.convs[0].to_qty===7.2,'convask: a change overwrites the same row');
+        convBtns()[0].click();typeConv('80');saveConv();
+        ok(askShown()&&/^That's 11×/.test(txt(document.getElementById('cvAskText'))),'convask: asks against the new old row (80 vs 7.2)');
+        document.getElementById('cvAskYes').click();
+      });
+      step(function(){
+        ok(convPosts().length===2&&!cvShown()&&H.convs.length===1&&H.convs[0].to_qty===80,'convask: Save anyway saves, still one row');
+        noLineWrites('convask');
+      });
+    }
+
+    if(H.scen==='convlost'){
+      step(function(){openRecipe(104);convBtns()[0].click();typeConv('0.8');H.nextWrite.push('lost');document.getElementById('cvSave').click();});
+      step(function(){
+        var rb=H.reqs.filter(function(q){return q.m==='GET'&&/ingredient_conversions\?/.test(q.u)&&/ingredient_cost_id=eq\./.test(q.u);});
+        ok(convPosts().length===1&&rb.length===1&&/ingredient_cost_id=eq\.4/.test(rb[0].u)&&/from_kind=eq\.volume/.test(rb[0].u)&&/location=eq\.Tempest/.test(rb[0].u),'convlost: a lost answer is read back by its key, no second POST');
+        ok(!cvShown()&&/Conversion saved/.test(toast())&&H.convs.length===1,'convlost: found landed, so saved');
+        convBtns()[0].click();typeConv('0.9');H.nextWrite.push('lost');H.nextConvGet.push('fail');document.getElementById('cvSave').click();
+      });
+      step(function(){
+        ok(cvShown()&&!document.getElementById('cvSave').disabled,'convlost: unconfirmed - window open and unlocked');
+        ok(/Could not confirm/.test(toast())&&/cannot make a second row/.test(toast()),'convlost: says it could not confirm, retry is safe; got '+JSON.stringify(toast()));
+        document.getElementById('cvSave').click();
+      });
+      step(function(){
+        var p=convPosts();
+        ok(p.length===3&&p[1].u===p[2].u&&p[1].body.ingredient_cost_id===p[2].body.ingredient_cost_id&&p[1].body.from_kind===p[2].body.from_kind,'convlost: the retry is the same upsert key');
+        ok(H.convs.length===1&&!cvShown(),'DROPPED RESPONSE + RETRY: one conversion row, got '+H.convs.length);
+        convBtns()[0].click();typeConv('1');H.nextWrite.push('reject');document.getElementById('cvSave').click();
+      });
+      step(function(){
+        ok(cvShown()&&!document.getElementById('cvSave').disabled&&document.getElementById('cvQty').value==='1','convlost: refused - window open, unlocked, answer kept');
+        ok(/refused/.test(toast())&&document.getElementById('toast').classList.contains('error'),'convlost: refused says so in an error toast');
+        ok(convPosts().length===4&&H.convs[0].to_qty===0.9,'convlost: refused wrote nothing, no automatic retry');
+        noLineWrites('convlost');
+      });
+    }
+
+    if(H.scen==='convstale'){
+      step(function(){
+        openRecipe(104);
+        var s3=lineStates()[3]||'';
+        ok(/conversion no longer matches — was lb, now case Fix conversion$/.test(s3)&&!/\$/.test(s3),'convstale: pack changed kind - no longer matches, was lb now case, no cost; got '+JSON.stringify(s3));
+        closeRecipe();openRecipe(106);
+        ok(/conversion no longer matches/.test(lineStates()[0]||''),'convstale: every line relying on it, in every recipe');
+        convBtns()[0].click();
+        ok(txt(document.getElementById('cvTitle'))==='Fix conversion','convstale: titled Fix conversion');
+        ok(txt(document.getElementById('cvWas'))==='Was: 1 qt = 0.8 lb as bought · estimate','convstale: shows the old one as words');
+        ok(document.getElementById('cvQty').value===''&&document.getElementById('cvToUnit').value==='case','convstale: answer empty, unit set to the new pack unit');
+        ok(!document.getElementById('cvEst').checked&&document.getElementById('cvNote').value==='','convstale: a stale estimate and note are not carried over');
+        document.getElementById('cvFromUnit').value='qt';typeConv('0.05');saveConv();
+      });
+      step(function(){
+        ok(!askShown()&&convPosts().length===1,'convstale: a fix across kinds is not compared, so it does not ask');
+        checkConvPayload(convPosts()[0],{ingredient_cost_id:4,from_kind:'volume',from_unit:'qt',to_qty:0.05,to_unit:'case',estimate:false,note:null},'convstale payload');
+        ok(H.convs.length===1&&H.convs[0].id===900,'convstale: Fix overwrites the same key');
+        ok(/1 cup \$/.test(lineStates()[0]||'')&&!/no longer matches/.test(lineStates()[0]||''),'convstale: costs again after the fix; got '+JSON.stringify(lineStates()[0]));
+        noLineWrites('convstale');
+      });
+    }
+
+    if(H.scen==='convoz'){
+      openRecipe(104);
+      ok(/2 qt \$2\.40 via 1 qt = 0\.8 lb as bought/.test(lineStates()[3]||''),'convoz: a pack re-entered within its kind (lb -> oz) still costs; got '+JSON.stringify(lineStates()[3]));
+      closeRecipe();
+    }
     if(steps.length){
       H.async=true;
       (function run(i){
@@ -646,12 +854,13 @@ setTimeout(function(){
     }
   }catch(e){H.fails.push('threw: '+e);}
   H.finish=function(){
-    if(H.scen==='fail')ok(H.reqs.length===8,'fail: Try again reads all four again, got '+H.reqs.length+' requests');
+    if(H.scen==='fail')ok(H.reqs.length===10,'fail: Try again reads all five again, got '+H.reqs.length+' requests');
     if(!H.async){
       ok(H.writes.length===0,'writes: a read-only scenario makes no request other than a GET, got '+JSON.stringify(H.writes.map(function(w){return w.m+' '+w.u;})));
       ok(H.reqs.every(function(q){return q.m==='GET';}),'writes: every request is a GET');
     }
-    ok(H.bad.length===0,'writes: only POST/PATCH to recipe_lines, never DELETE, never another table; got '+JSON.stringify(H.bad));
+    ok(H.bad.length===0,'writes: only the table this window may write (recipe_lines, or ingredient_conversions from the conversion window), never DELETE; got '+JSON.stringify(H.bad));
+    ok(H.checks.length===0,'writes: every conversion passes the table checks; got '+JSON.stringify(H.checks));
     ok(H.writes.every(function(w){return w.m!=='DELETE';}),'writes: nothing is ever deleted');
     var d=document.createElement('div');d.id='harnessResults';d.textContent=JSON.stringify({fails:H.fails,log:H.log,live:H.live||null});document.body.appendChild(d);
   };
@@ -661,8 +870,12 @@ setTimeout(function(){
 """
 
 
-def build_page(rows, live=None, costs=COSTS, orders=ORDERS):
+def build_page(rows, live=None, costs=COSTS, orders=ORDERS, convs=(), brk=None):
     src = open(os.path.join(ROOT, PAGE), encoding="utf-8").read()
+    if brk:
+        if brk[0] not in src:
+            sys.exit("check_recipe_costing: break target not found: " + brk[0])
+        src = src.replace(brk[0], brk[1])
     src, n = GATE_RE.subn("<!-- gate neutralised by check_recipe_costing.py -->", src)
     if n != 1:
         sys.exit("check_recipe_costing: could not find the site-password gate in " + PAGE)
@@ -670,8 +883,10 @@ def build_page(rows, live=None, costs=COSTS, orders=ORDERS):
     if marker not in src:
         sys.exit("check_recipe_costing: could not find the page script in " + PAGE)
     harness = (HARNESS.replace("__ROWS__", json.dumps(rows)).replace("__COSTS__", json.dumps(costs))
-                      .replace("__ORDERS__", json.dumps(orders)).replace("__LINKS__", json.dumps(LINKS))
-                      .replace("__LINKS_GUARDS__", json.dumps(LINKS_GUARDS)).replace("__PORK__", json.dumps(PORK)))
+                      .replace("__ORDERS__", json.dumps(orders)).replace("__CONVS__", json.dumps(list(convs))).replace("__LINKS__", json.dumps(LINKS))
+                      .replace("__LINKS_GUARDS__", json.dumps(LINKS_GUARDS)).replace("__PORK__", json.dumps(PORK))
+                      .replace("__PASTA__", json.dumps(PASTA)).replace("__LINKS_CONV__", json.dumps(LINKS_CONV))
+                      .replace("__CONV_OLD__", json.dumps(CONV_OLD)))
     src = src.replace(marker, harness + marker, 1)
     src = re.sub(r'<link rel="preconnect"[^>]*>\s*', '', src)
     src = re.sub(r'<link rel="stylesheet" href="https://fonts[^>]*>\s*', '', src)
@@ -767,9 +982,9 @@ def main():
         if os.environ.get("CI"):
             sys.exit("check_recipe_costing: --live is local only, never in CI")
         rows = fetch_live()
-        want_r = int(os.environ.get("LIVE_RECIPES", "43"))
-        want_l = int(os.environ.get("LIVE_LINES", "340"))
-        want_h = int(os.environ.get("LIVE_HEADERS", "15"))
+        want_r = int(os.environ.get("LIVE_RECIPES", "45"))
+        want_l = int(os.environ.get("LIVE_LINES", "352"))
+        want_h = int(os.environ.get("LIVE_HEADERS", "13"))
         live = {"recipes": want_r, "lines": want_l, "headers": want_h,
                 "ids": [r["id"] for r in rows if r.get("status") != "archived"],
                 "expect": expected_flat(rows)}
@@ -784,13 +999,20 @@ def main():
         return 0
 
     fails, total, _ = run_all(chrome, build_page(RECIPES), SCENARIOS)
+    caught = 0
+    for name, old, new, scens in BREAKS:
+        bf, _, _ = run_all(chrome, build_page(RECIPES, brk=(old, new)), scens)
+        if bf:
+            caught += 1
+        else:
+            fails.append("break not caught: " + name)
     if fails:
         print("recipe costing guard: %d failure(s) of %d assertions\n" % (len(fails), total))
         for x in fails:
             print("  " + x)
         print("\nsee docs/recipe-costing.md, Slice 2")
         return 1
-    print("recipe costing guard: clean (%d assertions, %d scenarios, %s)" % (total, len(SCENARIOS), PAGE))
+    print("recipe costing guard: clean (%d assertions, %d scenarios, %d breaks caught, %s)" % (total, len(SCENARIOS), caught, PAGE))
     return 0
 
 
