@@ -161,7 +161,10 @@ SCENARIOS = ("ok", "fail", "gate", "links", "guards",
              # step 5: the write path
              "write", "hang", "lost", "retry", "reject", "oldlink", "oldfail", "dismiss",
              # Slice 4: conversions
-             "conv", "convask", "convlost", "convstale", "convoz")
+             "conv", "convask", "convlost", "convstale", "convoz",
+             # Slice 5a: the numbers, Makes and Portion
+             "yield", "ylost", "yreject")
+YIELD_SCEN = '{yield:1,ylost:1,yreject:1}'
 CONV_SCEN = '{conv:1,convask:1,convlost:1,convstale:1,convoz:1}'
 CONV_OLD_SCEN = '{convask:1,convstale:1,convoz:1}'
 
@@ -172,6 +175,15 @@ BREAKS = [
     ("the ask kept after the number changes", "if(cv.asking&&!convSaving)showAsk(null);", "", ("convask",)),
     ("a pre-filled answer", "document.getElementById('cvQty').value='';",
      "document.getElementById('cvQty').value=old?String(old.to_qty):'';", ("convask", "convstale")),
+    # Slice 5a
+    ("the Makes double-tap guard removed", "if(ymSaving||!ym)return;",
+     "if(!ym)return;ymSaving=false;document.getElementById('ymSave').disabled=false;", ("yield",)),
+    ("a per-unit figure on the list while incomplete", "else if(r.costed+r.skipped>0){started++;st=esc(soFarText(r,n));}",
+     "else if(r.costed+r.skipped>0){started++;st=esc(soFarText(r,n));if(r.perYield!==null)per=esc(perText(r));}", ("yield",)),
+    ("a per-unit figure on the recipe while incomplete", "h+='<div class=\"rc-total-note\">Cost per '",
+     "h+=(r.perYield!==null?'<div class=\"rc-total-per\">'+esc(perText(r))+'</div>':'')+'<div class=\"rc-total-note\">Cost per '", ("yield",)),
+    ("a rounded line summed (assets/recipe-math.js)", "out.total += ln.cost;",
+     "out.total += Math.round(ln.cost * 100) / 100;", ("yield",), "assets/recipe-math.js"),
 ]
 
 GATE_RE = re.compile(r"<script>\s*//\s*Site-password gate.*?</script>", re.S)
@@ -197,13 +209,20 @@ HARNESS = r"""
   var LINKS=(SCEN==="links")?__LINKS__:CS?__LINKS_CONV__:(GUARDS_SCEN[SCEN]?GUARDS:[]);
   if(GUARDS_SCEN[SCEN])ROWS=ROWS.concat([__PORK__]);
   if(CS){ROWS=ROWS.concat([__PASTA__]);if(CONV_OLD_SCEN[SCEN])CONVS=[__CONV_OLD__];}
+  /* Slice 5a: Pasta Salad complete through a measured conversion (no estimate),
+     Mac & Cheese started; noodles at $30.09 so each Pasta line has a
+     fraction of a cent that only the unrounded sum carries ($1.8054) */
+  var YS=YIELD_SCEN[SCEN];
+  if(YS){ROWS=ROWS.concat([__PASTA__]);LINKS=__LINKS_CONV__;
+    CONVS=[__CONV_OLD__].map(function(c){c.estimate=false;return c;});
+    COSTS=COSTS.map(function(c){if(c.id!==4)return c;c=JSON.parse(JSON.stringify(c));c.pack_price=30.09;return c;});}
   /* a pack re-entered: in another kind (lb -> case), or within its kind (lb -> oz) */
   if(SCEN==='convstale'||SCEN==='convoz')COSTS=COSTS.map(function(c){
     if(c.id!==4)return c;c=JSON.parse(JSON.stringify(c));
     if(SCEN==='convstale'){c.pack_qty=1;c.pack_unit='case';}else{c.pack_qty=320;c.pack_unit='oz';}return c;});
   var convs=JSON.parse(JSON.stringify(CONVS)), nextConvId=950;
   var server=JSON.parse(JSON.stringify(LINKS)), nextId=500, loads=0;
-  var H=window.__h={scen:SCEN,reqs:[],writes:[],bad:[],fails:[],log:[],nextWrite:[],nextGet:[],nextConvGet:[],held:[],server:server,convs:convs,checks:[]};
+  var H=window.__h={scen:SCEN,reqs:[],writes:[],bad:[],fails:[],log:[],nextWrite:[],nextGet:[],nextConvGet:[],held:[],server:server,convs:convs,checks:[],yields:[]};
   try{ if(SCEN==='gate')sessionStorage.removeItem('boxkitchen_mgr'); else sessionStorage.setItem('boxkitchen_mgr','1'); }catch(e){}
   function param(u,k){var m=new RegExp('[?&]'+k+'=eq\\.([^&]*)').exec(u);return m?decodeURIComponent(m[1]):null;}
   /* ingredient_conversions as the database holds it: one row per
@@ -216,8 +235,21 @@ HARNESS = r"""
     else{row={id:nextConvId++};for(var k2 in b)row[k2]=b[k2];convs.push(row);}
     return JSON.parse(JSON.stringify(row));
   }
+  /* recipe_yields as the database holds it: one row per recipe_id, both
+     pair checks (amount and unit set together, amount above 0) enforced */
+  var nextYieldId=700;
+  function applyYield(w){
+    var b=w.body,row=null;
+    if((b.yield_qty==null)!==(b.yield_unit==null)||(b.portion_qty==null)!==(b.portion_unit==null)
+      ||(b.yield_qty!=null&&!(b.yield_qty>0))||(b.portion_qty!=null&&!(b.portion_qty>0)))H.checks.push('yield check failed: '+JSON.stringify(b));
+    for(var i=0;i<H.yields.length;i++)if(Number(H.yields[i].recipe_id)===b.recipe_id)row=H.yields[i];
+    if(row){for(var k in b)row[k]=b[k];}
+    else{row={id:nextYieldId++};for(var k2 in b)row[k2]=b[k2];H.yields.push(row);}
+    return JSON.parse(JSON.stringify(row));
+  }
   function apply(w){
     if(/ingredient_conversions\?/.test(w.u))return applyConv(w);
+    if(/recipe_yields\?/.test(w.u))return applyYield(w);
     if(w.m==='POST'){
       var b=w.body,row=null;
       for(var i=0;i<server.length;i++){var s=server[i];
@@ -239,7 +271,7 @@ HARNESS = r"""
     if(self.m!=='GET'){
       var w={m:self.m,u:self.u,body:body?JSON.parse(body):null,prefer:self.hdr.Prefer||''};
       H.writes.push(w);
-      var okTable=CS?/\/rest\/v1\/ingredient_conversions\?/.test(self.u)&&self.m==='POST':/\/rest\/v1\/recipe_lines\?/.test(self.u);
+      var okTable=YS?/\/rest\/v1\/recipe_yields\?/.test(self.u)&&self.m==='POST':CS?/\/rest\/v1\/ingredient_conversions\?/.test(self.u)&&self.m==='POST':/\/rest\/v1\/recipe_lines\?/.test(self.u);
       if(READ_ONLY[SCEN]||self.m==='DELETE'||!okTable){H.bad.push(self.m+' '+self.u);setTimeout(function(){self.onerror&&self.onerror();},5);return;}
       var fate=H.nextWrite.shift()||'ok';
       function answer(){var row=apply(w);self.status=self.m==='POST'?201:200;self.responseText=JSON.stringify(row?[row]:[]);self.onload&&self.onload();}
@@ -270,6 +302,8 @@ HARNESS = r"""
           var ci=param(self.u,'ingredient_cost_id'),fk=param(self.u,'from_kind');
           return (ci===null||Number(c.ingredient_cost_id)===Number(ci))&&(fk===null||c.from_kind===fk);});
         rows=JSON.parse(JSON.stringify(rows));
+      }else if(t==='recipe_yields'){
+        rows=JSON.parse(JSON.stringify(H.yields.filter(function(y){var ri=param(self.u,'recipe_id');return ri===null||Number(y.recipe_id)===Number(ri);})));
       }else rows={Recipes:ROWS,ingredient_costs:COSTS,order_items:ORDERS}[t];
       if(rows){self.status=200;self.responseText=JSON.stringify(rows);}
       else{self.status=404;self.responseText='[]';}
@@ -280,7 +314,7 @@ HARNESS = r"""
   window.XMLHttpRequest=X;
 })();
 </script>
-""".replace("GUARDS_SCEN", '{guards:1,oldlink:1,oldfail:1,dismiss:1}').replace("CONV_OLD_SCEN", CONV_OLD_SCEN).replace("CONV_SCEN", CONV_SCEN)
+""".replace("GUARDS_SCEN", '{guards:1,oldlink:1,oldfail:1,dismiss:1}').replace("CONV_OLD_SCEN", CONV_OLD_SCEN).replace("CONV_SCEN", CONV_SCEN).replace("YIELD_SCEN", YIELD_SCEN)
 
 
 RUNNER = r"""
@@ -342,11 +376,11 @@ setTimeout(function(){
       var rows=document.querySelectorAll('#listBody .ing-row');
       var names=[].map.call(rows,function(r){return txt(r.querySelector('.ing-name'));});
       ok(JSON.stringify(names)===JSON.stringify(['Chilorio Sauce','Empty Draft','Mac & Cheese']),'list: the active recipes in order, archived left out; got '+JSON.stringify(names));
-      ok(txt(document.getElementById('countTag'))==='3 recipes','list: count says 3 recipes, got '+txt(document.getElementById('countTag')));
-      ok(/Saute · 7 lines$/.test(txt(rows[2]&&rows[2].querySelector('.ing-pack'))),'list: Mac & Cheese shows its 7 lines');
+      ok(txt(document.getElementById('countTag'))==='3 recipes · 0 complete · 0 started','list: count says 3 recipes · 0 complete · 0 started, got '+txt(document.getElementById('countTag')));
+      ok(/Saute · not started · 7 lines$/.test(txt(rows[2]&&rows[2].querySelector('.ing-pack'))),'list: Mac & Cheese shows its 7 lines');
       ok(parseFloat(getComputedStyle(rows[0]).height)>=44,'css: a recipe row is a 44px tap target');
       var tabs=H.reqs.map(function(q){return (/\/rest\/v1\/(\w+)\?/.exec(q.u)||[])[1];}).sort().join(',');
-      ok(tabs==='Recipes,ingredient_conversions,ingredient_costs,order_items,recipe_lines','read: Recipes, the price list, the order guide, recipe_lines and the conversions, once each; got '+tabs);
+      ok(tabs==='Recipes,ingredient_conversions,ingredient_costs,order_items,recipe_lines,recipe_yields','read: Recipes, the price list, the order guide, recipe_lines, the conversions and the yields, once each; got '+tabs);
       ok(/select=id,name,category,station,status,ingredients(&|$)/.test((H.reqs[0]||{}).u),'read: Recipes select= names the columns');
       H.reqs.forEach(function(q){
         ok(/[?&]select=[a-z_,]+(&|$)/.test(q.u)&&!/select=\*/.test(q.u),'read: select= names the columns: '+q.u.split('?')[0]);
@@ -829,6 +863,170 @@ setTimeout(function(){
       ok(/2 qt \$2\.40 via 1 qt = 0\.8 lb as bought/.test(lineStates()[3]||''),'convoz: a pack re-entered within its kind (lb -> oz) still costs; got '+JSON.stringify(lineStates()[3]));
       closeRecipe();
     }
+
+    /* ---- Slice 5a: the numbers, Makes and Portion ---- */
+    function yPosts(){return H.writes.filter(function(w){return /recipe_yields\?/.test(w.u);});}
+    function ymShown(){return document.getElementById('yieldModal').classList.contains('show');}
+    function ymSet(q,u,pq,pu,e){
+      document.getElementById('ymQty').value=q;document.getElementById('ymUnit').value=u;
+      document.getElementById('ymPQty').value=pq;document.getElementById('ymPUnit').value=pu;
+      if(e!==undefined)document.getElementById('ymEst').checked=e;
+      showYieldState();
+    }
+    function kids(el){return el?[].map.call(el.children,txt).join(' '):'';}
+    function totalTxt(){return kids(document.getElementById('rcTotal'));}
+    function perTxt(){return txt(document.querySelector('#rcTotal .rc-total-per'));}
+    function makesTxt(){return kids(document.getElementById('rcMakes')).replace(/ Edit$/,'');}
+    function listRow(name){
+      var rs=document.querySelectorAll('#listBody .ing-row');
+      for(var i=0;i<rs.length;i++)if(txt(rs[i].querySelector('.ing-name'))===name)return rs[i];
+      return null;
+    }
+    function rowPer(name){return txt((listRow(name)||document).querySelector('.ing-per'));}
+    function rowPack(name){return txt((listRow(name)||document).querySelector('.ing-pack'));}
+    function checkYieldPayload(w,want,label){
+      var b=(w||{}).body||{};
+      ok(JSON.stringify(Object.keys(b).sort())==='["location","portion_qty","portion_unit","recipe_id","updated_at","yield_estimate","yield_qty","yield_unit"]',label+': exactly the eight fields; got '+JSON.stringify(Object.keys(b).sort()));
+      ok(/\/rest\/v1\/recipe_yields\?on_conflict=recipe_id$/.test((w||{}).u||''),label+': POST recipe_yields?on_conflict=recipe_id; got '+(w||{}).u);
+      ok(/resolution=merge-duplicates/.test((w||{}).prefer||''),label+': Prefer resolution=merge-duplicates');
+      ok(b.location==='Tempest',label+': location Tempest');
+      ok(typeof b.updated_at==='string'&&!isNaN(Date.parse(b.updated_at)),label+': the page sends updated_at');
+      for(var k in want)ok(b[k]===want[k],label+': '+k+' = '+JSON.stringify(want[k])+', got '+JSON.stringify(b[k]));
+    }
+    function onlyYieldWrites(label){ok(H.writes.every(function(w){return /recipe_yields\?/.test(w.u)&&w.m==='POST';}),label+': the Makes window writes recipe_yields only, by POST');}
+
+    if(H.scen==='yield'){
+      step(function(){
+        ok(txt(document.getElementById('countTag'))==='4 recipes · 1 complete · 1 started','ylist: heading 4 recipes · 1 complete · 1 started; got '+JSON.stringify(txt(document.getElementById('countTag'))));
+        ok(rowPack('Pasta Salad')==='Side · Garde · $1.81 batch','ylist: Pasta Salad shows its batch to the cent, the unrounded sum ($1.8054); got '+JSON.stringify(rowPack('Pasta Salad')));
+        ok(!listRow('Pasta Salad').querySelector('.ing-per'),'ylist: no per-unit line before Makes is set');
+        ok(/^Side · Saute · \$3\.41 so far · 5 of 7 lines not costed$/.test(rowPack('Mac & Cheese')),'ylist: Mac & Cheese is started, so far; got '+JSON.stringify(rowPack('Mac & Cheese')));
+        ok(/^Sauce · not started · 4 lines$/.test(rowPack('Chilorio Sauce')),'ylist: Chilorio not started; got '+JSON.stringify(rowPack('Chilorio Sauce')));
+        openRecipe(106);
+        ok(totalTxt()==='$1.81 batch Set Makes to see the cost per unit.','yield: complete, no Makes yet, the orphan line left out; got '+JSON.stringify(totalTxt()));
+        ok(!/estimate/.test(totalTxt()),'yield: no estimate when nothing is guessed');
+        ok(makesTxt()==='Makes — not set','yield: Makes — not set; got '+JSON.stringify(makesTxt()));
+        document.getElementById('rcMakesEdit').click();
+        ok(ymShown(),'yield: Edit opens the Makes window');
+        ok(document.getElementById('ymQty').value===''&&document.getElementById('ymUnit').value===''&&!document.getElementById('ymEst').checked,'yield: opens empty, never a suggested number');
+        ok(document.getElementById('ymSave').disabled,'yield: Save is off with nothing to save');
+        ymSet('1','','','');
+        ok(txt(document.getElementById('ymMsg'))==='Makes needs a unit as well as an amount.'&&document.getElementById('ymSave').disabled,'yield: an amount with no unit is stopped, in words; got '+JSON.stringify(txt(document.getElementById('ymMsg'))));
+        ymSet('','qt','','');
+        ok(txt(document.getElementById('ymMsg'))==='Makes needs an amount as well as a unit.'&&document.getElementById('ymSave').disabled,'yield: a unit with no amount is stopped');
+        ymSet('0','qt','','');
+        ok(document.getElementById('ymSave').disabled,'yield: a zero amount is stopped');
+        ymSet('1','qt','2','');
+        ok(txt(document.getElementById('ymMsg'))==='Portion needs a unit as well as an amount.'&&document.getElementById('ymSave').disabled,'yield: a half portion is stopped');
+        saveYield();
+        ok(yPosts().length===0,'yield: a half pair is never sent, even by a direct call');
+        ymSet('1','qt','2','fl oz');
+        ok(!document.getElementById('ymSave').disabled,'yield: a whole pair can be saved');
+        H.nextWrite.push('hang');
+        document.getElementById('ymSave').click();document.getElementById('ymSave').click();saveYield();
+      });
+      step(function(){
+        ok(yPosts().length===1,'yield: a double tap (and a direct call) make one write, got '+yPosts().length);
+        ['ymQty','ymUnit','ymEst','ymPQty','ymPUnit','ymCancel','ymSave'].forEach(function(id){ok(document.getElementById(id).disabled,'yield: '+id+' locked in flight');});
+        closeYield();ok(ymShown(),'yield: cannot be closed while saving');
+        H.release();
+      });
+      step(function(){
+        checkYieldPayload(yPosts()[0],{recipe_id:106,yield_qty:1,yield_unit:'qt',yield_estimate:false,portion_qty:2,portion_unit:'fl oz'},'yield payload');
+        ok(H.yields.length===1,'yield: one row');
+        ok(!ymShown()&&/Makes and portion saved/.test(toast()),'yield: saved, closed, says so; got '+JSON.stringify(toast()));
+        ok(makesTxt()==='Makes 1 qt Portion 2 fl oz','yield: Makes and Portion shown; got '+JSON.stringify(makesTxt()));
+        ok(perTxt()==='$1.81 / qt · $0.11 / 2 fl oz portion','yield: per qt and per portion, to the cent; got '+JSON.stringify(perTxt()));
+        ok(totalTxt()==='$1.81 batch · makes 1 qt $1.81 / qt · $0.11 / 2 fl oz portion','yield: the whole total; got '+JSON.stringify(totalTxt()));
+        closeRecipe();
+        ok(rowPer('Pasta Salad')==='$1.81 / qt · $0.11 / 2 fl oz portion','ylist: the list shows the per-unit line at once; got '+JSON.stringify(rowPer('Pasta Salad')));
+        ok(rowPack('Pasta Salad')==='Side · Garde · $1.81 batch · makes 1 qt','ylist: and the batch; got '+JSON.stringify(rowPack('Pasta Salad')));
+        // an incomplete recipe with Makes set: never a per-unit figure
+        openRecipe(104);
+        document.getElementById('rcMakesEdit').click();
+        ymSet('2','qt','1','cup',true);
+        document.getElementById('ymSave').click();
+      });
+      step(function(){
+        checkYieldPayload(yPosts()[1],{recipe_id:104,yield_qty:2,yield_unit:'qt',yield_estimate:true,portion_qty:1,portion_unit:'cup'},'yield payload (Mac)');
+        ok(H.yields.length===2,'yield: a second recipe, a second row');
+        ok(makesTxt()==='Makes 2 qt · estimate Portion 1 cup','yield: Makes marked estimate; got '+JSON.stringify(makesTxt()));
+        ok(!document.querySelector('#rcTotal .rc-total-per'),'yield: no per-unit line while incomplete');
+        ok(!/\/ qt|portion/.test(totalTxt()),'yield: no per qt or portion figure while incomplete; got '+JSON.stringify(totalTxt()));
+        ok(/Cost per qt shows when every line is costed\./.test(totalTxt()),'yield: says when it will show');
+        ok(/^\$3\.41 so far · 5 of 7 lines not costed · estimate/.test(totalTxt()),'yield: so far, with the estimate yield marked; got '+JSON.stringify(totalTxt()));
+        closeRecipe();
+        ok(!listRow('Mac & Cheese').querySelector('.ing-per')&&!/\/ qt/.test(txt(listRow('Mac & Cheese'))),'ylist: no per-unit figure on the list while incomplete; got '+JSON.stringify(txt(listRow('Mac & Cheese'))));
+        ok(txt(document.getElementById('countTag'))==='4 recipes · 1 complete · 1 started','ylist: counts unchanged by Makes');
+        // Pasta: tick estimate, portion by weight against a yield by volume
+        openRecipe(106);
+        document.getElementById('rcMakesEdit').click();
+        ok(document.getElementById('ymQty').value==='1'&&document.getElementById('ymUnit').value==='qt'&&document.getElementById('ymPQty').value==='2'&&document.getElementById('ymPUnit').value==='fl oz','yield: reopens with what is saved');
+        ok(document.getElementById('ymSave').disabled,'yield: unchanged, Save is off');
+        ymSet('1','qt','4','oz',true);
+        document.getElementById('ymSave').click();
+      });
+      step(function(){
+        checkYieldPayload(yPosts()[2],{recipe_id:106,yield_qty:1,yield_unit:'qt',yield_estimate:true,portion_qty:4,portion_unit:'oz'},'yield payload (other kind)');
+        ok(H.yields.length===2,'yield: saving again lands on the same row');
+        ok(perTxt()==='$1.81 / qt · estimate','yield: per qt, marked estimate, no portion money; got '+JSON.stringify(perTxt()));
+        ok(/portion: needs a conversion — Pasta Salad is made by the qt/.test(totalTxt()),'yield: an oz portion of a qt yield needs a conversion; got '+JSON.stringify(totalTxt()));
+        ok(/Includes an estimate: the yield$/.test(totalTxt()),'yield: names what is guessed; got '+JSON.stringify(totalTxt()));
+        // clear both pairs: nulls, and the estimate goes with Makes
+        document.getElementById('rcMakesEdit').click();
+        ymSet('','','','');
+        ok(!document.getElementById('ymSave').disabled,'yield: clearing what is saved can be saved');
+        document.getElementById('ymSave').click();
+      });
+      step(function(){
+        checkYieldPayload(yPosts()[3],{recipe_id:106,yield_qty:null,yield_unit:null,yield_estimate:false,portion_qty:null,portion_unit:null},'yield payload (cleared)');
+        ok(H.yields.length===2,'yield: cleared, the row is kept - nothing deleted');
+        ok(makesTxt()==='Makes — not set','yield: back to not set; got '+JSON.stringify(makesTxt()));
+        ok(totalTxt()==='$1.81 batch Set Makes to see the cost per unit.','yield: back to the batch alone; got '+JSON.stringify(totalTxt()));
+        onlyYieldWrites('yield');
+      });
+    }
+
+    if(H.scen==='ylost'){
+      step(function(){
+        openRecipe(106);document.getElementById('rcMakesEdit').click();
+        ymSet('1','qt','','');
+        H.nextWrite.push('drop');
+        document.getElementById('ymSave').click();
+      });
+      step(function(){
+        ok(H.yields.length===0,'ylost: a dropped write wrote nothing');
+        ok(/Could not confirm the save\. Tap Save to try again — it cannot make a second row\./.test(toast()),'ylost: says it could not confirm; got '+JSON.stringify(toast()));
+        ok(ymShown()&&!document.getElementById('ymSave').disabled,'ylost: the window stays, unlocked, to try again');
+        H.nextWrite.push('lost');
+        document.getElementById('ymSave').click();
+      });
+      step(function(){
+        ok(yPosts().length===2,'ylost: the retry is a second POST');
+        ok(H.yields.length===1,'ylost: lost answer, read back - one row, got '+H.yields.length);
+        ok(!ymShown()&&/Makes and portion saved/.test(toast()),'ylost: the read-back confirms it; got '+JSON.stringify(toast()));
+        ok(perTxt()==='$1.81 / qt','ylost: and the page shows it; got '+JSON.stringify(perTxt()));
+        onlyYieldWrites('ylost');
+      });
+    }
+
+    if(H.scen==='yreject'){
+      step(function(){
+        openRecipe(106);document.getElementById('rcMakesEdit').click();
+        ymSet('1','qt','','');
+        H.nextWrite.push('reject');
+        document.getElementById('ymSave').click();
+      });
+      step(function(){
+        ok(H.yields.length===0,'yreject: a refused write writes nothing');
+        ok(/Not saved — the server refused it\. Nothing changed\./.test(toast()),'yreject: says so; got '+JSON.stringify(toast()));
+        ok(ymShown()&&!document.getElementById('ymSave').disabled,'yreject: the window stays, unlocked');
+        closeYield();
+        ok(makesTxt()==='Makes — not set','yreject: nothing shown as saved');
+        onlyYieldWrites('yreject');
+      });
+    }
+
     if(steps.length){
       H.async=true;
       (function run(i){
@@ -854,12 +1052,13 @@ setTimeout(function(){
     }
   }catch(e){H.fails.push('threw: '+e);}
   H.finish=function(){
-    if(H.scen==='fail')ok(H.reqs.length===10,'fail: Try again reads all five again, got '+H.reqs.length+' requests');
+    if(H.scen==='fail')ok(H.reqs.length===12,'fail: Try again reads all six again, got '+H.reqs.length+' requests');
     if(!H.async){
       ok(H.writes.length===0,'writes: a read-only scenario makes no request other than a GET, got '+JSON.stringify(H.writes.map(function(w){return w.m+' '+w.u;})));
       ok(H.reqs.every(function(q){return q.m==='GET';}),'writes: every request is a GET');
     }
-    ok(H.bad.length===0,'writes: only the table this window may write (recipe_lines, or ingredient_conversions from the conversion window), never DELETE; got '+JSON.stringify(H.bad));
+    ok(H.bad.length===0,'writes: only the table this window may write (recipe_lines, ingredient_conversions from the conversion window, recipe_yields from Makes), never DELETE; got '+JSON.stringify(H.bad));
+    ok(H.yields.every(function(y){return H.yields.filter(function(z){return Number(z.recipe_id)===Number(y.recipe_id);}).length===1;}),'writes: one recipe_yields row per recipe');
     ok(H.checks.length===0,'writes: every conversion passes the table checks; got '+JSON.stringify(H.checks));
     ok(H.writes.every(function(w){return w.m!=='DELETE';}),'writes: nothing is ever deleted');
     var d=document.createElement('div');d.id='harnessResults';d.textContent=JSON.stringify({fails:H.fails,log:H.log,live:H.live||null});document.body.appendChild(d);
@@ -933,12 +1132,18 @@ def run_scenario(chrome, path, scen):
     return json.loads(body), None
 
 
-def run_all(chrome, page, scenarios):
+def run_all(chrome, page, scenarios, asset_brk=None):
     fails, total, live = [], 0, None
     with tempfile.TemporaryDirectory() as td:
         path = os.path.join(td, "recipe_costing_under_test.html")
         open(path, "w", encoding="utf-8").write(page)
         shutil.copytree(os.path.join(ROOT, "assets"), os.path.join(td, "assets"))
+        if asset_brk:
+            ap = os.path.join(td, asset_brk[0])
+            a = open(ap, encoding="utf-8").read()
+            if asset_brk[1] not in a:
+                sys.exit("check_recipe_costing: break target not found: " + asset_brk[1])
+            open(ap, "w", encoding="utf-8").write(a.replace(asset_brk[1], asset_brk[2]))
         for scen in scenarios:
             res, err = run_scenario(chrome, path, scen)
             if res is None:
@@ -1000,8 +1205,12 @@ def main():
 
     fails, total, _ = run_all(chrome, build_page(RECIPES), SCENARIOS)
     caught = 0
-    for name, old, new, scens in BREAKS:
-        bf, _, _ = run_all(chrome, build_page(RECIPES, brk=(old, new)), scens)
+    for b in BREAKS:
+        name, old, new, scens = b[:4]
+        if len(b) > 4:
+            bf, _, _ = run_all(chrome, build_page(RECIPES), scens, asset_brk=(b[4], old, new))
+        else:
+            bf, _, _ = run_all(chrome, build_page(RECIPES, brk=(old, new)), scens)
         if bf:
             caught += 1
         else:

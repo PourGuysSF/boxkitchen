@@ -22,7 +22,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=Playfair+Display:wght@700;900&display=swap">
 <link rel="stylesheet" href="assets/kitchen.css?v=2026-09-19">
-<script src="assets/recipe-math.js?v=3"></script>
+<script src="assets/recipe-math.js?v=4"></script>
 <style>
   /* Recipe Costing (B4.3, docs/recipe-costing.md) — page-level rules only.
      Every component lives in assets/kitchen.css. Unlinked until Slice 7. */
@@ -102,6 +102,26 @@
   .lk-old-btn{display:block;width:100%;min-height:44px;margin-bottom:6px;text-align:left;
               text-transform:none;letter-spacing:0;font-family:var(--font);font-size:0.85rem;
               color:var(--ink);border-color:var(--ink)}
+
+  /* Slice 5a — used by: makesHtml(), totalHtml(), renderList(). Makes/Portion
+     under the title; the recipe's total under its lines. The money is ink and
+     heavy; "not costed" keeps the highlighter; complete is never green. */
+  .rc-makes{display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;padding:0 20px 10px;font-size:0.85rem;color:var(--ink)}
+  .rc-makes .rc-unset{color:var(--grey)}
+  .rc-makes .link-btn{min-height:44px;color:var(--ink);border-color:var(--edge)}
+  .rc-total{margin:14px 20px 4px;padding:12px 14px;border:2px solid var(--ink);border-radius:8px;font-size:0.85rem;color:var(--ink)}
+  .rc-total.so-far{border-style:dashed;border-width:1px;border-color:var(--edge)}
+  .rc-total-main{font-size:1.05rem;font-weight:700;font-variant-numeric:tabular-nums}
+  .rc-total-per{margin-top:4px;font-weight:700;font-variant-numeric:tabular-nums}
+  .rc-total-note{margin-top:6px;color:var(--grey)}
+  .rc-total-why{margin-top:6px}
+  .ing-per{font-size:0.78rem;font-weight:700;color:var(--ink);margin-top:2px;font-variant-numeric:tabular-nums}
+  /* #yieldModal — used by: openYield(). Inputs reuse .lk-qty/.lk-unit (16px,
+     qualified); the estimate row reuses .cv-est, its label re-qualified here. */
+  #yieldModal .modal{max-width:440px}
+  #yieldModal label.ym-est-row,.ym-est-row{display:flex;align-items:center;gap:10px;min-height:44px;margin-top:12px;cursor:pointer;
+     font-family:var(--font);font-size:0.9rem;font-weight:400;color:var(--ink);text-transform:none;letter-spacing:0;margin-bottom:0}
+  .ym-msg{margin-top:12px;font-size:0.85rem;font-weight:600;color:var(--ink);min-height:1.2em}
 
   /* Slice 4 — conversions. used by: stateHtml() (.rc-conv, .rc-conv-btn) and
      openConv() (#convModal, .cv-*). A conversion is "how much of what you buy
@@ -243,6 +263,30 @@
   </div>
 </div>
 
+<!-- Slice 5a: Makes and Portion for one recipe. Never stacked on another modal. -->
+<div class="modal-bg" id="yieldModal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="ymTitle">
+    <h3 id="ymTitle">Makes and portion</h3>
+    <div class="msub" id="ymSub"></div>
+    <div class="nb-label">Makes</div>
+    <div class="lk-fields">
+      <input class="lk-qty" id="ymQty" type="text" inputmode="decimal" placeholder="Amount" autocomplete="off" oninput="showYieldState()">
+      <select class="lk-unit" id="ymUnit" aria-label="Makes unit" onchange="showYieldState()"></select>
+    </div>
+    <label class="ym-est-row"><input class="cv-est" id="ymEst" type="checkbox" onchange="showYieldState()"> <span><b>Estimate</b> — Tick if this is a guess, not measured</span></label>
+    <div class="nb-label">Portion (optional)</div>
+    <div class="lk-fields">
+      <input class="lk-qty" id="ymPQty" type="text" inputmode="decimal" placeholder="Amount" autocomplete="off" oninput="showYieldState()">
+      <select class="lk-unit" id="ymPUnit" aria-label="Portion unit" onchange="showYieldState()"></select>
+    </div>
+    <div class="ym-msg" id="ymMsg" role="status"></div>
+    <div class="modal-btns" style="margin-top:18px">
+      <button class="modal-btn cancel" id="ymCancel" onclick="closeYield()">Cancel</button>
+      <button class="modal-btn save" id="ymSave" onclick="saveYield()" disabled>Save</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -258,6 +302,9 @@ var costs=[], costById={};        // ingredient_costs rows (active and retired)
 var orderItems=[], orderById={};  // active order_items
 var links=[];            // active recipe_lines rows
 var convs=[];            // ingredient_conversions rows (Slice 4)
+var yields=[];           // recipe_yields rows (Slice 5a)
+var priceMap={};         // ingredient_costs as recipeCost()'s `prices` input
+var ym=null;             // the recipe whose Makes/Portion is being edited: {rec, old} ; null when closed
 var cv=null;             // the conversion being set: {costId, kind, unit, old} ; null when closed
 var costsLoaded=false, costsError=false;
 var loadGen=0;
@@ -314,7 +361,7 @@ function init(){
    would make "not linked" or "no price yet" a lie. */
 function loadCosting(gen){
   costsLoaded=false;costsError=false;
-  var left=4,bad=false,got={};
+  var left=5,bad=false,got={};
   function done(k,r,status){
     if(gen!==loadGen)return;
     if(!okRows(r,status))bad=true;else got[k]=r;
@@ -324,13 +371,18 @@ function loadCosting(gen){
     orderItems=got.o;orderById={};orderItems.forEach(function(o){orderById[o.id]=o;});
     links=got.l;
     convs=got.v;
+    yields=got.y;
+    priceMap={};costs.forEach(function(c){priceMap[c.id]=priceIn(c);});
     costsLoaded=true;rerender();
   }
   api('GET','ingredient_costs','select=id,name,order_item_id,pack_qty,pack_unit,pack_price,active&'+LOC,null,function(r,s){done('c',r,s);});
   api('GET','order_items','select=id,name,vendor&'+LOC+'&active=eq.true&order=vendor.asc,sort_order.asc',null,function(r,s){done('o',r,s);});
   api('GET','recipe_lines','select=id,recipe_id,line_text,occurrence,component,qty,unit,ingredient_cost_id,sub_recipe_id,skip,linked_name,active&'+LOC+'&active=eq.true',null,function(r,s){done('l',r,s);});
   api('GET','ingredient_conversions',CONV_COLS+'&'+LOC,null,function(r,s){done('v',r,s);});
+  api('GET','recipe_yields',YIELD_COLS+'&'+LOC,null,function(r,s){done('y',r,s);});
 }
+var YIELD_COLS='select=id,recipe_id,yield_qty,yield_unit,yield_estimate,portion_qty,portion_unit,updated_at';
+function yieldFor(id){for(var i=0;i<yields.length;i++)if(Number(yields[i].recipe_id)===Number(id))return yields[i];return null;}
 var CONV_COLS='select=id,ingredient_cost_id,from_kind,from_qty,from_unit,to_qty,to_unit,estimate,note,updated_at';
 /* The conversion a line needs: this price row, this kind of measure (ruling 7).
    The page finds it; lineCost() is handed it as values and looks nothing up. */
@@ -345,7 +397,7 @@ function convValues(v){
 }
 /* "1 qt = 0.8 lb" - display only */
 function convText(v){return fmtAmount(v.from_qty)+' '+v.from_unit+' = '+fmtAmount(v.to_qty)+' '+v.to_unit;}
-function rerender(){if(openId!=null)openRecipe(openId,true);if(lk)renderPick();}
+function rerender(){if(recipes.length)renderList();if(openId!=null)openRecipe(openId,true);if(lk)renderPick();}
 
 /* ---- Price rows ---- */
 function nameOf(c){var o=c.order_item_id!=null?orderById[c.order_item_id]:null;return o?o.name:(c.name||'(unnamed)');}
@@ -357,69 +409,113 @@ function priceOf(c){
   function n(v){return v==null||v===''?null:Number(v);}
   return {pack_qty:n(c.pack_qty),pack_unit:c.pack_unit,pack_price:n(c.pack_price)};
 }
+/* one price row as recipeCost() takes it: values, with the name this page shows */
+function priceIn(c){var p=priceOf(c);p.active=c.active!==false;p.name=nameOf(c);return p;}
 function isPriced(c){return !!c&&RecipeMath.lineCost(1,c.pack_unit||'each',priceOf(c)).reason!=='no price yet';}
 
-/* ---- Lines ---- */
-function linesOf(rec){
-  var out=[],part=null,seen={},raw=String(rec.ingredients||'').split(/\r?\n/);
-  for(var i=0;i<raw.length;i++){
-    var t=raw[i].trim();
-    if(!t)continue;
-    if(RecipeMath.isPartHeader(t)){part=t;out.push({header:true,text:t});continue;}
-    seen[t]=(seen[t]||0)+1;
-    out.push({header:false,text:t,occurrence:seen[t],part:part,read:RecipeMath.readAmount(t)});
-  }
-  return out;
+/* ---- Lines ----
+   The text matching, the guards and the total live in RecipeMath.recipeCost()
+   (Slice 5a ruling 1): one copy, so every page gets the same answer. Before the
+   costing tables load it is handed no links - the lines still read; their
+   state shows as loading. */
+function costOf(rec){
+  return RecipeMath.recipeCost({recipeId:Number(rec.id),text:rec.ingredients,links:costsLoaded?links:[],
+    prices:priceMap,conversions:costsLoaded?convs:[],yield:costsLoaded?yieldFor(rec.id):null});
 }
+function linesOf(rec){return costOf(rec).lines;}
 function lineCount(rec){return linesOf(rec).filter(function(l){return !l.header;}).length;}
-/* The stored link for a current line: same recipe, same text, same occurrence. */
-function linkFor(rec,line){
-  for(var i=0;i<links.length;i++){var k=links[i];
-    if(Number(k.recipe_id)===Number(rec.id)&&k.line_text===line.text&&Number(k.occurrence)===line.occurrence)return k;}
-  return null;
-}
-function normName(x){return String(x||'').toLowerCase().replace(/\s+/g,' ').trim();}
-/* Stored links for this recipe that match no current line: an edit in the
-   Recipe Database unlinked them. They count for nothing. */
-function orphansOf(rec){
-  var cur={};linesOf(rec).forEach(function(l){if(!l.header)cur[l.text+'\u0000'+l.occurrence]=true;});
-  return links.filter(function(k){return Number(k.recipe_id)===Number(rec.id)&&!cur[k.line_text+'\u0000'+Number(k.occurrence)];});
-}
 function fmtAmount(a){return String(+Number(a).toFixed(3));}        // display only
 function fmtMoney(n){return '$'+Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}  // display only
-/* What a line is, in one place: the recipe screen and the tests read this. */
+/* What a line is, in one place: recipeCost()'s line, plus the page's own
+   'loading' and the price row it was costed from (for its name and vendor). */
 function lineState(rec,line){
   if(!costsLoaded)return {kind:'loading'};
-  var k=linkFor(rec,line);
+  var k=line.link;
   if(!k)return {kind:'not linked'};
-  if(k.skip)return {kind:'skip',link:k};
+  if(line.kind==='skip')return {kind:'skip',link:k};
   var c=costById[k.ingredient_cost_id];
-  /* Guards, decided here and never by the math (ruling 2). Each one stops the
-     line counting, with its reason. A price row that is retired - or gone -
-     cannot cost anything; a name that changed since the link was made may be
-     the order-ID reuse (a different product under the old row). */
-  if(!c||c.active===false)return {kind:'price retired',link:k,cost:c};
-  if(normName(k.linked_name)!==normName(nameOf(c)))return {kind:'renamed',link:k,cost:c,was:k.linked_name,now:nameOf(c)};
-  var conv=convFor(c.id,k.unit);
-  var res=RecipeMath.lineCost(Number(k.qty),k.unit,priceOf(c),convValues(conv));
-  /* costed THROUGH the conversion only when the units don't meet on their own */
-  var via=conv&&RecipeMath.convert(1,k.unit,c.pack_unit)===null?conv:null;
-  return {kind:res.reason?res.reason:'costed',link:k,cost:c,res:res,conv:via};
+  return {kind:line.kind,link:k,cost:c,res:{cost:line.cost,was:line.was,now:line.now,soft:line.soft},
+          conv:line.conv,was:line.was,now:line.now};
 }
 
 /* ---- The list ---- */
 function renderList(){
-  document.getElementById('countTag').innerHTML='<b>'+recipes.length+'</b> recipes';
-  if(!recipes.length){document.getElementById('listBody').innerHTML='<div class="empty-state"><h3>No recipes</h3><p>Active recipes in the Recipe Database appear here.</p></div>';return;}
-  var html='';
+  var tag=document.getElementById('countTag');
+  if(!recipes.length){tag.innerHTML='<b>0</b> recipes';document.getElementById('listBody').innerHTML='<div class="empty-state"><h3>No recipes</h3><p>Active recipes in the Recipe Database appear here.</p></div>';return;}
+  var html='',done=0,started=0;
   recipes.forEach(function(rec){
-    var n=lineCount(rec);
+    var r=costOf(rec),n=r.lines.filter(function(l){return !l.header;}).length;
     var meta=[rec.category,rec.station].filter(Boolean).map(esc).join(' · ');
+    var st=n+' line'+(n===1?'':'s'),per='';
+    if(costsLoaded&&n){
+      if(r.complete){done++;st=esc(batchText(r,yieldFor(rec.id)));if(r.perYield!==null)per=esc(perText(r));}
+      else if(r.costed+r.skipped>0){started++;st=esc(soFarText(r,n));}
+      else st='not started · '+st;
+    }
     html+='<div class="ing-row" data-id="'+esc(rec.id)+'" onclick="openRecipe('+Number(rec.id)+')">'
         +'<div class="ing-main"><div class="ing-name">'+esc(rec.name)+'</div>'
-        +'<div class="ing-pack">'+(meta?meta+' · ':'')+n+' line'+(n===1?'':'s')+'</div></div></div>';
+        +'<div class="ing-pack">'+(meta?meta+' · ':'')+st+'</div>'
+        +(per?'<div class="ing-per">'+per+'</div>':'')+'</div></div>';
   });
+  tag.innerHTML='<b>'+recipes.length+'</b> recipes'+(costsLoaded?' · <b>'+done+'</b> complete · <b>'+started+'</b> started':'');
   document.getElementById('listBody').innerHTML=html;
+}
+
+/* ---- The numbers (Slice 5a, rulings 7-9). Rounded HERE only, for the eye. */
+var REASON_ORDER=['not linked','no amount','no price yet','needs a conversion','conversion no longer matches','renamed','price retired','recipe inside'];
+function est(r){return r.estimate?' · estimate':'';}
+function unitWord(u){return u==='each'?'each':'/ '+u;}
+function makesText(y){return fmtAmount(y.yield_qty)+' '+RecipeMath.normaliseUnit(y.yield_unit);}
+function portionMoney(c){return c<0.005?'under $0.01':fmtMoney(c);}
+function batchText(r,y){
+  var n=r.costed+r.skipped;
+  if(!r.costed)return '$0.00 batch · all '+n+' line'+(n===1?'':'s')+' not costed on purpose';
+  return fmtMoney(r.total)+' batch'+(r.yieldUnit&&y?' · makes '+makesText(y):'')+est(r);
+}
+function perText(r){
+  var t=fmtMoney(r.perYield)+' '+unitWord(r.yieldUnit);
+  if(r.portion&&r.portion.cost!==null)t+=' · '+portionMoney(r.portion.cost)+' / '+fmtAmount(r.portion.qty)+' '+r.portion.unit+' portion';
+  return t+est(r);
+}
+function soFarText(r,n){return fmtMoney(r.total)+' so far · '+r.notCosted+' of '+n+' line'+(n===1?'':'s')+' not costed'+est(r);}
+function softText(r){
+  var seen={},out=[];
+  r.soft.forEach(function(x){var w=x.input==='estimated yield'?'the yield':x.input==='guessed price'?x.name+' price':x.name+' conversion';if(!seen[w]){seen[w]=1;out.push(w);}});
+  return out.join(', ');
+}
+function totalHtml(rec,r){
+  var n=r.lines.filter(function(l){return !l.header;}).length;
+  if(!costsLoaded||!n)return '';
+  var h='',cls='rc-total';
+  if(r.complete){
+    var batch=batchText(r,yieldFor(rec.id));
+    h+='<div class="rc-total-main">'+esc(batch)+'</div>';
+    if(r.perYield!==null)h+='<div class="rc-total-per">'+esc(perText(r))+'</div>';
+    else h+='<div class="rc-total-note">Set Makes to see the cost per unit.</div>';
+  }else if(r.costed+r.skipped===0){
+    cls+=' so-far';
+    h+='<div class="rc-total-main">Not started · '+n+' line'+(n===1?'':'s')+'</div>';
+  }else{
+    cls+=' so-far';
+    h+='<div class="rc-total-main">'+esc(soFarText(r,n))+'</div>';
+    var why=REASON_ORDER.filter(function(k){return r.reasons[k];}).map(function(k){return r.reasons[k]+' '+k;});
+    if(why.length)h+='<div class="rc-total-why"><span class="ing-pack unset">'+esc(why.join(' · '))+'</span></div>';
+    if(r.skipped)h+='<div class="rc-total-note">'+r.skipped+' not costed on purpose</div>';
+    h+='<div class="rc-total-note">Cost per '+esc(r.yieldUnit||'unit')+' shows when every line is costed.</div>';
+  }
+  if(r.portion&&r.portion.reason==='needs a conversion')
+    h+='<div class="rc-total-note">portion: <span class="ing-pack unset">needs a conversion</span> — '+esc(rec.name)+' is made by the '+esc(r.yieldUnit)+'</div>';
+  if(r.estimate)h+='<div class="rc-total-note">Includes an estimate: '+esc(softText(r))+'</div>';
+  return '<div class="'+cls+'" id="rcTotal">'+h+'</div>';
+}
+function makesHtml(rec){
+  if(!costsLoaded)return '';
+  var y=yieldFor(rec.id),h='';
+  var hasY=y&&y.yield_qty!=null&&y.yield_unit,hasP=y&&y.portion_qty!=null&&y.portion_unit;
+  h+=hasY?'<span>Makes <b>'+esc(makesText(y))+'</b>'+(y.yield_estimate?' · estimate':'')+'</span>':'<span class="rc-unset">Makes — not set</span>';
+  if(hasP)h+='<span>Portion <b>'+esc(fmtAmount(y.portion_qty)+' '+RecipeMath.normaliseUnit(y.portion_unit))+'</b>'+(hasY?'':' · set Makes to cost a portion')+'</span>';
+  h+='<button class="link-btn" id="rcMakesEdit" onclick="openYield('+Number(rec.id)+')">Edit</button>';
+  return '<div class="rc-makes" id="rcMakes">'+h+'</div>';
 }
 
 /* ---- One recipe ---- */
@@ -460,12 +556,13 @@ function openRecipe(id,keepScroll){
   var rec=recipeById(id);
   if(!rec)return;
   openId=Number(rec.id);
-  var lines=linesOf(rec),n=0;
+  var r=costOf(rec),lines=r.lines,n=0;
   var html='<button class="rc-back" onclick="closeRecipe()">← Recipes</button>'
           +'<div class="rc-title">'+esc(rec.name)+'</div>';
   var meta=[rec.category,rec.station].filter(Boolean).map(esc).join(' · ');
   lines.forEach(function(l){if(!l.header)n++;});
   html+='<div class="rc-sub">'+(meta?meta+' · ':'')+n+' line'+(n===1?'':'s')+'</div>';
+  html+=makesHtml(rec);
   if(!n)html+='<div class="empty-state"><h3>No ingredients</h3><p>This recipe has no ingredient lines yet.</p></div>';
   lines.forEach(function(l,i){
     if(l.header){html+='<div class="vhead">'+esc(l.text)+'</div>';return;}
@@ -473,8 +570,9 @@ function openRecipe(id,keepScroll){
         +'<div class="rc-text">'+esc(l.text)+'</div>'
         +'<div class="rc-read">'+stateHtml(rec,l)+'</div></div>';
   });
+  html+=totalHtml(rec,r);
   if(costsLoaded){
-    var gone=orphansOf(rec);
+    var gone=r.orphans;
     if(gone.length){
       html+='<div class="vhead rc-gone-head">No longer in the recipe</div>'
           +'<div class="rc-gone-note">These were linked, but the recipe no longer has the line. They count for nothing.</div>';
@@ -517,7 +615,7 @@ function openLink(i){
   var line=linesOf(rec)[i];if(!line||line.header)return;
   if(!costsLoaded){showToast(costsError?'The price list didn’t load':'Still loading the price list',!!costsError);if(costsError)loadCosting(loadGen);return;}
   lk={rec:rec,line:line};
-  var k=linkFor(rec,line);
+  var k=line.link;
   document.getElementById('lkTitle').textContent=line.text;
   document.getElementById('lkSub').textContent=rec.name+(line.part?' · '+line.part:'');
   pickId=null;
@@ -545,7 +643,7 @@ function openLink(i){
 function renderOld(k){
   var box=document.getElementById('lkOld'),h='';
   if(!k){
-    orphansOf(lk.rec).forEach(function(o){
+    costOf(lk.rec).orphans.forEach(function(o){
       var c=costById[o.ingredient_cost_id];
       if(o.skip||!c||c.active===false||!isPriced(c))return;
       h+='<button class="link-btn lk-old-btn" onclick="useOld('+Number(o.id)+')">Use the old link: '+esc(oldLinkText(o))+'</button>';
@@ -675,7 +773,7 @@ function convUsers(costId,kind){
     var hit=false;
     linesOf(rec).forEach(function(l){
       if(l.header)return;
-      var k=linkFor(rec,l);
+      var k=l.link;
       if(!k||k.skip||Number(k.ingredient_cost_id)!==Number(costId)||RecipeMath.measureOf(k.unit)!==kind)return;
       n++;hit=true;
     });
@@ -808,6 +906,115 @@ function writeConv(){
   }
 }
 
+/* ---- Makes and Portion (Slice 5a, ruling 5) ------------------------------
+   Opens with what is saved, or empty - never a suggested number. Amount and
+   unit go together (the table's pair checks); the modal says so in words
+   before anything is sent. Emptying both boxes of a pair clears it. */
+function ymUnits(sel){
+  var h='<option value="">Unit…</option>';
+  RecipeMath.units().forEach(function(u){h+='<option value="'+esc(u.unit)+'"'+(u.unit===sel?' selected':'')+'>'+esc(u.unit)+'</option>';});
+  return h;
+}
+function openYield(id){
+  if(!costsLoaded||ymSaving)return;
+  var rec=recipeById(id);if(!rec)return;
+  var y=yieldFor(rec.id);
+  ym={rec:rec,old:y};
+  document.getElementById('ymSub').textContent=rec.name;
+  document.getElementById('ymQty').value=y&&y.yield_qty!=null?fmtAmount(y.yield_qty):'';
+  document.getElementById('ymUnit').innerHTML=ymUnits(y&&y.yield_unit?RecipeMath.normaliseUnit(y.yield_unit)||'':'');
+  document.getElementById('ymEst').checked=!!(y&&y.yield_estimate);
+  document.getElementById('ymPQty').value=y&&y.portion_qty!=null?fmtAmount(y.portion_qty):'';
+  document.getElementById('ymPUnit').innerHTML=ymUnits(y&&y.portion_unit?RecipeMath.normaliseUnit(y.portion_unit)||'':'');
+  document.getElementById('yieldModal').classList.add('show');
+  showYieldState();
+}
+/* one pair: {qty, unit} | 'empty' | an error in words. Amounts parse as the link editor's. */
+function ymPair(qId,uId,label){
+  var raw=String(document.getElementById(qId).value||'').trim(),u=document.getElementById(uId).value;
+  if(!raw&&!u)return {empty:true};
+  var q=/^\d*\.?\d+$/.test(raw)?Number(raw):null;
+  if(!raw)return {err:label+' needs an amount as well as a unit.'};
+  if(!(q>0))return {err:label+' amount must be a number above 0.'};
+  if(!u)return {err:label+' needs a unit as well as an amount.'};
+  return {qty:q,unit:u};
+}
+function yieldDraft(){
+  var m=ymPair('ymQty','ymUnit','Makes'),p=ymPair('ymPQty','ymPUnit','Portion');
+  return {m:m,p:p,err:m.err||p.err||null};
+}
+function showYieldState(){
+  if(!ym)return;
+  var d=yieldDraft();
+  document.getElementById('ymMsg').textContent=d.err||(d.p.qty&&d.m.empty?'Set Makes to cost a portion.':'');
+  /* nothing to save: both pairs empty and nothing saved, or exactly what is saved */
+  var o=ym.old,same=d.m.empty&&d.p.empty&&!o;
+  if(!d.err&&o)same=(d.m.empty?o.yield_qty==null:(Number(o.yield_qty)===d.m.qty&&RecipeMath.normaliseUnit(o.yield_unit)===d.m.unit))
+    &&(d.p.empty?o.portion_qty==null:(Number(o.portion_qty)===d.p.qty&&RecipeMath.normaliseUnit(o.portion_unit)===d.p.unit))
+    &&!!o.yield_estimate===document.getElementById('ymEst').checked;
+  document.getElementById('ymSave').disabled=ymSaving||!!d.err||same;
+}
+var ymSaving=false;
+function closeYield(){if(ymSaving)return;document.getElementById('yieldModal').classList.remove('show');ym=null;}
+/* Ruling 6: one upsert on recipe_id - a retry lands on the same row. Same
+   write path as a conversion: everything locked in flight, a second tap
+   ignored, 15s, a lost answer read back by recipe_id and compared with what
+   was sent. Writes recipe_yields ONLY; nothing is deleted - a cleared pair is
+   two nulls. */
+var YIELD_UPSERT='on_conflict=recipe_id';
+function yieldPayload(){
+  var d=yieldDraft(),m=d.m.empty?null:d.m,p=d.p.empty?null:d.p;
+  return {location:LOCATION,recipe_id:Number(ym.rec.id),
+          yield_qty:m?m.qty:null,yield_unit:m?m.unit:null,
+          yield_estimate:!!m&&document.getElementById('ymEst').checked,
+          portion_qty:p?p.qty:null,portion_unit:p?p.unit:null,
+          updated_at:new Date().toISOString()};
+}
+function lockYield(on){
+  ymSaving=on;
+  ['ymQty','ymUnit','ymEst','ymPQty','ymPUnit','ymCancel','ymSave'].forEach(function(id){document.getElementById(id).disabled=on;});
+  document.getElementById('ymSave').textContent=on?'Saving…':'Save';
+  if(!on)showYieldState();
+}
+function yieldReadBack(p,cb){
+  api('GET','recipe_yields',YIELD_COLS+'&'+LOC+'&recipe_id=eq.'+p.recipe_id,null,function(r,status){
+    if(!okRows(r,status)){cb(null,false);return;}
+    var row=r[0]||null;
+    function n(v){return v==null?null:Number(v);}
+    var same=!!row&&n(row.yield_qty)===p.yield_qty&&(row.yield_unit||null)===p.yield_unit&&!!row.yield_estimate===p.yield_estimate
+      &&n(row.portion_qty)===p.portion_qty&&(row.portion_unit||null)===p.portion_unit;
+    cb(row,same);
+  });
+}
+function landYield(row){
+  for(var i=0;i<yields.length;i++)if(Number(yields[i].recipe_id)===Number(row.recipe_id)){yields[i]=row;return;}
+  yields.push(row);
+}
+function saveYield(){
+  if(ymSaving||!ym)return;                    // a second tap while one is out does nothing
+  var d=yieldDraft();
+  if(d.err||document.getElementById('ymSave').disabled)return;
+  var p=yieldPayload(),mine=ym;
+  lockYield(true);
+  api('POST','recipe_yields',YIELD_UPSERT,p,function(r,status){
+    var a=answerOf(r,status);
+    if(a==='ok'){saved(r[0]);return;}
+    if(a==='no'){failed('Not saved — the server refused it. Nothing changed.');return;}
+    yieldReadBack(p,function(row,same){
+      if(row&&same){saved(row);return;}
+      failed(row===null&&same===false?'Could not confirm the save. Tap Save to try again — it cannot make a second row.':'Not saved. Tap Save to try again.');
+    });
+  },API_TIMEOUT,'resolution=merge-duplicates,return=representation');
+  function failed(msg){lockYield(false);showToast(msg,true,6000);}
+  function saved(row){
+    landYield(row);
+    lockYield(false);
+    if(ym===mine)closeYield();
+    showToast('Makes and portion saved');
+    rerender();                               // the recipe, its total and the list
+  }
+}
+
 /* ---- The write path (Slice 3, step 5) -------------------------------------
    As tempest_costing.html's slice 4 left it, ported the way tempest_inventory
    did: every control locked while a write is out; a 15s timeout; and a
@@ -916,6 +1123,7 @@ var st;
 function showToast(msg,isErr,ms){var t=document.getElementById('toast');t.textContent=(isErr?'⚠ ':'✓ ')+msg;t.classList.toggle('error',!!isErr);t.classList.add('show');clearTimeout(st);st=setTimeout(function(){t.classList.remove('show');},ms||1600);}
 document.getElementById('linkModal').addEventListener('click',function(e){if(e.target===this)closeLink();});
 document.getElementById('convModal').addEventListener('click',function(e){if(e.target===this)closeConv();});
+document.getElementById('yieldModal').addEventListener('click',function(e){if(e.target===this)closeYield();});
 
 boot();
 </script>

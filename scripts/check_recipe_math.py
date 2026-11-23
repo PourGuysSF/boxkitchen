@@ -260,6 +260,107 @@ MEASURES = [("cup", "volume"), ("TB.", "volume"), ("oz", "weight"), ("#", "weigh
             ("each", "each"), ("dozen", "each"), ("jug", "jug"), ("bunch", "bunch"),
             ("splodge", None)]
 
+
+# ---- recipeCost() (Slice 5a) ------------------------------------------------
+# Built from check_recipe_costing.py's own fixtures, so the parity cases are the
+# very recipes the page's tests use. Expected values worked by hand.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import check_recipe_costing as RC  # noqa: E402  (constants only; its main() is guarded)
+
+def PRICES(costs=None, orders=None):
+    costs = RC.COSTS if costs is None else costs
+    orders = {o["id"]: o for o in (RC.ORDERS if orders is None else orders)}
+    out = {}
+    for c in costs:
+        o = orders.get(c.get("order_item_id"))
+        out[str(c["id"])] = {"pack_qty": c["pack_qty"], "pack_unit": c["pack_unit"], "pack_price": c["pack_price"],
+                             "active": c["active"], "name": o["name"] if o else c["name"]}
+    return out
+
+def TXT(rid, extra=()):
+    for r in list(RC.RECIPES) + [RC.PORK, RC.PASTA] + list(extra):
+        if r["id"] == rid:
+            return r["ingredients"]
+
+def Y(q=None, u=None, est=False, pq=None, pu=None):
+    return {"yield_qty": q, "yield_unit": u, "yield_estimate": est, "portion_qty": pq, "portion_unit": pu}
+
+H = "H"   # a part header in an expected line list
+# expected line: (kind, cost or None[, was, now]) ; H for a header
+RECIPE_COSTS = [
+  # parity: the page's "links" scenario, Mac & Cheese, line for line
+  ("parity: Mac & Cheese, every state", dict(recipeId=104, text=TXT(104), links=RC.LINKS, prices=PRICES(), conversions=[], yield_=None),
+   dict(lines=[H, ("costed", 4.5), ("costed", 9.235), ("costed", 1.0), H, ("needs a conversion", None),
+               ("no price yet", None), ("not linked", None), ("skip", None)],
+        total=14.735, complete=False, costed=3, skipped=1, notCosted=3,
+        reasons={"needs a conversion": 1, "no price yet": 1, "not linked": 1}, soft=[], perYield=None, portion=None, orphans=[])),
+  # parity: the page's "guards" scenario - renamed, retired, a name that only differs by case/space, orphans
+  ("parity: guards", dict(recipeId=104, text=TXT(104), links=RC.LINKS_GUARDS, prices=PRICES(), conversions=[], yield_=None),
+   dict(lines=[H, ("not linked", None), ("renamed", None, "Heirloom tomato", "Velveeta"), ("costed", 1.0), H,
+               ("not linked", None), ("not linked", None), ("price retired", None), ("not linked", None)],
+        total=1.0, complete=False, costed=1, skipped=0, notCosted=6,
+        reasons={"not linked": 4, "renamed": 1, "price retired": 1}, orphans=[1, 5])),
+  # a repeated line: the SECOND "salt" is the linked one
+  ("parity: Pork Belly, occurrence 2", dict(recipeId=105, text=TXT(105), links=RC.LINKS_GUARDS, prices=PRICES(), conversions=[], yield_=None),
+   dict(lines=[("not linked", None), ("not linked", None), ("no price yet", None)], total=0, complete=False,
+        costed=0, skipped=0, notCosted=3, orphans=[])),
+  # parity: the page's conversion scenarios - an estimated conversion, two recipes
+  ("parity: Mac & Cheese through 1 qt = 0.8 lb", dict(recipeId=104, text=TXT(104), links=RC.LINKS_CONV, prices=PRICES(), conversions=[RC.CONV_OLD], yield_=None),
+   dict(lines=[H, ("not linked", None), ("not linked", None), ("costed", 1.0), H, ("costed", 2.4), ("not linked", None),
+               ("not linked", None), ("not linked", None)], total=3.4, complete=False,
+        soft=[{"input": "estimated conversion", "text": "2 qt. dried macaroni noodles", "name": "Macaroni noodles"}], estimate=True)),
+  # complete, a same-kind portion (2 fl oz of a recipe made by the qt)
+  ("complete: Pasta Salad, 1 qt, 2 fl oz portion", dict(recipeId=106, text=TXT(106), links=RC.LINKS_CONV, prices=PRICES(), conversions=[RC.CONV_OLD], yield_=Y(1, "qt", False, 2, "fl oz")),
+   dict(lines=[("costed", 0.3), ("costed", 1.5), ("skip", None)], total=1.8, complete=True, costed=2, skipped=1, notCosted=0,
+        reasons={}, orphans=[5], perYield=1.8, yieldUnit="qt", portion={"qty": 2, "unit": "fl oz", "cost": 0.1125, "reason": None},
+        soft=[{"input": "estimated conversion", "text": "1 cup macaroni", "name": "Macaroni noodles"}], estimate=True)),
+  # the same with no estimate at all (conversion not estimated)
+  ("complete, no estimate", dict(recipeId=106, text=TXT(106), links=RC.LINKS_CONV, prices=PRICES(), conversions=[dict(RC.CONV_OLD, estimate=False)], yield_=Y("1", "quart")),
+   dict(total=1.8, complete=True, soft=[], estimate=False, perYield=1.8, yieldUnit="qt", portion=None)),
+  # an other-kind portion (by the ounce, made by the quart) -> needs a conversion; estimated yield
+  ("other-kind portion, estimated yield", dict(recipeId=106, text=TXT(106), links=RC.LINKS_CONV, prices=PRICES(), conversions=[dict(RC.CONV_OLD, estimate=False)], yield_=Y(1, "qt", True, 4, "oz")),
+   dict(total=1.8, complete=True, perYield=1.8, portion={"qty": 4, "unit": "oz", "cost": None, "reason": "needs a conversion"},
+        soft=[{"input": "estimated yield", "text": None, "name": None}], estimate=True)),
+  # a portion with no Makes; a half-set yield is no yield
+  ("portion with no yield", dict(recipeId=106, text=TXT(106), links=RC.LINKS_CONV, prices=PRICES(), conversions=[RC.CONV_OLD], yield_=Y(None, None, False, 2, "fl oz")),
+   dict(perYield=None, yieldUnit=None, portion={"qty": 2, "unit": "fl oz", "cost": None, "reason": "no yield"})),
+  ("half-set yield", dict(recipeId=106, text=TXT(106), links=RC.LINKS_CONV, prices=PRICES(), conversions=[RC.CONV_OLD], yield_=Y(3, None)),
+   dict(perYield=None, yieldUnit=None, portion=None)),
+  # incomplete: perYield is still returned (hiding it is the page's rule)
+  ("incomplete still returns perYield", dict(recipeId=104, text=TXT(104), links=RC.LINKS, prices=PRICES(), conversions=[], yield_=Y(2, "qt", False, 1, "cup")),
+   dict(complete=False, total=14.735, perYield=7.3675, yieldUnit="qt", portion={"qty": 1, "unit": "cup", "cost": 1.841875, "reason": None})),
+  # every unit kind: own count word, each, volume, weight; a count yield
+  ("every unit kind, count yield", dict(recipeId=7, text="3 bunch cilantro\n12 limes\n1 gal stock\n8 oz. butter",
+       links=[{"recipe_id": 7, "line_text": "3 bunch cilantro", "occurrence": 1, "qty": 3, "unit": "bunch", "ingredient_cost_id": 21, "linked_name": "Cilantro", "skip": False, "active": True},
+              {"recipe_id": 7, "line_text": "12 limes", "occurrence": 1, "qty": 12, "unit": "each", "ingredient_cost_id": 22, "linked_name": "Limes", "skip": False, "active": True},
+              {"recipe_id": 7, "line_text": "1 gal stock", "occurrence": 1, "qty": 1, "unit": "gal", "ingredient_cost_id": 23, "linked_name": "Stock", "skip": False, "active": True},
+              {"recipe_id": 7, "line_text": "8 oz. butter", "occurrence": 1, "qty": 8, "unit": "oz", "ingredient_cost_id": 3, "linked_name": "Butter", "skip": False, "active": True},
+              {"recipe_id": 7, "line_text": "8 oz. butter", "occurrence": 1, "qty": 9, "unit": "oz", "ingredient_cost_id": 3, "linked_name": "Butter", "skip": False, "active": False}],
+       prices=dict(PRICES(), **{"21": {"pack_qty": 12, "pack_unit": "bunch", "pack_price": 18, "active": True, "name": "Cilantro"},
+                                "22": {"pack_qty": 100, "pack_unit": "each", "pack_price": 25, "active": True, "name": "Limes"},
+                                "23": {"pack_qty": 4, "pack_unit": "qt", "pack_price": 10, "active": True, "name": "Stock"}}),
+       conversions=[], yield_=Y(12, "each", False, 1, "each")),
+   dict(lines=[("costed", 4.5), ("costed", 3.0), ("costed", 10.0), ("costed", 1.0)], total=18.5, complete=True,
+        perYield=18.5 / 12, yieldUnit="each", portion={"qty": 1, "unit": "each", "cost": 18.5 / 12, "reason": None}, orphans=[])),
+  # no amount, conversion no longer matches, recipe inside
+  ("no amount, no longer matches, recipe inside", dict(recipeId=8, text="salt\n2 qt noodles\nhouse stock",
+       links=[{"recipe_id": 8, "line_text": "salt", "occurrence": 1, "qty": None, "unit": None, "ingredient_cost_id": 3, "linked_name": "Butter", "skip": False, "active": True},
+              {"recipe_id": 8, "line_text": "2 qt noodles", "occurrence": 1, "qty": 2, "unit": "qt", "ingredient_cost_id": 4, "linked_name": "Macaroni noodles", "skip": False, "active": True},
+              {"recipe_id": 8, "line_text": "house stock", "occurrence": 1, "qty": 1, "unit": "qt", "ingredient_cost_id": None, "sub_recipe_id": 104, "linked_name": None, "skip": False, "active": True}],
+       prices=dict(PRICES(), **{"4": dict(PRICES()["4"], pack_qty=1, pack_unit="case")}), conversions=[RC.CONV_OLD], yield_=None),
+   dict(lines=[("no amount", None), ("conversion no longer matches", None, "lb", "case"), ("recipe inside", None)],
+        total=0, complete=False, notCosted=3, reasons={"no amount": 1, "conversion no longer matches": 1, "recipe inside": 1}, soft=[], estimate=False)),
+  # no lines; every line skipped
+  ("no ingredient lines", dict(recipeId=103, text=None, links=[], prices={}, conversions=[], yield_=Y(1, "qt")),
+   dict(lines=[], total=0, complete=False, costed=0, skipped=0, notCosted=0, perYield=0)),
+  ("all skipped", dict(recipeId=9, text="salt TT\npepper TT",
+       links=[{"recipe_id": 9, "line_text": "salt TT", "occurrence": 1, "skip": True, "active": True},
+              {"recipe_id": 9, "line_text": "pepper TT", "occurrence": 1, "skip": True, "active": True}], prices={}, conversions=[], yield_=None),
+   dict(lines=[("skip", None), ("skip", None)], total=0, complete=True, costed=0, skipped=2, notCosted=0)),
+]
+for _n, _i, _w in RECIPE_COSTS:
+    _i["yield"] = _i.pop("yield_")
+
 # deliberate breaks: (name, exact text in recipe-math.js, replacement)
 BREAKS = [
     ("oz read as volume", "'oz':      { kind: 'weight', factor: 28.349523125 }",
@@ -277,6 +378,11 @@ BREAKS = [
     ("a guess not reported", "if (price.guess) out.soft.push('guessed price');", ""),
     ("ratio on raw to_qty, ignoring units", "var t = convert(c.to_qty, c.to_unit, toUnit);", "var t = c.to_qty;"),
     ("a rounded ratio", "return nu / ol;", "return Math.round(nu / ol);"),
+    ("an uncosted line summed as $0 and reported complete", "out.notCosted++;\n", "out.costed++;\n"),
+    ("a rounded line summed", "out.total += ln.cost;", "out.total += Math.round(ln.cost * 100) / 100;"),
+    ("an orphan treated as a current line", "if (!cur[k.line_text + '\\u0000' + Number(k.occurrence)]) out.orphans.push(k);", ""),
+    ("an estimated conversion not carried to estimate", "ln.soft.forEach(function (s) { out.soft.push({ input: s, text: ln.text, name: p.name }); });", ""),
+    ("a renamed line costed", "else if (normName(k.linked_name) !== normName(p.name)) { ln.kind = 'renamed'; ln.was = k.linked_name; ln.now = p.name; }", ""),
 ]
 
 HTML = """<!doctype html><html><head><meta charset="utf-8">
@@ -290,7 +396,34 @@ HTML = """<!doctype html><html><head><meta charset="utf-8">
   try {
     var R = RecipeMath;
     var SP = __SPELLINGS__, UN = __UNITS__, LN = __LINES__, CV = __CONV__, LC = __LC__, SCAN = __SCAN__;
-    var CH = __CHANGES__, MS = __MEASURES__;
+    var CH = __CHANGES__, MS = __MEASURES__, RCS = __RECIPES__;
+    RCS.forEach(function(x){
+      var r = R.recipeCost(x[1]), w = x[2], nm = 'recipeCost ' + x[0] + ': ';
+      if (w.lines) {
+        out.n++;
+        if (r.lines.length !== w.lines.length) fail(nm + r.lines.length + ' lines, want ' + w.lines.length);
+        w.lines.forEach(function(e, i){
+          out.n++;
+          var g = r.lines[i] || {};
+          if (e === 'H') { if (!g.header) fail(nm + 'line ' + i + ' should be a header'); return; }
+          if (g.kind !== e[0] || !near(g.cost, e[1])) fail(nm + 'line ' + i + ' ' + JSON.stringify(g.text) + ' = ' + g.kind + ' ' + g.cost + ', want ' + e[0] + ' ' + e[1]);
+          if (e[1] === null && g.cost === 0) fail(nm + 'line ' + i + ' is $0 but not costed');
+          if (e.length > 2 && (g.was !== e[2] || g.now !== e[3])) fail(nm + 'line ' + i + ' was/now ' + g.was + '/' + g.now + ', want ' + e[2] + '/' + e[3]);
+        });
+      }
+      ['total','perYield'].forEach(function(k){ if (k in w) { out.n++; if (!near(r[k], w[k])) fail(nm + k + ' = ' + r[k] + ', want ' + w[k]); } });
+      ['complete','costed','skipped','notCosted','yieldUnit','estimate'].forEach(function(k){ if (k in w) { out.n++; if (r[k] !== w[k]) fail(nm + k + ' = ' + r[k] + ', want ' + w[k]); } });
+      ['reasons','soft'].forEach(function(k){ if (k in w) { out.n++; if (JSON.stringify(r[k]) !== JSON.stringify(w[k])) fail(nm + k + ' = ' + JSON.stringify(r[k]) + ', want ' + JSON.stringify(w[k])); } });
+      if ('orphans' in w) { out.n++; var ids = r.orphans.map(function(k){ return k.id; }); if (JSON.stringify(ids) !== JSON.stringify(w.orphans)) fail(nm + 'orphans ' + JSON.stringify(ids) + ', want ' + JSON.stringify(w.orphans)); }
+      if ('portion' in w) {
+        out.n++;
+        var a = r.portion, b = w.portion;
+        if ((a === null) !== (b === null) || (b && (a.qty !== b.qty || a.unit !== b.unit || !near(a.cost, b.cost) || a.reason !== b.reason)))
+          fail(nm + 'portion ' + JSON.stringify(a) + ', want ' + JSON.stringify(b));
+      }
+      out.n++;
+      if (r.estimate !== (r.soft.length > 0)) fail(nm + 'estimate does not match soft');
+    });
     CH.forEach(function(x){
       out.n++;
       var r = R.conversionChange(x[1], x[2]);
@@ -365,6 +498,7 @@ def _run_in(td, chrome, js_src, scan):
                 .replace("__LC__", json.dumps(LINE_COSTS))
                 .replace("__CHANGES__", json.dumps(CHANGES))
                 .replace("__MEASURES__", json.dumps(MEASURES))
+                .replace("__RECIPES__", json.dumps(RECIPE_COSTS))
                 .replace("__SCAN__", json.dumps(scan)))
     path = os.path.join(td, "t.html")
     open(path, "w", encoding="utf-8").write(page)
