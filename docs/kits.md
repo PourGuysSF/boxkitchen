@@ -609,12 +609,11 @@ recipe"**.
 
 ## Later — not this build
 
-- **The Line PM link** (the next step, named by Stephen): tapping "Kit – Pork belly" on Line PM
-  opens `#pork-belly`. The item names don't match recipe names, so it needs a small item → kit
-  map, in `tempest_line.html` and `tempest_prep.html` (they share the code) or as a column on
-  `prep_items`. That is the shortcut Stephen described ("so they make sure everything needed
-  has been kitted"), and the natural moment to reconsider ticks.
-- **Ticks** on the kit sheet. Needs a table.
+- ~~**The Line PM link**: tapping a kit item on Line PM opens its sheet.~~ **Done and live**
+  (#188, #191, and #196 for Suadero and Chilorio): a SHEET → button on each mapped kit row,
+  with "← Line PM" back. See `docs/kits-line-link.md`.
+- **Ticks** on the kit sheet. Needs a table. Reconsidered with the Line PM link and decided
+  against for now (`docs/kits-line-link.md`, "Decisions").
 - **Manager-editable kits.** Needs a table; worth it once menu changes make code changes a
   chore.
 - **Scaling** (×½, ×2).
