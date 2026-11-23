@@ -1,6 +1,6 @@
 # Last done — every prep task says when it was last done, and a built kit says "make today"
 
-Status: **Slice 1 LIVE (#193, 2026-11-21). Slice 1b LIVE (#194, `58d9235`, 2026-11-22), phone check passed 2026-11-22. Slice 2 BUILT 2026-11-22 on `prep-last-done-2`, not pushed.** (Plan v1 2026-11-20, changed 2026-11-21 and 2026-11-22.) Written in the Last Done planner window from Stephen's requests
+Status: **Slice 1 LIVE (#193, 2026-11-21). Slice 1b LIVE (#194, `58d9235`, 2026-11-22), phone check passed 2026-11-22. Slice 2 LIVE (#195, `dbe5796`, 2026-11-22), screen check passed 2026-11-23.** (Plan v1 2026-11-20, changed 2026-11-21 and 2026-11-22.) Written in the Last Done planner window from Stephen's requests
 and answers on 2026-11-20. Every decision in the Decisions table is Stephen's; everything under
 "Planner rulings" is the planner's, with the reason. It goes into the repo as `docs/last-done.md`
 with Slice 1's PR. Slice 1 is built: see "Slice 1 as built" at the end.
@@ -445,7 +445,7 @@ before pushing**.
 
 ## Status
 
-**Slice 1 LIVE** (#193, `d023c85`, merged 2026-11-21). **Slice 1b LIVE** (#194, `58d9235`, merged 2026-11-22), phone check passed. **Slice 2 BUILT 2026-11-22 on `prep-last-done-2`, not pushed.** It is the last slice of this plan.
+**Slice 1 LIVE** (#193, `d023c85`, merged 2026-11-21). **Slice 1b LIVE** (#194, `58d9235`, merged 2026-11-22), phone check passed. **Slice 2 LIVE** (#195, `dbe5796`, merged 2026-11-22), screen check passed 2026-11-23. It is the last slice of this plan.
 
 ## Slice 1 as built
 
@@ -583,3 +583,15 @@ ticked today), 21 (a background fill), 22 (the tag making the line taller): **al
   Suadero by Chepe).
 - **Elsewhere:** PM shows no tag. A tagged line is 15px, the same as an untagged one. The same
   requests as before; GETs only.
+
+## Slice 2: phone check
+
+**Screen check passed** (Stephen, 2026-11-23, on his laptop while travelling):
+- A KIT READY box shows on the Line AM list.
+- On the previous day's Line PM list, that kit is ticked, with the same name in Who, and its
+  pill says KIT.
+- A kit ticked with no name puts no box on its morning row, which shows its normal "Last done"
+  line instead.
+
+**Still to do:** the walk-in look (is the kit's pan really there?), next time Stephen is in the
+kitchen.

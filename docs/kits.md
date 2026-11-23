@@ -1,7 +1,7 @@
 # Kits — what goes in each kit
 
 **Menu update (Suadero and Chilorio in, Spicy green sauce out): LIVE** (#196, `85692a1`,
-2026-11-22); **Stephen's phone check passed 2026-11-23.** See "Menu update as built" at the end.
+2026-11-22); **phone check passed 2026-11-22.** See "Menu update as built" at the end.
 
 Status: **built and shipped.** The plan (v1) was approved by Stephen on 2026-11-02, with one
 change: the build is split into five small slices, so each can be checked before the next
@@ -695,7 +695,7 @@ From `CLAUDE.md`, `docs/review-checklist.md`, and this window's rules:
 - Never write the site password or the manager PIN anywhere.
 - **Never push.** Pushing rebuilds the live site; Stephen approves that separately, every time.
 
-## Menu update as built (2026-11-22, `kits-menu-update`)
+## Menu update as built (2026-11-22, `kits-menu-update`, merged as #196)
 
 Ticket: `~/Developer/KITS-MENU-UPDATE-TICKET.md`. It ran after Last Done Slice 2 (#195), since
 it removes a pair that slice added.
@@ -747,7 +747,13 @@ and its date is now 2026-11-22. `KIT_MAKE` loses 673 → 567, leaving 9 pairs.
   to `tempest_line.html#pm`.
 - Recipes 69 and 70 re-read first: unchanged from the ticket.
 
-**Live as #196 (`85692a1`), 2026-11-22.** **Stephen's phone check, 2026-11-23, live:** the Kits
-list showed 9 kits ending Suadero and Chilorio, with no Spicy green sauce; both sheets read
-right; on Line PM both have SHEET →, which opens their sheet, and ← Line PM comes back to the PM
-list; Spicy green sauce has no button. His words: "everything passed my eye test."
+## Menu update: phone check
+
+**Passed** (Stephen, 2026-11-22). All five steps were checked on the phone:
+- The list shows 9 kits, ending Suadero ("4 containers") and Chilorio ("1 container"), with no
+  Spicy green sauce.
+- Suadero's four containers and its "Not in the kit" lines are right.
+- Chilorio has one container, "Pork in the sauce", and its last step is "Mixed together in one
+  half hotel pan".
+- On Line PM, Kit - Suadero and Kit- Chilorio have SHEET →, and Spicy green sauce has none.
+- Each SHEET → opens its sheet, and "← Line PM" comes back to the PM list.

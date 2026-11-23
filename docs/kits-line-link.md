@@ -8,7 +8,7 @@ Stephen's answers on 2026-11-08. Every decision below is Stephen's. It goes into
 **Slice 2 LIVE** (#191, `897d045`); **phone check passed 2026-11-19** (Stephen confirmed to the
 planner, 2026-11-22: "yes the 11/19 phone check passed"). See "Slice 1 as built" and
 "Slice 2 as built" below. **Kits menu update** (Suadero and Chilorio buttons): **LIVE** (#196,
-2026-11-22), phone check passed 2026-11-23; see `docs/kits.md` "Menu update as built". **The
+2026-11-22), phone check passed 2026-11-22; see `docs/kits.md` "Menu update as built". **The
 Line PM link is done.**
 
 It is the step `docs/kits.md` names first under "Later": tapping a kit item on Line PM opens
