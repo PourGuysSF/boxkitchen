@@ -229,10 +229,36 @@ LINE_COSTS = [
     ("guessed price", 4, "cup", P(1, "gal", 10, True), None, (2.5, None, ["guessed price"], None, None)),
     ("guess + estimate", 2, "qt", P(50, "lb", 30, True), CONV("volume", 1, "qt", 1.1, "lb", True),
      (1.32, None, ["estimated conversion", "guessed price"], None, None)),
+    # Slice 4: a cup line against a lb price, through 1 qt = 0.8 lb (0.5 qt -> 0.4 lb)
+    ("cup -> lb via 1 qt = 0.8 lb", 2, "cup", P(50, "lb", 30), CONV("volume", 1, "qt", 0.8, "lb"),
+     (0.24, None, [], None, None)),
     # no amount
     ("no amount", None, "cup", P(1, "gal", 10), None, (None, "no amount", [], None, None)),
     ("unknown unit", 2, "splodge", P(1, "gal", 10), None, (None, "no amount", [], None, None)),
 ]
+
+# conversionChange(old, new) -> ratio new/old, unrounded, or None (Slice 4)
+Q08 = CONV("volume", 1, "qt", 0.8, "lb")
+CHANGES = [
+    ("same conversion", Q08, Q08, 1),
+    ("x10 exactly", Q08, CONV("volume", 1, "qt", 8, "lb"), 10),
+    ("/10 exactly", Q08, CONV("volume", 1, "qt", 0.08, "lb"), 0.1),
+    ("9.99x", Q08, CONV("volume", 1, "qt", 7.992, "lb"), 9.99),
+    ("same thing, other spellings", Q08, CONV("volume", 1, "quart", 12.8, "oz"), 1),
+    ("same thing, other amounts", Q08, CONV("volume", 4, "cups", 0.8, "#"), 1),
+    ("1 cup = 4 oz vs 1 qt = 0.8 lb", Q08, CONV("volume", 1, "cup", 4, "oz"), 1.25),
+    ("no old row", None, Q08, None),
+    ("no new row", Q08, None, None),
+    ("count word", CONV("jug", 1, "jug", 5, "lb"), CONV("jug", 1, "jug", 50, "lb"), 10),
+    ("each vs dozen", CONV("each", 4, "each", 1, "lb"), CONV("each", 1, "dozen", 3, "lb"), 1),
+    ("different measure", Q08, CONV("jug", 1, "jug", 5, "lb"), None),
+    ("pack side changed kind", Q08, CONV("volume", 1, "qt", 1, "case"), None),
+    ("old answer zero", CONV("volume", 1, "qt", 0, "lb"), Q08, None),
+]
+# measureOf(unit) -> the from_kind a line's unit needs (exported in Slice 4)
+MEASURES = [("cup", "volume"), ("TB.", "volume"), ("oz", "weight"), ("#", "weight"),
+            ("each", "each"), ("dozen", "each"), ("jug", "jug"), ("bunch", "bunch"),
+            ("splodge", None)]
 
 # deliberate breaks: (name, exact text in recipe-math.js, replacement)
 BREAKS = [
@@ -249,6 +275,8 @@ BREAKS = [
      "out.cost = Math.round(inPack / price.pack_qty * price.pack_price * 100) / 100;"),
     ("an estimate not reported", "if (c.estimate) out.soft.push('estimated conversion');", ""),
     ("a guess not reported", "if (price.guess) out.soft.push('guessed price');", ""),
+    ("ratio on raw to_qty, ignoring units", "var t = convert(c.to_qty, c.to_unit, toUnit);", "var t = c.to_qty;"),
+    ("a rounded ratio", "return nu / ol;", "return Math.round(nu / ol);"),
 ]
 
 HTML = """<!doctype html><html><head><meta charset="utf-8">
@@ -262,6 +290,16 @@ HTML = """<!doctype html><html><head><meta charset="utf-8">
   try {
     var R = RecipeMath;
     var SP = __SPELLINGS__, UN = __UNITS__, LN = __LINES__, CV = __CONV__, LC = __LC__, SCAN = __SCAN__;
+    var CH = __CHANGES__, MS = __MEASURES__;
+    CH.forEach(function(x){
+      out.n++;
+      var r = R.conversionChange(x[1], x[2]);
+      if (!near(r, x[3])) fail('conversionChange ' + x[0] + ' = ' + r + ', want ' + x[3]);
+    });
+    MS.forEach(function(x){
+      out.n++;
+      if (R.measureOf(x[0]) !== x[1]) fail('measureOf ' + x[0] + ' = ' + R.measureOf(x[0]) + ', want ' + x[1]);
+    });
     Object.keys(SP).forEach(function(s){
       out.n++;
       var u = R.normaliseUnit(s), k = R.unitKind(s);
@@ -325,6 +363,8 @@ def _run_in(td, chrome, js_src, scan):
                 .replace("__LINES__", json.dumps(LINES))
                 .replace("__CONV__", json.dumps(CONVERSIONS))
                 .replace("__LC__", json.dumps(LINE_COSTS))
+                .replace("__CHANGES__", json.dumps(CHANGES))
+                .replace("__MEASURES__", json.dumps(MEASURES))
                 .replace("__SCAN__", json.dumps(scan)))
     path = os.path.join(td, "t.html")
     open(path, "w", encoding="utf-8").write(page)

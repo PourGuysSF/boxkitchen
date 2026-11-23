@@ -1,7 +1,7 @@
 # Recipe Costing — what a batch costs (B4.3)
 
 Status: **plan v1, approved by Stephen 2026-11-02. Slice 0 is closed (tables live, 0 rows); Slice 1
-is shipped (PR #171, 2026-11-05). Slice 2 is shipped (PR #181, 2026-11-08). Slice 3 is built (2026-11-09, branch `recipe-costing-slice3`, awaiting PR and phone check); Slice 4 is next.** It is built in a separate window: this plan is owned by the planning window, the build window
+is shipped (PR #171, 2026-11-05). Slice 2 is shipped (PR #181, 2026-11-08). Slice 3 is shipped (PR #187, 2026-11-16; Stephen's phone check passed 2026-11-19). Slice 4 is built (2026-11-23, branch `recipe-costing-slice4`, awaiting PR and phone check); Slice 5 is next.** It is built in a separate window: this plan is owned by the planning window, the build window
 records each slice "as built" here, and any change to the design goes back to the planner. Every
 decision in "Decisions" was Stephen's, in the interview that produced this document. The design
 choices made without asking are listed under "Decided in planning, not asked" so they can be
@@ -789,6 +789,79 @@ reason; a dropped response cannot make two rows — all against a stubbed `api()
 **Done when:** one conversion costs every line needing it across recipes; a ≥10× change asks;
 re-entering a price in a different kind of unit stops the lines that relied on the old
 conversion, with the reason.
+
+#### Slice 4 as built (2026-11-23, branch `recipe-costing-slice4`)
+
+Live counts at the start (read-only, 2026-11-23): 45 active recipes, 352 ingredient lines, 13 part
+headers; 12 active `recipe_lines`, 0 `ingredient_conversions`. 6 linked lines read *needs a
+conversion* (Bacon Shallot Gastrique: slab bacon, shallots, sugar; Cashew Dressing: sugar, ginger,
+salad oil). Phone-check pair: **White sugar** (Birite, 25 lb), linked by volume in both recipes.
+
+- **`assets/recipe-math.js?v=3`** (was `v=2`) only adds; nothing existing changed:
+  - `conversionChange(oldConv, newConv)` → `Number` or `null`. Both are conversion objects
+    `{from_qty, from_unit, to_qty, to_unit}`. Each is expressed as *pack-side units per
+    from-side unit*, both measured in `newConv`'s own units, and the result is new ÷ old,
+    unrounded. `null` when either is missing, or when the two can't be compared (a different
+    measure, or a pack side that changed kind). The page asks when the result is ≥ 10 or ≤ 0.1.
+  - `measureOf(unit)` is now exported: `'weight' | 'volume' | 'each' | <the count word> | null`.
+    It is the `from_kind` a conversion is stored under.
+  - Every page loading the file is at `?v=3` (on this branch, only `tempest_recipe_costing.html`).
+- **`tempest_recipe_costing.html`** reads `ingredient_conversions`
+  (`id,ingredient_cost_id,from_kind,from_qty,from_unit,to_qty,to_unit,estimate,note,updated_at`,
+  `location=eq.Tempest`) with the other tables. It hands `lineCost()` the row for
+  `(ingredient_cost_id, measureOf(line unit))`, or `null`.
+  - **On a line:** costed through a conversion shows *via 1 qt = 0.8 lb as bought* (+ *·
+    estimate*) and **Change conversion**. *needs a conversion* has **Set conversion**. *conversion
+    no longer matches — was lb, now case* counts for nothing and has **Fix conversion**. The link
+    editor says only *needs a conversion — save the link, then tap Set conversion on the line*.
+  - **`#convModal`** is never stacked on the link editor, and is opened by
+    `openConv(ingredient_cost_id, unit)` alone (ruling 13). It asks "How much of what you buy
+    does it take to make 1 ‹unit› of this?" The answer unit starts at the price's pack unit.
+    - The answer box **always opens empty**. Estimate and Note carry over on Change, but not on
+      Fix.
+    - It shows *Was: …* when an old row exists, the trim help line, and *Used by N lines in M
+      recipes: …* (active, not skipped, same price row and measure, recipe active, line still
+      in the text).
+    - New inputs `.cv-note` and `.cv-est` are qualified at 16px; `FS_REGISTER`
+      unchanged.
+  - **The ask:** a change of ≥10× or ≤1/10 shows, inside the window, *"That's 10× the old
+    conversion (1 qt = 0.8 lb). Save anyway?"* (or *"…about a 10× drop from…"*) with **Go back** /
+    **Save anyway**. Changing the number or a unit takes the ask away. A fix across kinds can't be
+    compared, so it doesn't ask.
+  - **Writes, `ingredient_conversions` only:**
+    `POST ingredient_conversions?on_conflict=ingredient_cost_id,from_kind`, with
+    `Prefer: resolution=merge-duplicates`.
+    - Fields are exactly `location, ingredient_cost_id, from_kind, from_qty (1), from_unit,
+      to_qty, to_unit, estimate, note (trimmed, empty → null), updated_at`.
+    - The write path is the same as a link's: everything locked in flight, a second tap
+      ignored, 15 s. A lost answer is read back by `(ingredient_cost_id, from_kind)`, and the
+      three messages are the same.
+    - On save the row is replaced in memory and every view re-renders, so every line using it
+      costs at once.
+    - Never `recipe_lines`, never a DELETE.
+- **`scripts/check_recipe_math.py`**: 216 assertions, 12 breaks (2 new: the ratio on raw
+  `to_qty`, and a rounded ratio). The ratio fixtures and a `cup` line costed through
+  `1 qt = 0.8 lb`, to the cent.
+- **`scripts/check_recipe_costing.py`**: 18 scenarios. 5 are new (`conv convask convlost
+  convstale convoz`), run against a fake `ingredient_conversions` that keeps one row per key and
+  enforces the table's checks.
+  - Every payload is checked field by field.
+  - A double tap, plus direct calls, makes one write.
+  - A lost answer is read back. Lost, then unconfirmed, then a retry makes one row. A refused
+    write writes nothing.
+  - One save costs lines in two recipes.
+  - 10× and 1/10 ask, and Go back writes nothing. 9× doesn't ask. Save anyway saves.
+  - *Used by* leaves out orphan, skipped and weight lines.
+  - A pack unit changed kind makes every relying line read *no longer matches*, and Fix
+    overwrites the same key. A change within the kind (lb → oz) still costs.
+  - 4 deliberate breaks, each caught: the double-tap guard removed, the ask skipped, the ask
+    kept after the number changes, and a pre-filled answer.
+  - `--live` rendered 45 / 352 / 13, with every write blocked.
+- `check_costing.py` (679) and `check_styling.py` are clean, and `FS_REGISTER` is 75.
+  `index.html`, `kitchen.css`, `tempest_costing.html`, `Recipes` and `recipe_dashboard.html`
+  are untouched.
+- **Not proved here:** the phone check after the merge. That means a real conversion that
+  stays, White sugar costing in both recipes at once, and the ask seen and backed out of.
 
 ### Slice 5 — Yield, portion and the numbers
 
