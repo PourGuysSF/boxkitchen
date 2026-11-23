@@ -79,7 +79,32 @@
 .sched-copybtn{min-height:44px;padding:8px 14px;background:var(--paper);border:1px solid var(--ink);border-radius:6px;color:var(--ink);font-family:var(--font-cond);font-size:1rem;font-weight:600;letter-spacing:.04em;cursor:pointer}
 .sched-copyinfo{margin-bottom:8px;color:var(--ink)}
 .sched-copysub{margin-bottom:12px;font-size:0.85rem;color:var(--grey)}
+/* Slice 4: the paper copy. A print-only sheet, filled by render() in staff form. */
+.sched-print{display:none}
+.sched-printwrap{padding:14px 18px 0}
 .sched-err button{margin-top:14px;min-height:44px;padding:8px 18px;background:var(--paper);border:1px solid var(--ink);border-radius:6px;font-family:var(--font-cond);font-weight:600;letter-spacing:.08em;text-transform:uppercase;cursor:pointer}
+@media print{
+  @page{size:letter landscape;margin:10mm}
+  /* Only the sheet prints: header, week bar, toggle, day strip, list, count,
+     Copy, Print, modals and toast are all siblings of it. */
+  body>*:not(#printSheet){display:none !important}
+  #printSheet{display:block}
+  .sched-ptitle{font-family:var(--font-cond);font-size:16pt;font-weight:700;letter-spacing:.02em;color:#000;margin:0 0 6px}
+  .sched-print .sched-gridwrap{overflow:visible}
+  .sched-print .sched-grid{width:100%;min-width:0;table-layout:fixed;border-collapse:collapse;font-size:9.5pt;break-inside:avoid;page-break-inside:avoid}
+  .sched-print .sched-grid th,.sched-print .sched-grid td{min-width:0;padding:3px 4px;height:7mm;border:1px solid #555;background:#fff;color:#000;overflow-wrap:anywhere;word-break:break-word;line-height:1.15}
+  .sched-print .sched-grid thead th{border-bottom:2px solid #000;height:auto;font-size:9.5pt}
+  .sched-print .sched-grid thead th .es{color:#333}
+  .sched-print .sched-grid .sticky{position:static;width:17%;text-align:left;border-right:2px solid #000;background:#fff}
+  .sched-print .sched-grid tr.crew th{background:#fff;color:#000;font-size:9pt;font-weight:700;letter-spacing:.12em;height:auto;padding:4px;border-top:2px solid #000;border-bottom:2px solid #000}
+  .sched-print .sched-grid td.note{font-size:8.5pt}
+  .sched-print .sched-shift{color:#000}
+  .sched-print .sched-off{color:#555}
+  .sched-print .sched-req{background:#fff;color:#000;border:1.5px solid #000;padding:0 3px;font-size:8.5pt}
+  .sched-print .sched-train{color:#333;font-size:7.5pt}
+  .sched-print .empty{padding:20px 0;color:#000}
+  .sched-pupdated{margin-top:6px;font-size:9pt;color:#333}
+}
 </style>
 </head>
 <body>
@@ -106,7 +131,9 @@
 <div class="sched-mgrcount" id="mgrCount" style="display:none"></div>
 <div class="sched-copywrap" id="copyWrap" style="display:none"></div>
 <div id="appBody"><div class="loading"><div class="spinner"></div><p>Loading the schedule…</p></div></div>
+<div class="sched-printwrap"><button type="button" class="sched-copybtn" id="printBtn" onclick="window.print()">Print week</button></div>
 <div class="sched-updated" id="updatedLine"></div>
+<div class="sched-print" id="printSheet"></div>
 
 <!-- Box picker (manager) -->
 <div class="modal-bg" id="boxModal">
@@ -321,9 +348,19 @@ function render(){
   if(!day.length&&!night.length){body.innerHTML='<div class="empty">No one on the schedule yet.</div>';}
   else body.innerHTML=view==='week'?renderWeek(day,night):renderDay(day,night);
   document.getElementById('updatedLine').textContent=updatedMax?fmtUpdated(updatedMax):'';
+  paintPrint(day,night);
   paintCount();
   paintCopyBtn();
   if(mgr)ensureQuick();
+}
+
+/* The paper copy (Slice 4): always the whole week, always staff form (no buttons),
+   no day marked today, drawn on every render so it never needs beforeprint. */
+function paintPrint(day,night){
+  var h='<div class="sched-ptitle">Tempest Schedule · '+esc(weekLabel(weekStart))+'</div>';
+  h+=(!day.length&&!night.length)?'<div class="empty">No one on the schedule yet.</div>':renderWeek(day,night,true);
+  if(updatedMax)h+='<div class="sched-pupdated">'+esc(fmtUpdated(updatedMax))+'</div>';
+  document.getElementById('printSheet').innerHTML=h;
 }
 
 /* Manager mode only: how many of this week's boxes (active people × 7 days) are still empty. */
@@ -359,10 +396,10 @@ function renderDay(day,night){
   return h+crew('DAY CREW',day)+crew('NIGHT CREW',night);
 }
 
-function renderWeek(day,night){
-  var ds=weekDates(),keys=ds.map(keyOf);
+function renderWeek(day,night,paper){
+  var ds=weekDates(),keys=ds.map(keyOf),btns=mgr&&!paper;
   var h='<div class="sched-gridwrap"><table class="sched-grid"><thead><tr><th class="sticky" scope="col">Name</th>';
-  for(var i=0;i<7;i++)h+='<th scope="col"'+(keys[i]===todayKey?' class="today"':'')+'>'+DAY_EN[i]+'<span class="es">'+DAY_ES[i]+'</span>'+md(ds[i])+'</th>';
+  for(var i=0;i<7;i++)h+='<th scope="col"'+(!paper&&keys[i]===todayKey?' class="today"':'')+'>'+DAY_EN[i]+'<span class="es">'+DAY_ES[i]+'</span>'+md(ds[i])+'</th>';
   h+='</tr></thead><tbody>';
   function crew(label,list){
     if(!list.length)return '';
@@ -370,7 +407,7 @@ function renderWeek(day,night){
     list.forEach(function(p){
       s+='<tr><th class="sticky" scope="row">'+esc(p.name)+'</th>';
       for(var i=0;i<7;i++){
-        if(mgr)s+='<td class="sched-celltd"><button type="button" class="sched-cellbtn" onclick="openBox('+p.id+','+i+')" aria-label="'+esc(boxBtnLabel(p,i))+'">'+boxHtml(boxOf(p,keys[i]),true)+'</button></td>';
+        if(btns)s+='<td class="sched-celltd"><button type="button" class="sched-cellbtn" onclick="openBox('+p.id+','+i+')" aria-label="'+esc(boxBtnLabel(p,i))+'">'+boxHtml(boxOf(p,keys[i]),true)+'</button></td>';
         else s+='<td>'+boxHtml(boxOf(p,keys[i]),true)+'</td>';
       }
       s+='</tr>';
@@ -387,7 +424,7 @@ function renderWeek(day,night){
   h+='<tr><th class="sticky" scope="row">Games &amp; events</th>';
   for(var i=0;i<7;i++){
     var nt=esc((dayNotes[keys[i]]||'').trim());
-    if(mgr)h+='<td class="note sched-celltd"><button type="button" class="sched-cellbtn" onclick="openNote('+i+')" aria-label="Change games and events, '+md(ds[i])+'">'+(nt||'+')+'</button></td>';
+    if(btns)h+='<td class="note sched-celltd"><button type="button" class="sched-cellbtn" onclick="openNote('+i+')" aria-label="Change games and events, '+md(ds[i])+'">'+(nt||'+')+'</button></td>';
     else h+='<td class="note">'+nt+'</td>';
   }
   h+='</tr></tbody></table></div>';
