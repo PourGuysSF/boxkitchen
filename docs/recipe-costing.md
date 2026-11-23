@@ -805,7 +805,7 @@ salad oil). Phone-check pair: **White sugar** (Birite, 25 lb), linked by volume 
     measure, or a pack side that changed kind). The page asks when the result is ≥ 10 or ≤ 0.1.
   - `measureOf(unit)` is now exported: `'weight' | 'volume' | 'each' | <the count word> | null`.
     It is the `from_kind` a conversion is stored under.
-  - Every page loading the file is at `?v=3` (on this branch, only `tempest_recipe_costing.html`).
+  - Every page loading the file is at `?v=3`: `tempest_recipe_costing.html` and `tempest_menu_builder.html` (Menu Builder Slice 2 merged at `v=2` first; moved here, one character).
 - **`tempest_recipe_costing.html`** reads `ingredient_conversions`
   (`id,ingredient_cost_id,from_kind,from_qty,from_unit,to_qty,to_unit,estimate,note,updated_at`,
   `location=eq.Tempest`) with the other tables. It hands `lineCost()` the row for
