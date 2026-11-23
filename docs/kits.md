@@ -16,7 +16,7 @@ Stephen's.
 Airplane Mode test on 2026-11-07. **Slice 4 is live** (`b092421`, #182); Stephen passed the
 iPhone print-preview check on 2026-11-08. **Slice 5 is live** (`464aa5c`, #184): the Kits tile is
 on the home page, and Stephen checked it on his phone on 2026-11-08. See "Slice 5 as built".
-**B5 is done.** The next step is the Line PM link ("Later"), which needs a new plan.
+**B5 is done.** The Line PM link that followed is done too (`docs/kits-line-link.md`).
 
 Target file: a new page, `tempest_kits.html`. At the very end, and only then: the Kits tile in
 `index.html`, `BUILD_PLAN.md` (B5), and the page count in `CLAUDE.md`. This plan needs **no
