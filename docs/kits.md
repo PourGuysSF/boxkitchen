@@ -1,5 +1,8 @@
 # Kits — what goes in each kit
 
+**Menu update (Suadero and Chilorio in, Spicy green sauce out): LIVE** (#196, `85692a1`,
+2026-11-22); **phone check passed 2026-11-22.** See "Menu update as built" at the end.
+
 Status: **built and shipped.** The plan (v1) was approved by Stephen on 2026-11-02, with one
 change: the build is split into five small slices, so each can be checked before the next
 starts ("Slices"). All five are built; see each slice's "as built". Written from
@@ -54,6 +57,9 @@ It is BUILD_PLAN **B5** ("mise en place per recipe; depends on the recipe librar
 | Tick boxes | **None in v1.** The Line PM item already records that a kit was built. Ticks can come with the link. |
 | Link from Line PM | **A later step**, not this build. Each kit gets its own address now so the link is easy later. |
 | The drafts | Stephen approved the Spicy Green Sauce draft as the pattern, then the other 7 as written (2026-10-28). They are in "The 8 kits". |
+| The November menu (2026-11-16) | **Spicy green sauce is off the menu:** its sheet goes; its Line PM row 673 stays, with no button. **Suadero and Chilorio get sheets**, mapped to Line PM rows 675 and 676. |
+| Suadero (2026-11-22) | From **Suadero Beef (69)**, approved as drafted: 4 containers (Manteca; Onions & garlic; Braise seasoning; Salt). The beef, black pepper and water are not in the kit. |
+| Chilorio (2026-11-22) | From **Chilorio Pork (70)**, as **the pork in its sauce**, mixed in one half hotel pan. **The one kit with raw meat in it**, an exception to "Raw meat: not in the kit", because that's how the PM line builds it: the crew's notes on Kit- Chilorio say "cut pork, put salt and pepper and mix in the sauce. put into the hotel pan … for tomorrow" (11/15) and "make more sauce, marinate the pork" (11/12). Not the Chilorio Sauce recipe (58). |
 | Which recipe | "Buffalo sauce" = **Honey Harissa Buffalo**. "Chicken & Dumpling soup" = **Chicken & Dumpling (Soup Base)**, id 19, not the near-duplicate id 52. |
 
 ---
@@ -164,9 +170,9 @@ the page reads the recipe:
 Keywords rather than exact text, so a changed amount or prep note ("small dice" → "fine
 dice") still lands in the right container.
 
-### The 8 kits
+### The kits
 
-As approved by Stephen 2026-10-28. Keywords in `code`. **⇢** = next to the pan, labelled.
+As approved by Stephen 2026-10-28; Suadero and Chilorio 2026-11-22. Keywords in `code`. **⇢** = next to the pan, labelled.
 
 **Buffalo sauce** — Honey Harissa Buffalo (5)
 - ① Butter — own container, melts first — `butter`
@@ -207,18 +213,29 @@ As approved by Stephen 2026-10-28. Keywords in `code`. **⇢** = next to the pan
 - *Changed 2026-11-05 by Stephen:* the stock comes in cans, grabbed at make time, so it is no
   longer a next-to-the-pan container. The kit has 5 containers.
 
-**Spicy green sauce** — Spicy Green Sauce (25)
-- ① Spices — together — `coriander` `cumin` `salt`
-- ② Herbs & veg — together — `parsley` `cilantro` `jalapeño` `garlic`
-- ③ Olive oil blend — own container — `olive oil`
-- ④ Lemon juice — own container — `lemon juice`
-- ⑤ Greek yogurt — own container — `yogurt`
-
 **Pickled onions & peppers** — Pickled Onion & Pepper (24)
 - ① Veg — together — `red onion` `mini pepper` `garlic`
 - ② Pickling spices — together — `sugar` `salt` `coriander`
 - ③ Cider vinegar — own container — `cider vinegar`
 - Not in the kit: `water` (from the tap)
+
+**Suadero** — Suadero Beef (69)
+- ① Manteca — own container — `pork fat`
+- ② Onions & garlic — together — `white onion` `garlic`
+- ③ Braise seasoning — together — `bay` `peppercorns`
+- ④ Salt — own container — `salt`
+- Not in the kit: `beef` (raw meat — pull from the meat shelf) · `black pepper` (to season, at
+  the stove) · `water` (from the tap, to cover)
+
+**Chilorio** — Chilorio Pork (70), 1 container, in **a half hotel pan**
+- ① Pork in the sauce — cut the pork, salt and pepper it, mix with the sauce in a half hotel
+  pan — `pork butt` `salt` `pepper` `chilorio sauce`
+- Into the hotel pan: **"Mixed together in one half hotel pan"** (the kit's own `pan` line)
+  instead of "All 1 container into one hotel pan".
+- The raw-meat exception: see Decisions.
+
+**Removed:** Spicy green sauce, off the menu 2026-11-16 (Kits menu update). Recipe 25 is kept in
+the Recipe Database; the page no longer reads it.
 
 **Mac & cheese** — Mac & Cheese (46), 11 containers. *Decided 2026-11-05 by Stephen:* the
 sub-headings are the kit's own groups below, not the recipe's parts (so ⑪ Herbs sits under
@@ -233,7 +250,7 @@ base); and ④ ⑤ ⑥ ⑦ ⑨ ⑩ are each "own container".
   together — `chives` `parsley`
 
 **Checked 2026-11-02** against the live recipe text (a read-only GET, with a scratch script
-following the rule above): every line of all 8 recipes lands in the container listed here or
+following the rule above): every line of all 8 recipes then lands in the container listed here or
 in "Not in the kit", every keyword finds its line, and nothing lands in "Not sorted yet".
 
 ### Adding a kit when the menu changes
@@ -247,21 +264,26 @@ in "Not in the kit", every keyword finds its line, and nothing lands in "Not sor
 4. In the same PR, add the Line PM row id, its slug and its word to the map (`KIT_SHEETS`) in
    `tempest_line.html`, and to the fixture in `scripts/check_line.py` (`SHEETS`), so the row
    gets its **SHEET →** button (see `docs/kits-line-link.md`).
+5. Add the kit row id, its Line AM row id and the word to `KIT_MAKE` in `tempest_line.html`,
+   and to the fixture in `scripts/check_last_done.py`, so the morning row shows KIT READY (see
+   `docs/last-done.md`).
 
-Removing a kit is the reverse, including taking its row out of the map and the fixture, so
-no button points at a sheet that's gone. If this happens often enough to be a chore, manager-editable
+Removing a kit is the reverse, including taking its row out of the maps (`KIT_SHEETS`,
+`KIT_MAKE`) and the fixtures, so no button points at a sheet that's gone and no morning row
+shows KIT READY for it. If this happens often enough to be a chore, manager-editable
 kits is the build after (see "Later").
 
 ### Addresses
 
 Each kit has its own: `tempest_kits.html#buffalo-sauce`, `#pork-belly`, `#gastrique`,
-`#dumpling`, `#chicken-dumpling-soup`, `#spicy-green-sauce`, `#pickled-onions-peppers`,
-`#mac-and-cheese`. Back returns to the list. Line PM's **SHEET →** buttons link here with `?from=line`; see
+`#dumpling`, `#chicken-dumpling-soup`, `#pickled-onions-peppers`, `#mac-and-cheese`,
+`#suadero`, `#chilorio`: 9 in all. `#spicy-green-sauce` (removed) now shows the list, like any
+unknown address. Back returns to the list. Line PM's **SHEET →** buttons link here with `?from=line`; see
 `docs/kits-line-link.md`.
 
 ### Printing
 
-Print from the list prints all 8 kit sheets, one per page. Print from a kit prints that kit.
+Print from the list prints every kit sheet (9 since the menu update; the button says "Print all 9 kits" from `KITS.length`), one per page. Print from a kit prints that kit.
 Container numbers are rings and "Not sorted yet" is a heavy border, so nothing relies on a
 background fill (`CLAUDE.md`, "Printing is a backup").
 
@@ -613,7 +635,7 @@ recipe"**.
 
 1. `Recipes.ingredients` stays one text field, one ingredient per line, with `— PART —`
    headings.
-2. Recipe ids 5, 54, 43, 14, 19, 25, 24 and 46 stay the same rows.
+2. Recipe ids 5, 54, 43, 14, 19, 24, 46, 69 and 70 stay the same rows.
 3. The ingredient names in those 8 recipes stay recognisable to the keywords above.
 
 **Checked 2026-11-02 against Costing's plan** (`~/Developer/boxkitchen-costing/docs/recipe-costing.md`,
@@ -672,3 +694,66 @@ From `CLAUDE.md`, `docs/review-checklist.md`, and this window's rules:
 - `python3 scripts/check_styling.py` before any PR.
 - Never write the site password or the manager PIN anywhere.
 - **Never push.** Pushing rebuilds the live site; Stephen approves that separately, every time.
+
+## Menu update as built (2026-11-22, `kits-menu-update`, merged as #196)
+
+Ticket: `~/Developer/KITS-MENU-UPDATE-TICKET.md`. It ran after Last Done Slice 2 (#195), since
+it removes a pair that slice added.
+
+**`tempest_kits.html`:**
+- Spicy green sauce left `KITS`.
+- Suadero (69) and Chilorio (70) added last, in Line PM order.
+- A new optional `pan` on a kit replaces the first "Into the hotel pan" line. Only Chilorio
+  uses it, and it's escaped.
+- "Print all N kits" counts `KITS.length`.
+- Comments that said 8 say "every kit". The `KITS` comment points at "The kits" and is matched
+  to Line PM on 2026-11-22.
+- The one read asks for `46,5,54,43,19,14,24,69,70`.
+
+**`tempest_line.html`:** `KIT_SHEETS` gains 675 → `suadero` and 676 → `chilorio` (9 buttons),
+and its date is now 2026-11-22. `KIT_MAKE` loses 673 → 567, leaving 9 pairs.
+
+**Guards:**
+- `check_kits.py`, **628 assertions, 27 scenarios**, clean:
+  - recipes 69 and 70 at their 2026-11-22 text; 25 and `GREEN` gone;
+  - `KITS8` → `KITS_ALL`, with Suadero and Chilorio written by hand;
+  - counts `[11, 5, 3, 7, 5, 3, 3, 4, 1]`, "Print all 9 kits";
+  - Slice 1's five scenarios moved to Buffalo sauce (honey amount, lemon → lime juice,
+    headings with "Harissá" and "Frank’s", a second garlic line);
+  - new `nogreen`, `suadero`, `chilorio`, `fromlinesuadero` and `fromlinechilorio`; Chilorio's
+    pan line exact, every other kit "All N containers".
+- `check_line.py`, **168 assertions**, clean: 9 buttons in order, none on 673/677.
+- `check_last_done.py`, **1,766 assertions**, clean: `KIT_MAKE` has 9 pairs (none for
+  673/677); 673 ticked with a name puts no tag on 567; the rename case moved to 674 → "Kit -
+  Nachos".
+
+**Fails when it should** (throwaway copies in the scratchpad): all 8 fail.
+1. Spicy green left in `KITS`
+2. Suadero's beef out of "Not in the kit"
+3. Chilorio's `pan` ignored
+4. A wrong slug for 676
+5. A button on 673
+6. `norm()`'s accent stripping removed
+7. Longest-first removed
+8. The 673 pair left in `KIT_MAKE`
+
+**Hand check** (local Chrome, read-only, 2026-11-22):
+- The list: 9 kits, Suadero "4 containers", Chilorio "1 container", no Spicy green. "Print all
+  9 kits"; 9 print sheets.
+- The sheets: Suadero and Chilorio exactly as "The kits", with Chilorio's last step "Mixed
+  together in one half hotel pan". Nothing in "Not sorted yet" on any of the 9.
+  `#spicy-green-sauce` shows the list.
+- Line PM: 9 SHEET → buttons, none on 673/677. Suadero's opens its sheet with "← Line PM" back
+  to `tempest_line.html#pm`.
+- Recipes 69 and 70 re-read first: unchanged from the ticket.
+
+## Menu update: phone check
+
+**Passed** (Stephen, 2026-11-22). All five steps were checked on the phone:
+- The list shows 9 kits, ending Suadero ("4 containers") and Chilorio ("1 container"), with no
+  Spicy green sauce.
+- Suadero's four containers and its "Not in the kit" lines are right.
+- Chilorio has one container, "Pork in the sauce", and its last step is "Mixed together in one
+  half hotel pan".
+- On Line PM, Kit - Suadero and Kit- Chilorio have SHEET →, and Spicy green sauce has none.
+- Each SHEET → opens its sheet, and "← Line PM" comes back to the PM list.

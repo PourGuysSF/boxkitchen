@@ -2,6 +2,7 @@
 
 Status: **plan v1, approved by Stephen 2026-11-02** ("everything looks good"), including the
 suggested answers to the four questions at the end. **Slice 0 is closed** (2026-11-02): the four tables are live and seeded.
+**Slices 1 – 3b live** (tile #189, 2026-11-19); **Slice 4 (the paper copy) built 2026-11-23, not yet merged.**
 Every decision below was made by Stephen, in the brief that started this window or in the
 four questions that followed it. Planned in one window; built in a second, from
 `~/Developer/SCHEDULE-TICKET.md`. Worktree `~/Developer/boxkitchen-schedule`, branch
@@ -466,6 +467,37 @@ manager can pencil one in. Nothing manager-only prints.
 
 **Done when:** a print preview fits one landscape page with background graphics off, and
 every state is readable in black and white.
+
+> **Slice 4 as built (2026-11-23)** (commits `8002a36`, `c9eb58b`).
+> **Stephen's decisions (2026-11-16):** a **Print week** button for everyone, calling
+> `window.print()`; the paper is always the whole week, from Day or Week view; title
+> "Tempest Schedule · <week, with year>", and no day marked today. **Planner's calls, kept:**
+> US Letter landscape; long words wrap inside their box (fixed table layout, name column 17%);
+> "Updated …" at the bottom, no "printed on" line; a week with no people prints the title and
+> "No one on the schedule yet."
+> - **`tempest_schedule.html`:** `#printSheet` (`.sched-print`), hidden on screen, filled by
+>   `paintPrint()` on every `render()` — `renderWeek(day,night,true)`, whose `paper` flag draws
+>   no buttons and no `.today`, so it is the staff week even from Day view or manager mode; no
+>   `beforeprint`. `#printBtn` (ink-border `.sched-copybtn` look) sits above the Updated line.
+>   One `@media print` block: `@page{size:letter landscape;margin:10mm}`; every body child but
+>   the sheet hidden; borders only from `PRINT_PALETTE` (`#000`/`#555`/`#333`); crew rows bold
+>   caps between 2px rules, no fill; OFF `#555`; REQUEST bold in a 1.5px box on white;
+>   TRAINING a small word; every cell ≥ 7mm high, so an empty box takes a pencil. No request,
+>   no write, no `kitchen.css` change.
+> - **`scripts/check_schedule.py`:** new `print` scenario (Day/Week × staff/manager on Nov 15 – 21,
+>   then manager/staff on Nov 29 – Dec 5, the month end), via `printOn()` lifting the
+>   `@media print` rules, as `check_kits.py` (needs `--allow-file-access-from-files`, added to
+>   every run). Plus one assertion in `empty`. Two Week-view helpers scoped to `#appBody` (the
+>   sheet is a second table). **328 assertions, 9 scenarios** (was 215, 8).
+> - **Fails when it should** (throwaway copies, `ONLY=print`): REQUEST left on its fill (4
+>   failures); sheet drawn in manager form (14); `#copyWrap` shown in print (1); Day view
+>   printing the day list (30); the today fill left in the header (8); an empty box with no
+>   border (12).
+> - **Desktop print preview** (headless Chrome, background graphics off, live data read-only):
+>   **one page** each for Nov 22 – 28 from Day view, Week view in manager mode, and
+>   Nov 29 – Dec 5 (empty). Room left at the foot for more hires.
+> - Jose V.'s 11/27 REQUEST is real (changed on the page 11-19, confirmed by Stephen 11-23).
+> - **iPhone print-preview check:** recorded here after the merge.
 
 ### Slice 5 — The people and the standing notes (manager)
 

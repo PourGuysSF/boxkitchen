@@ -1,12 +1,12 @@
 # Menu Builder — what a draft dish might cost (B7)
 
-Status, 2026-11-05: **the Recipe Costing plan was approved 2026-11-02**, and the planner re-checked
-everything this plan leans on against it (see "Re-check", below — **all hold**). **Slices 0a and 1
-are live** (PR #170, unlinked, phone-tested with Stephen's first real dish). **Slice 0b** (the lines
-table) is being built now. **Slice 2** (lines on the page, with costs) waits for the costing window's
-Slices 2 and 3 to be merged to `main`. Every row of "Decisions" is Stephen's; the design choices made
-without asking are under "Decided in planning, not asked" so they can be overruled. Worktree
-`~/Developer/boxkitchen-menu`, branch `menu-builder`.
+Status, 2026-11-19: **Slices 0a and 1 are live** (PR #170, unlinked; Stephen's phone test done with
+his first real dish, *Squash grill cheese*). **Slice 0b shipped** (PR #173; Stephen ran the SQL —
+`menu_draft_lines` is live, 0 rows). **Slice 2 is built** (lines from the price list, on branch
+`menu-builder-slice2`, see "Slice 2 — as built"), waiting on its PR and Stephen's phone check.
+Recipe Costing's Slice 3 (`lineCost()`) merged as #187. Every row of "Decisions" is Stephen's; the
+design choices made without asking are under "Decided in planning, not asked" so they can be
+overruled. Worktree `~/Developer/boxkitchen-menu`; each slice gets its own branch from `origin/main`.
 
 Target file: a new page, `tempest_menu_builder.html`, copied from `tempest_costing.html` as its
 template (manager-PIN gate, `api()` with its timeout), loading the shared
@@ -215,8 +215,10 @@ in the same kind of measure as its price.
 - **Guess**, **your estimate**, **no price yet** and every other *not costed* reason use the yellow
   highlighter (`.ing-pack.unset`'s fill), never a colour of their own. *In range / over / under* are
   words. Nothing is green or red.
-- **Price →** opens Ingredient Costs with its filter set to the item (the same link Recipe Costing
-  uses). Coming back, or refreshing, picks up the new price.
+- **Price →** opens Ingredient Costs (`tempest_costing.html`) with **no filter** — the same link
+  Recipe Costing uses. Setting the filter would need a change to `tempest_costing.html`, which is off
+  limits (Recipe Costing Slice 3, ruling 8; Menu Builder Slice 2, ruling 1). Coming back, or
+  refreshing, picks up the new price.
 
 ### Adding or editing a line
 
@@ -485,6 +487,49 @@ dropped response cannot make two dishes; nothing is ever deleted — all against
 counting, with the reason; line costs match a hand calculation to the cent on fixtures; a dropped
 response cannot make two lines.
 
+### Slice 2 — as built (2026-11-19, branch `menu-builder-slice2`)
+
+Built from the build ticket's 13 planner rulings (`~/Developer/MENU-SLICE-2-TICKET.md`).
+
+- **Page:** `tempest_menu_builder.html` loads `assets/recipe-math.js?v=2` (main's). Load adds three
+  GETs beside the dishes: active `menu_draft_lines` (named columns), `ingredient_costs` active
+  **and** retired, active `order_items`. The dish screen's subtitle is now *Draft dish*; the menu
+  view is unchanged (*costs come later*, until Slice 4).
+- **Lines section** inside `#dishModal`, below Notes: the lines (by `position`, then `created_at`),
+  **＋ Add line**, then the total. The editor is `#lineModal` on top; a line write never touches
+  the dish's unsaved fields.
+- **Picker** copied from Recipe Costing (`nameOf`, `vendorOf`, `priceOf`, `isPriced`, `normName`,
+  `renderPick`, `pickItem`, `changePick`): retired rows not listed; unpriced rows and order items
+  with no row say *no price yet — price it first* and can't be tapped; vendor on every row;
+  nothing ever pre-selected. **Change** clears the pick, the amount, the unit and the filter. The
+  `oz` hint as Recipe Costing's.
+- **`lineState()`** — skip → retired (or gone) → renamed (`normName`'d) → `lineCost()` with **no
+  conversion**. Words: *needs a conversion — type the amount in weight, like oz or lb* / *volume,
+  like cups or fl oz* / *<count word>*; *no price yet · Price →*; *renamed — linked as X, now Y —
+  check*; *price retired — relink*; *not costed on purpose*. Every reason on the highlighter
+  (`.mb-why`).
+- **`dishTotal()`** — unrounded sum of costed lines ÷ the dish's **saved** `makes_plates`.
+  *$X a plate* / *At least $X a plate*, each not-costed line with its reason, *N skipped on
+  purpose*, *($Y for the batch of N)* when N ≠ 1, *No lines yet.*
+- **Writes** (`menu_draft_lines` only): add = `POST ?on_conflict=id` merge-duplicates with exactly
+  `{id, location, draft_id, position, qty, unit, ingredient_cost_id, linked_name, own_name, skip,
+  note, active}`; edit / Change / switching kind = `PATCH` of the full set + `updated_at`; remove =
+  `PATCH {active:false, updated_at}` after a confirm. The uuid and `position` (max + 1 over active
+  lines) are kept across retries. An `unknown` answer re-GETs by id: an add found is landed, an edit
+  only if every field matches. One write at a time; every control on both modals locked.
+- **Proved:** `scripts/check_menu_builder.py` — 23 scenarios, 402 assertions (6 new scenarios:
+  `lview`, `lpick`, `ladd`, `ledit`, `llost`, `lbusy`), with a stateful fake `menu_draft_lines`
+  enforcing the four named checks, the foreign keys, no delete grant and the upsert on id; costs to
+  the cent on hand-calculated fixtures (oz vs lb, fl oz, each, dozen, a batch of 4, an *At least*
+  mix, 3 × $0.006 summing to $0.02). Five deliberate breaks run in throwaway copies, each caught:
+  $0 for an uncosted line, a rounded line summed, a pre-selected single match, a rename not
+  caught, a DELETE for remove. `check_recipe_math.py` clean (both pages on `v=2`);
+  `check_styling.py` clean, `FS_REGISTER` unchanged. CI: `menu-builder-guard.yml` now runs
+  `check_recipe_math.py` first and watches that script. Read-only render against live, writes
+  blocked: *Squash grill cheese* opens, 0 lines, picker 279 rows (166 tappable, 113 *no price yet*),
+  nothing picked.
+- **Not yet:** Stephen's phone check on *Squash grill cheese*.
+
 ### Slice 3 — Guesses and house recipes
 
 - **Not bought yet**: name + guessed price for an amount, marked GUESS; the same-kind check; **Link
@@ -571,8 +616,10 @@ From `CLAUDE.md`, `docs/review-checklist.md`, and this window's rules:
 - **`python3 scripts/check_styling.py`** before every PR (it needs Chrome).
 - **Never write the manager PIN or the site password** in this document, a PR, or a comment.
 - **SQL text is dollar-quoted.** Stephen runs all SQL himself.
-- **Ship steps** (`.claude/skills/ship/SKILL.md`) apply, **except step 4**: this worktree is already
-  on its own branch; never create or switch branches here. **Stop before every push.**
+- **Ship steps** (`.claude/skills/ship/SKILL.md`) apply, **except step 4**: each slice gets a **new
+  branch made from `origin/main`** in this worktree (`menu-builder-slice2`, …), because the PRs are
+  squash-merged and an old branch's commits are never in `main`. Merge `origin/main` before pushing;
+  never rebase. **Stop before every push.**
 
 ---
 

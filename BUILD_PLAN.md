@@ -122,12 +122,13 @@ libraries). PR #74 also shipped the `tempest_notes.html` delete-confirmation mes
 ## PHASE B — Bigger modules & "coming soon" build-outs (after Tempest is airtight)
 
 - **B1. Prep shift hand-off + history** (roadmap #2). [Consistency][Time]
+  - Last done line (Prep + Line) and KIT READY on Line AM — live (#193, #194, #195). Plan: `docs/last-done.md`.
 - **B2. Prep hand-off email notification** (roadmap #3) — reuses A4's plumbing. [Time]
 - **B3. Inventory Guide** (coming-soon card; roadmap #4 monthly inventory). [Cost]
 - **B4. Recipe Costing v1** (coming-soon card; roadmap #5) — manual pricing tied to
   invoices; live food cost. Depends on recipes being complete. [Cost][Sellable]
 - **✅ B5. Kits — DONE 2026-11-08 (PRs #168, #174, #178, #182, #184).** Live
-  `tempest_kits.html`, unlocked in Recipes & Reference: the 8 Line PM kits, each one's
+  `tempest_kits.html`, unlocked in Recipes & Reference: the Line PM kits (9 since the November menu update, #196), each one's
   numbered containers read live and read-only from the Recipe Database, with what is left
   for the stove and anything not sorted yet; printable, one kit per page. No database
   change. Plan: `docs/kits.md`. [Consistency]

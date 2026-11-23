@@ -43,6 +43,21 @@
   /* Kits: SHEET → under a kit row's name, to its kit sheet (docs/kits-line-link.md).
      Its own line so it never clips at phone width; 44px tap target (.link-btn is 40). */
   .kit-sheet-link{display:inline-flex;align-items:center;min-height:44px;margin-top:6px}
+
+  /* KIT READY: an outlined ink tag at the start of a Line AM row's Last done line
+     (docs/last-done.md, Slice 2). No fill, so it prints as a box; line-height 1 keeps the
+     line the same height as an untagged one. */
+  .kit-ready{display:inline-block;vertical-align:top;border:1px solid var(--ink);border-radius:3px;background:none;color:var(--ink);font-family:var(--font-cond);font-weight:700;text-transform:uppercase;letter-spacing:.06em;font-size:0.75rem;line-height:1;padding:0 4px;margin-right:4px}
+
+  /* LAST DONE start */
+  /* Last done: its own full-width line under each row (docs/last-done.md).
+     .task wraps so .last-done can drop below the checkbox, name and fields;
+     nothing else in the row moves. Indent = checkbox 26 + gap 8 (plus the
+     drag handle 22 + gap 8 in manager mode), so the text starts under the name. */
+  .task{flex-wrap:wrap}
+  .last-done{flex:0 0 100%;padding-left:34px;margin-top:-4px;font-size:0.75rem;color:var(--grey);line-height:1.25;min-height:1.25em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .manager-mode .last-done{padding-left:64px}
+  /* LAST DONE end */
 </style>
 <script src="vendor/sortablejs-1.15.7.min.js"></script>
 </head>
@@ -190,6 +205,7 @@ function loadLogs(){
   api('GET','prep_logs','date=eq.'+dateStr,null,function(r){
     logs={};if(r)for(var i=0;i<r.length;i++)logs[r[i].prep_item_id]=r[i];
     render();
+    ldLoad();
   });
 }
 // A5b: load this team's editable section labels (falls back to defaults if empty).
@@ -381,8 +397,8 @@ function esc(s){return s?String(s).replace(/"/g,'&quot;').replace(/</g,'&lt;'):'
 
 // Kits: Line PM row id -> its kit sheet, and a word the row's name must still contain
 // (case, punctuation and spacing ignored), so a renamed row loses its button. Matched to
-// Line PM on 2026-11-16. Adding or removing a kit: docs/kits.md "Adding a kit".
-var KIT_SHEETS={668:{slug:'mac-and-cheese',word:'mac'},669:{slug:'buffalo-sauce',word:'buffalo'},670:{slug:'pork-belly',word:'pork belly'},671:{slug:'gastrique',word:'gastrique'},672:{slug:'chicken-dumpling-soup',word:'soup'},678:{slug:'dumpling',word:'dumpling',not:'soup'},674:{slug:'pickled-onions-peppers',word:'pickle'}};
+// Line PM on 2026-11-22. Adding or removing a kit: docs/kits.md "Adding a kit".
+var KIT_SHEETS={668:{slug:'mac-and-cheese',word:'mac'},669:{slug:'buffalo-sauce',word:'buffalo'},670:{slug:'pork-belly',word:'pork belly'},671:{slug:'gastrique',word:'gastrique'},672:{slug:'chicken-dumpling-soup',word:'soup'},678:{slug:'dumpling',word:'dumpling',not:'soup'},674:{slug:'pickled-onions-peppers',word:'pickle'},675:{slug:'suadero',word:'suadero'},676:{slug:'chilorio',word:'chilorio'}};
 function kitSheetLink(it){
   var k=it.station==='kits'&&KIT_SHEETS[it.id];if(!k)return'';
   var f=function(x){return String(x||'').toLowerCase().replace(/[^a-z0-9]/g,'');},n=f(it.name);
@@ -390,6 +406,65 @@ function kitSheetLink(it){
   return'<a class="link-btn kit-sheet-link" href="tempest_kits.html?from=line#'+k.slug+'" onclick="event.stopPropagation()">SHEET →</a>';
 }
 
+// KIT READY (docs/last-done.md, Slice 2): Line PM kit row id -> its Line AM row id, and a word
+// BOTH names must still contain (case, punctuation and spacing ignored), with an optional word
+// NEITHER may contain, so a renamed row drops out instead of pointing at the wrong dish. 677
+// (the placeholder kit) has no entry. Adding or removing a kit: docs/kits.md "Adding a kit".
+var KIT_MAKE={668:{am:571,word:'mac'},669:{am:583,word:'buffalo'},670:{am:573,word:'pork belly'},671:{am:615,word:'gastrique'},672:{am:620,word:'soup'},678:{am:570,word:'dumpling',not:'soup'},674:{am:568,word:'pickle'},675:{am:759,word:'suadero'},676:{am:596,word:'chilorio'}};
+// The morning row's KIT READY text for the viewed day, or '' (then ldNote shows the normal line).
+// The kit's latest named tick, not on MAKE, 1 or 2 days before the day on screen, and the morning
+// row not ticked with a name after that day. Reads Slice 1's LD.map only: no request.
+function kitReady(id){
+  var day=fmtDate(currentDate),kid=null,K=null,M=null,k;
+  if(LD.day!==day||!LD.map)return'';
+  for(k in KIT_MAKE)if(KIT_MAKE[k].am===id){kid=+k;break;}
+  if(kid===null)return'';
+  for(var i=0;i<items.length;i++){if(items[i].id===kid)K=items[i];if(items[i].id===id)M=items[i];}
+  if(!K||!M||K.station!=='kits')return'';
+  var p=KIT_MAKE[kid],f=function(x){return String(x||'').toLowerCase().replace(/[^a-z0-9]/g,'');},kn=f(K.name),mn=f(M.name),w=f(p.word),nt=p.not?f(p.not):'';
+  if(kn.indexOf(w)<0||mn.indexOf(w)<0||(nt&&(kn.indexOf(nt)>-1||mn.indexOf(nt)>-1)))return'';
+  var b=LD.map[kid];if(!b||b.mode==='make')return'';
+  var n=ldDays(b.date,day);if(n<1||n>2)return'';
+  var m=LD.map[id];if(m&&m.date>b.date)return'';
+  var q=ldParts(b.date),wd=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date(q[0],q[1],q[2]).getDay()];
+  return'<span class="kit-ready">KIT READY</span> Kit built '+(n===1?'yesterday':wd+' '+(q[1]+1)+'/'+q[2]+' · 2 days ago')+' · '+esc(b.who);
+}
+// LAST DONE start — same in tempest_prep.html and tempest_line.html; check_last_done.py compares them; docs/last-done.md
+// Per task: its latest check-off in the 14 days before the viewed day, that day's Who, and mode
+// (mode is for Slice 2). LD.map is set only when a read for LD.day landed whole; otherwise lines stay empty.
+var LD={day:null,map:null};
+function ldParts(s){var p=String(s).split('-');return[+p[0],+p[1]-1,+p[2]];} // never new Date('YYYY-MM-DD'): that is UTC
+function ldDays(a,b){var x=ldParts(a),y=ldParts(b);return Math.round((Date.UTC(y[0],y[1],y[2])-Date.UTC(x[0],x[1],x[2]))/86400000);}
+function ldText(id){
+  var day=fmtDate(currentDate);
+  if(LD.day!==day||!LD.map)return'';
+  var r=LD.map[id];if(!r)return'Not done in the last 2 weeks';
+  var n=ldDays(r.date,day),p=ldParts(r.date),wd=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date(p[0],p[1],p[2]).getDay()];
+  return'Last done: '+(n===1?'yesterday':wd+' '+(p[1]+1)+'/'+p[2]+' · '+n+' days ago')+(r.who?' · '+esc(r.who):'');
+}
+function ldFill(){var e=document.querySelectorAll('.task > .last-done');for(var i=0;i<e.length;i++)e[i].innerHTML=ldNote(+e[i].parentNode.getAttribute('data-id'));}
+// GET only, paged: the server returns at most 1,000 rows and doesn't say it cut. At most 5 pages;
+// a 5th full page = cut short = lines stay empty. A late answer (day changed) is dropped.
+function ldLoad(){
+  var day=fmtDate(currentDate),p=ldParts(day),from=fmtDate(new Date(p[0],p[1],p[2]-14)),ids=[],map={};
+  for(var i=0;i<items.length;i++)if(items[i].category!=='special')ids.push(+items[i].id);
+  ids.sort(function(a,b){return a-b;});
+  if(!ids.length)return;
+  var q='prep_item_id=in.('+ids.join(',')+')&completed=eq.true&assigned_to=neq.&date=gte.'+from+'&date=lt.'+day+'&select=prep_item_id,date,assigned_to,mode&order=date.desc,id.desc&limit=1000&offset=';
+  (function page(n){
+    api('GET','prep_logs',q+(n*1000),null,function(r){
+      if(fmtDate(currentDate)!==day||!Array.isArray(r))return;
+      for(var i=0;i<r.length;i++){var x=r[i],m=map[x.prep_item_id];
+        if(!String(x.assigned_to||'').trim())continue; // only a tick with a name counts (Stephen, 2026-11-21)
+        if(!m)map[x.prep_item_id]={date:x.date,who:x.assigned_to||'',mode:x.mode||null};
+        else if(m.date===x.date&&!m.who&&x.assigned_to)m.who=x.assigned_to;}
+      if(r.length===1000){if(n<4)page(n+1);return;}
+      LD.day=day;LD.map=map;ldFill();
+    });
+  })(0);
+}
+// LAST DONE end
+function ldNote(id){return kitReady(id)||ldText(id);}
 function bTask(it){
   var l=logs[it.id]||{},dn=l.completed||false,w=l.assigned_to||'',q=l.quantity||'',n=l.notes||'',no=openNotes[it.id]||false;
   var hasNote=n&&n.trim().length>0;
@@ -419,7 +494,9 @@ function bTask(it){
   // specials are permanent rows — a hidden spacer keeps the columns lined up
   if(sp)h+='<span class="delete-btn spec-ghost" aria-hidden="true"></span>';
   else h+='<button class="delete-btn" onclick="delItem('+it.id+')">✕</button>';
-  h+='</div></div>';
+  h+='</div>';
+  if(!sp)h+='<div class="last-done">'+ldNote(it.id)+'</div>';
+  h+='</div>';
   h+='<div class="note-row '+(showNote?'show':'')+'" id="nr'+it.id+'"><input class="note-input" placeholder="Add a note..." value="'+esc(n)+'" onchange="uLog('+it.id+',\'notes\',this.value)"></div>';
   return h;
 }
